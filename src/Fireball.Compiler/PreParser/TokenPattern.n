@@ -1,0 +1,66 @@
+﻿using Nemerle;
+using NC = Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.PreParser
+{
+  /// <summary>
+  /// Description of TokenPattern.
+  /// </summary>
+  variant TokenPattern
+  {
+    | Anything
+    | AnyOf { tokens: List[Token]; public this(params toks: array[Token]) { tokens = toks.ToList(); } }
+    | Exactly { token: Token }
+    | Either { left: Token; right: Token }
+    | Repeat { pattern: TokenPattern }
+  }
+  
+  /*
+  class TokenSequence {
+    private pattern: List[TokenPattern];
+    
+    public this(params tokPatterns: array[TokenPattern]) { 
+      pattern = tokPatterns.ToList(); 
+    }
+    
+    public Match(tokenStream: IEnumerable[Token]) : List[Token] {
+      throw NotImplementedException();        
+
+      def zipped = EnumerateTogether(tokenStream);
+      def output = List();
+      
+      zipped.Aggregate(output, (result, item) => {
+        match(item) {
+          | (pat, Some(tok)) => match(pat) {
+            | _ is TokenPattern.Anything => result.Add(tok); result
+            | p is TokenPattern.AnyOf    => if (p.tokens.Any(t => Token.AreSame(t, tok))) { result.Add(tok); result } else List()
+            | p is TokenPattern.Exactly  => if (Token.AreSame(p.token, tok)) { result.Add(tok); result } else List()
+            | p is TokenPattern.Either   => if (Token.AreSame(p.left, tok) || Token.AreSame(p.right, tok)) { result.Add(tok); result } else List()
+          }
+          | (_, None) => List()
+        }
+      });
+    }
+    
+    private EnumerateTogether(tokens: IEnumerable[Token]) : IEnumerable[TokenPattern * option[Token]] {
+      def iterator = tokens.GetEnumerator();
+      foreach(tokPattern in pattern) {
+        if (iterator.MoveNext()) {
+          yield (tokPattern, Some(iterator.Current));
+        } else {
+          yield (tokPattern, null);
+        }
+      }
+    }
+    
+  }
+  */
+}

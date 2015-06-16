@@ -1,0 +1,102 @@
+﻿using Nemerle;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.PreParser
+{
+  /// <summary>
+  /// Description of Expression.
+  /// </summary>
+  public variant TokenGroup : IEnumerable[TokenGroup]
+  {
+    // Group of associated groups
+    | Root      { 
+        mutable Child: TokenGroup; 
+        Terminator: Token; 
+        public this(term: Token) { Terminator = term } 
+    }
+    // Namespace
+    | Namespace { KeywordToken: Token.Keyword; Body: TokenSet }
+    // Using
+    | Using     { KeywordToken: Token.Keyword; Alias: option[Token.Identifier]; Body: TokenSet }
+    // Parenthesis
+    | Round     { Child: TokenGroup; OpenBrace: Token.StartRound; CloseBrace: Token.EndRound }
+    // Square braces
+    | Square    { Child: TokenGroup; OpenBrace: Token.StartSquare; CloseBrace: Token.EndSquare }
+    // Curly Braces
+    | Brace     { Child: TokenGroup; OpenBrace: Token.StartBrace; CloseBrace: Token.EndBrace }
+    // Set of associated tokens
+    | TokenSet  { Body: List[Token]; }
+    // Empty group
+    | Empty
+    
+    // For all Expressions
+    public Location : Location { get; set; }
+    public Next : TokenGroup { get; set; }
+    
+    public this() { }
+    
+    public this(loc: Location) { this.Location = loc; }
+    
+    public GetEnumerator() : IEnumerator[TokenGroup] {
+      match(this) {
+        | Round (child, _, _) | Square (child, _, _) | Brace (child, _, _)
+        | Root (child, _) => 
+          def loop(current) {
+              when(current != null) {
+                yield current;
+                loop(current.Next)
+              }
+          }          
+          loop(child)
+        | Namespace | Using | TokenSet | Empty => 
+          def loop(current) {
+            when(current != null) {
+              yield current;
+              loop(current.Next)
+            }
+          }
+          loop(this)
+      }
+    }
+    
+    public override ToString() : string {     
+        
+      match(this) {
+        | Namespace (_, body)              => "namespace " + PrintTokenList(body)
+        | Using     (_, None, body)        => "using " + PrintTokenList(body)
+        | Using     (_, Some(alias), body) => $"using $alias = " + PrintTokenList(body)
+        | TokenSet  (body)                 => PrintTokenList(body)
+        | Round     (child, _, _)          => "( " + PrintChildren(child) +  " )"
+        | Square    (child, _, _)          => "[ " + PrintChildren(child) +  " ]"
+        | Brace     (child, _, _)          => "{ " + PrintChildren(child) +  " }"
+        | Root      (child, _)             => String.Join("\n", PrintChildren(child))        
+        | Empty                            => ""
+      }
+    }
+    
+    private static PrintTokenList(tokenSet: TokenSet) : String {
+        PrintTokenList(tokenSet.Body)
+    }
+    
+    private static PrintTokenList(tokens: IEnumerable[Token]) : String {
+      def sb = StringBuilder();
+      foreach(tok in tokens) { _ = sb.Append(tok.ToString() + " ") }
+      sb.ToString().TrimEnd(' ')
+    }
+    
+    private static PrintChildren(child: TokenGroup) : IEnumerable[String] {
+      foreach(tg in child) {
+        yield tg.ToString()
+      }
+    }
+    
+  }
+}

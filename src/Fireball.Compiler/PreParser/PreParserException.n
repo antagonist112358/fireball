@@ -1,0 +1,32 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.PreParser
+{
+  /// <summary>
+  /// Description of PreParserException.
+  /// </summary>
+  internal class PreParserException : CompilerException
+  {
+      private location: Location;
+      
+      public this(loc: Location, message: String) { base(message); location = loc }
+      
+      public this(offending: Token, message: String) { base(message); location = offending.Location; }
+      
+      public override Message : String {
+        get {
+          base.Message + " at " + location.ToString();
+        }
+      }
+      
+  }
+}

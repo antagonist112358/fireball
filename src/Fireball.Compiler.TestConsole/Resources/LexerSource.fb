@@ -1,0 +1,129 @@
+﻿using System
+using System.Console
+
+using SCG = 
+System.Collections.Generic
+
+using Test = System
+	.Diagnostics
+
+namespace Fireball.Compiler.LexerTest
+
+class LexicalDefinitions()
+{
+	// This is a line comment
+	/*
+	This is a block comment
+	*/
+
+	// Numeric literals
+	val b = 5B
+	
+	val s = 1235
+	val ns = -8851S
+	val us = 5134US
+	
+	var i = 1234
+	val ni = -4321
+	val ui = 19815431UL
+	
+	val l = 8541678213L
+	val nl = -5512389L
+	val ul = 123456789000UL
+
+	val f = 2.2491F
+	val fe = 3.14E0F
+	val nf = -3.14159F
+	val nfe = -18.9991E-3F
+
+	val d = 18421.13
+	val de = 1.887E11
+	val ne = -18421.13
+	val nde = -7.11832E-7
+
+	val m = 55.124821M
+	val me = 7789.18E09M
+
+	// Newline test
+
+	val testNl =
+
+	3.14159
+
+
+
+	// String literals
+	var s = "Some Simple String"
+	var litS = """Some Literal $$$ String"""
+
+	// Character literals
+	val ch = 'C'
+	val escCh = '\t'
+
+	// Identifier literal
+	val @yield = "Yielding"
+
+	// Method definition
+	def GenericMethod[T :> any](input: T) = {}
+
+	// Property definition (bound to class variable/value)
+	def UnsignedProperty : uint = ui
+
+	// Property definition (with getter/setter)
+	def Property : int = {
+	  get => if (i > 0) i else 0
+	  private set => i = if (_ > 0) i = _ 
+						 else		i = 0
+	}
+
+	// Easy array creation
+	val arrayOfIntegers = [ 1, 2, 3, 4, 5 ]
+
+	// Easy list creation
+	val listOfStrings = { "Hello", "great", "big", "world!" }
+
+	// Easy dictionary / hashmap creation
+	val dictOfWords = {
+		1 <- "Any",
+		2 <- "Every",
+		3 <- "Some"
+	}
+
+	// Method call with no arguments
+	val upYield = @yield.ToUpper
+
+	// Alternate Syntax
+	val upYield2 = @yield ToUpper
+
+	// Alternate Syntax
+	WriteLine("Hello Fireball!")
+
+	// Alternate method call
+	WriteLine "Hello Fireball!"
+
+	// Method call with multiple arguments
+	val greeting = String.Join (" ", listOfStrings.ToArray)
+
+	// Alternate Syntax
+	val greeting2 = String Join " ", listOfStrings.ToArray
+
+	// Alternate Syntax 2
+	val greeting5 = String Join (" ") (listOfStrings.ToArray)
+
+	// Lambda's galore!
+	val compare = (a: int, b: int) => a > b
+
+	val divideBy2 = (i: int) => i/2
+
+	def lookupImpl(s: String): bool = dictOfWords Values Contains(s)
+	var lookup : String -> bool = lookupImpl
+
+	// Fluent Linq
+	val searchText = dictOfWords
+		.Where { p => p.Key < 10 }
+		.Select { p => p.Value }
+		.Fold { r,l => r + " " + l }
+
+
+									
+}

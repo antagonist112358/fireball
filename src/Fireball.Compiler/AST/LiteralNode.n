@@ -1,0 +1,158 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Globalization;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.AST
+{
+  public enum NumericSigning : byte
+  {
+    | Signed = 0
+    | Unsigned = 1
+  }
+  
+  /// <summary>
+  /// Description of LiteralNode.
+  /// </summary>
+  public variant LiteralNode : AstNode, System.IEquatable[LiteralNode]
+  {
+    // The "void" literal
+    | Void
+    
+    #region Character Literals
+    
+    | String {
+        value: string;
+        public this(literal: Token.StringLiteral) { value = literal.value; Location = literal.Location }
+      }
+    | Char {
+        value: char;
+        public this(literal: Token.CharLiteral) { value = literal.value; Location = literal.Location }
+      }
+      
+    #endregion
+      
+    // Boolean literal
+    | Bool {
+        value: bool;
+        public this(literal: Token.BooleanLiteral) { value = literal.value; Location = literal.Location }
+      }     
+    
+    #region Numeric Literals
+      
+    | Byte {
+        value: byte;
+        public this(literal: Token.ByteLiteral) { value = literal.value; Location = literal.Location }
+      }
+    | Short {
+        value: short;
+        public Signing : NumericSigning { get; private set; }
+        public this(literal: Token.ShortLiteral) { value = literal.value; Location = literal.Location }
+        public this(literal: Token.UShortLiteral) { value = literal.value :> short; Location = literal.Location; Signing = NumericSigning.Unsigned; }
+      }
+    | Integer {
+        value: int;
+        public Signing : NumericSigning { get; private set; }
+        public this(literal: Token.IntegerLiteral) { value = literal.value; Location = literal.Location }
+        public this(literal: Token.UIntegerLiteral) { value = literal.value :> int; Location = literal.Location; Signing = NumericSigning.Unsigned; }
+      }
+    | Long {
+        value: long;
+        public Signing : NumericSigning { get; private set; }
+        public this(literal: Token.LongLiteral) { value = literal.value; Location = literal.Location }
+        public this(literal: Token.ULongLiteral) { value = literal.value :> long; Location = literal.Location; Signing = NumericSigning.Unsigned; }
+      }
+    | Float {
+        value: float;
+        public this(literal: Token.FloatLiteral) { value = literal.value; Location = literal.Location }
+      }
+    | Double {
+        value: double;
+        public this(literal: Token.DoubleLiteral) { value = literal.value; Location = literal.Location }
+      }      
+    | Decimal {
+        value: decimal;
+        public this(literal: Token.DecimalLiteral) { value = literal.value; Location = literal.Location }
+      }      
+
+    #endregion
+
+    [OverrideObjectEquals]
+    public Equals(lit: LiteralNode) : bool implements System.IEquatable[LiteralNode].Equals
+    {
+      match((this, lit)) {
+        | (Void, Void) => true
+        | (String (x1), String (x2)) => x1 == x2
+        | (Char (x1), Char (x2)) => x1 == x2
+        | (Bool (x1), Bool (x2)) => x1 == x2
+        | (Byte (x1), Byte (x2)) => x1 == x2
+        | (Short(value = x1, Signing = s1), Short(value = x2, Signing = s2)) => x1 == x2 && s1 == s2
+        | (Integer(value = x1, Signing = s1), Integer(value = x2, Signing = s2)) => x1 == x2 && s1 == s2
+        | (Long(value = x1, Signing = s1), Long(value = x2, Signing = s2)) => x1 == x2 && s1 == s2
+        | (Float (x1), Float (x2)) => x1 == x2
+        | (Double (x1), Double (x2)) => x1 == x2
+        | (Decimal (x1), Decimal (x2)) => x1 == x2        
+        | _ => false
+      }
+    }
+    
+    public override ToString() : string
+    {
+      match(this) {
+        | LiteralNode.Void           => "()"
+        | LiteralNode.String   (val) => "\"" + EscapeString(val) + "\""
+        | LiteralNode.Float    (val) => val.ToString(NumberFormatInfo.InvariantInfo) + "F"
+        | LiteralNode.Double   (val) => val.ToString(NumberFormatInfo.InvariantInfo) + "D"
+        | LiteralNode.Decimal  (val) => val.ToString(NumberFormatInfo.InvariantInfo) + "M"
+        | LiteralNode.Char     (val) => "'" + EscapeChar(val) + "'"
+        | LiteralNode.Bool     (val) => if (val) "true" else "false"
+        | LiteralNode.Byte     (val) => $"$(val)B"
+        | LiteralNode.Short    (val) => if ({this :> Short}.Signing == NumericSigning.Unsigned) $"$(val)S" else $"$(val)US"
+        | LiteralNode.Integer  (val) => if ({this :> Integer}.Signing == NumericSigning.Unsigned) $"$(val)" else $"$(val)U"
+        | LiteralNode.Long     (val) => if ({this :> Long}.Signing == NumericSigning.Unsigned) $"$(val)L" else $"$(val)UL"
+      }
+    }
+    
+    #region Private Helpers / Methods
+    
+    static EscapeChar(ch : char) : string
+    {
+      | '\"'      => <#\"#> // "
+      | '\\'      => @"\\" // \ 
+      | '\n'      => @"\n" // new line
+      | '\t'      => @"\t" // horizontal tab
+      | '\r'      => @"\r" // carriage return
+      | '\e'      => @"\e" 
+      | '\a'      => @"\a" // alert
+      | '\b'      => @"\b" // backspace
+      | '\f'      => @"\f" // form feed
+      | '\v'      => @"\v" // vertical tab
+      | '\0'      => @"\0" // null
+      | '\u2028'  => @"\u2028" // Line separator character
+      | '\u2029'  => @"\u2029" // Paragraph separator character
+      | '\u0085'  => @"\u0085" // Paragraph separator character
+      | '\uFFFF'  => @"\uFFFF"
+      | _         => ch.ToString()
+    }
+
+    static EscapeString(str : string) : string
+    {
+      def sb = System.Text.StringBuilder();
+
+      foreach (ch in str)
+        _ = sb.Append(EscapeChar(ch));
+
+      sb.ToString()
+    }
+    
+    #endregion
+    
+  }
+}

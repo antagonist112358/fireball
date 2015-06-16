@@ -1,0 +1,47 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.Lexer
+{
+
+  [Record]
+  public struct TextPoint : System.IComparable[TextPoint]
+  {
+    public Line   : int;
+    public Column : int;
+
+    public static @== (x : TextPoint, y : TextPoint) : bool { x.Line == y.Line && x.Column == y.Column }
+    public static @!= (x : TextPoint, y : TextPoint) : bool { !(x == y) }
+    public static @<  (x : TextPoint, y : TextPoint) : bool { x.Line < y.Line || (x.Line == y.Line && x.Column < y.Column) }
+    public static @>  (x : TextPoint, y : TextPoint) : bool { y < x }
+    public static @<= (x : TextPoint, y : TextPoint) : bool { !(y < x) }
+    public static @>= (x : TextPoint, y : TextPoint) : bool { !(x < y) }
+
+    public Offset(other : TextPoint) : TextPoint
+    {
+      Offset(other.Line - 1, other.Column - 1)
+    }
+
+    public Offset(lineOffset : int, columnOffset : int) : TextPoint
+    {
+      TextPoint(Line + lineOffset, if (lineOffset > 0) columnOffset + 1 
+                                   else                Column + columnOffset)
+    }
+
+    public CompareTo(other : TextPoint) : int
+    {
+      if (this == other)      0
+      else if (this > other)  1
+      else                   -1
+    }
+
+    public override ToString() : string
+    {
+      $"$Line:$Column"
+    }
+  }
+}

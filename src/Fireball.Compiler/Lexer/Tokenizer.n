@@ -1,0 +1,591 @@
+﻿using Nemerle;
+using NC = Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.IO;
+using SysIO = System.IO;
+using NumStyles = System.Globalization.NumberStyles;
+
+namespace Fireball.Compiler.Lexer
+{
+  /// <summary>
+  /// Description of Tokenizer.
+  /// </summary>
+  public class Tokenizer
+  {     
+      // Used for tracking location, column, etc.      
+      private class Tracker
+      {
+        _file: String;
+        mutable line : int = 1;
+        mutable col : int = 1;
+        mutable eol : bool = false;
+        
+        public this(file: string) {
+          _file = file;
+        }
+        
+        public Current : TextPoint {
+          get { TextPoint(line, col) }
+        }
+        
+        public Advance() : void { line++; eol = false; }
+        public NextLine() : void { line = 0; col++; eol = true }
+        
+        public IsEndOfLine : bool { get { eol } }
+        
+        public MakeLocation(start: TextPoint) : Location { Location(_file, start.Line, start.Column, line, col) }
+      }
+   
+      _buffer : TokenBuffer;
+      _file : String;
+      _tokens : List[Token];
+      _trk : Tracker;
+      _builder = StringBuilder();
+      
+      mutable _elapsed : TimeSpan;
+      
+      public this(file: SysIO.FileInfo) {
+          _buffer = TokenBuffer(file.FullName);
+          _file = file.FullName;
+          _tokens = List();
+          _trk = Tracker(_file);
+      }      
+      
+      public this(source: String) {
+        _buffer = TokenBuffer(source.ToStream());
+        _file = "Generated_" + Guid.NewGuid().ToString() + ".fb";
+        _tokens = List();
+        _trk = Tracker(_file);
+      }
+      
+      // Tokenizes the input file or source string into a list of tokens
+      public Tokenize() : List[Token] {
+        
+        mutable maybeCh : option[char];
+        mutable start: TextPoint;
+        mutable timer: Timer;
+        mutable skipNewlines: bool = false;
+        
+        // Track the lexing states
+        def lexingStates = Stack();
+        
+        // Push the normal mode into the stack
+        lexingStates.Push(LexerModes.Normal);
+        
+        // Macro for generating the location
+        def loc() : Location { _trk.MakeLocation(start) }
+        
+        // Remove the last token if it was a NewLine
+        def removeLastNewline() : void {
+          when (_tokens.Last() is Token.NewLine) {
+            _tokens.RemoveAt(_tokens.Count() - 1)
+          }          
+        }        
+        
+        // macro for adding a token
+        def Add(t: Token) : void { _tokens.Add(t); skipNewlines = false; }
+        def AddOp(t: Token) { removeLastNewline(); _tokens.Add(t); skipNewlines = true; }
+        def AddNl() { _tokens.Add(Token.NewLine(loc())); skipNewlines = true; }
+                
+        // Start the timer
+        timer = Timer("Tokenization");
+        
+        // Start parsing the source
+        while( { maybeCh = TryRead(); start = _trk.Current; maybeCh.HasValue } ) {
+          match(maybeCh.Value) {
+            // Whitespace (normal)
+            | ' ' => ()
+            // Skip carriage return and tabs
+            | '\r' | '\t' => ()
+            // Semicolon, dot, or comma
+            | ';' => Add(Token.Semicolon(loc()))
+            | '.' => AddOp(Token.Dot(loc()))
+            | ',' => AddOp(Token.Comma(loc()))
+            // Braces
+            | '(' => Add(Token.StartRound(loc())); lexingStates.Push(LexerModes.InParenthesis)
+            | ')' => Add(Token.EndRound(loc())); assert(lexingStates.Pop() == LexerModes.InParenthesis)
+            | '[' => Add(Token.StartSquare(loc())); lexingStates.Push(LexerModes.InSquareBrackets)
+            | ']' => Add(Token.EndSquare(loc())); assert(lexingStates.Pop() == LexerModes.InSquareBrackets)
+            | '{' => Add(Token.StartBrace(loc()))
+            | '}' => Add(Token.EndBrace(loc()))
+            // Comments
+            | '/' when PeekAndReadIfEqualTo('/') => Add(ParseLineComment(start))
+            | '/' when PeekAndReadIfEqualTo('*') => Add(ParseBlockComment(start))
+            // Character literal
+            | '\'' => Add(ParseCharacterLiteral(start))
+            // Strings
+            | '"' => Add(ParseString(start))
+            // Identifier literal
+            | '@' => Add(ParseLiteralIdentifier(start))
+            // Boolean literal
+            | 'f' when(MatchNextThenRead("alse")) => Add(Token.BooleanLiteral(loc(), false))
+            | 't' when(MatchNextThenRead("rue"))  => Add(Token.BooleanLiteral(loc(), true))
+            // Interesting Whitespace
+            // TODO: !!!Impliment this!!!
+            
+            // All others
+            | _ as ch => {
+              // Newline
+              if (TokenBuffer.IsEndOfLine(ch)) {                                                  
+                // When we are in normal mode and the last character wasn't a newline
+                when (!skipNewlines && lexingStates.Peek() == LexerModes.Normal) {
+                  AddNl();
+                }
+              }
+              // Numeric
+              else if (StartOfNumeric(ch, Peek())) {
+                Add(ParseNumeric(ch, start));                
+              }
+              // Operator
+              else if (Keywords.OperatorChars.Contains(ch)) {
+                AddOp(ParseOperator(ch, start))
+              }
+              // Identifier or Keyword
+              else {
+                Add(ParseIdentifierOrKeyword(ch, start))
+              }
+            }                       
+          }
+        }
+        
+        // Add end of file
+        Add(Token.EndOfFile(loc()));
+        
+        // Stop the timer
+        timer.Stop();
+        
+        // Set elapsed
+        _elapsed = timer.Elapsed;
+        
+        // Return the tokens list
+        _tokens
+      }
+      
+      public TokenizerElapsed : TimeSpan {
+        get { _elapsed; }
+      }
+      
+      #region Lexer Methods
+      
+      private ReadChar() : char {
+        def ch = _buffer.Read();
+        if (TokenBuffer.IsEndOfLine(ch)) _trk.NextLine();
+        else _trk.Advance();
+        ch
+      }
+
+      private TryRead() : option[char] {
+        if (_buffer.EndOfFile) None()
+        else {
+          def ch = _buffer.Read();
+          if (TokenBuffer.IsEndOfLine(ch)) _trk.NextLine();
+          else _trk.Advance();
+          Some(ch)
+        }
+      }
+      
+      private Peek() : option[char] { _buffer.Peek() }
+      
+      private PeekNextInteresting() : option[char] {
+          mutable output = None();
+          mutable cnt = 0;
+          
+          def isInteresting(ch) {
+            if (ch.HasValue) {
+              match(ch.Value) {              
+                | '\r' | '\t' | ' ' => false
+                | ch when TokenBuffer.IsEndOfLine(ch) => false
+                | _ => true
+              }
+            } else false
+          }
+
+          while(!_buffer.EndOfFile && output.IsNone) {
+            def nextChar = _buffer.PeekAhead(cnt);
+            when (isInteresting(nextChar)) output = nextChar;
+            cnt += 1
+          }
+          
+          output
+      }
+      
+      private PeekAndReadIfEqualTo(ch: char) : bool {
+        match(Peek()) {
+          | Some(c) =>
+            def matched = ch == c;
+            when (matched) { _ = ReadChar(); }
+            matched
+          | None => false
+        }
+      }
+      
+      private MatchNextThenRead(str: String) : bool {
+        def len = str.Length;
+        def peekedChars = _buffer.PeekNext(len);
+        
+        def compareAll = {
+          mutable outBool = true;
+          for (mutable i = 0; i < len && outBool; i++) {
+            when (peekedChars[i] != str[i]) outBool = false;
+          }
+          outBool
+        }
+        
+        // Compare lengths
+        if (len != peekedChars.Count()) { false }
+        else {
+          // If all the chars match
+          if (compareAll) {
+            // Read all the chars
+            for(mutable i = 0; i < len; i++) { _ = ReadChar(); }
+            true
+          } else false
+        }
+        
+      }
+      
+      private Backup(ch: char) : void { 
+        when(ch != ' ') _buffer.Backup()
+      }
+      
+      private BackupUnlessNewline(ch: Char) : void {
+        when (!TokenBuffer.IsEndOfLine(ch) && ch != ' ')
+          _buffer.Backup();
+      }
+      
+      #endregion
+      
+      #region Lexer Modes
+      
+      private enum LexerModes
+      {
+        | Normal
+        | InSquareBrackets
+        | InParenthesis
+      }
+      
+      #endregion
+      
+      #region Parsing Methods
+            
+      // Parse single line comment
+      private ParseLineComment(st: TextPoint) : Token {
+        mutable ch: char = ReadChar();
+        def sb = _builder.Clear();
+        // Continue reading until end of line or end of file        
+        while(!_buffer.EndOfFile && !_trk.IsEndOfLine) {
+            _ = sb.Append(ch);
+            ch = ReadChar();
+        }
+        Token.Comment(_trk.MakeLocation(st), sb.ToString())
+      }
+      
+      // Parse block comment
+      private ParseBlockComment(st: TextPoint) : Token {
+        mutable ch: char = _buffer.Read();
+        def sb = _builder.Clear();
+
+        def isEndOfComment(ch1: char, ch2: option[char]) : bool {
+          match ((ch1, ch2)) {
+            | ('*', Some('/')) => 
+              // Read the final '/'
+              _ = ReadChar();
+              true
+            | _ => false
+          }
+        }
+        
+        // Read until end of comment of end of file
+        while(!_buffer.EndOfFile && !isEndOfComment(ch, _buffer.Peek())) {
+          _ = sb.Append(ch);
+          ch = _buffer.Read();
+        }
+          
+        Token.BlockComment(_trk.MakeLocation(st), sb.ToString())
+      }
+      
+      // Parse an identifier or keyword
+      private ParseIdentifierOrKeyword(initialCh: char, st: TextPoint, extraKeywords: List[String] = null) : Token {
+        mutable ch: char = initialCh;
+        def sb = _builder.Clear();
+        // Continue reading until end of identifier/keyword or end of file        
+        do {
+            _ = sb.Append(ch);
+            ch = ReadChar();
+        } while(!_buffer.EndOfFile && !_trk.IsEndOfLine && !EndOfIdentifier(ch));
+        
+        // Backup to last char (unless space)
+        Backup(ch);
+        
+        // To string
+        def str = sb.ToString();
+        // Check keywords
+        if (Keywords.BaseKeywords.Contains(str) || (
+          extraKeywords != null && extraKeywords.Contains(str)
+        ))
+          Token.Keyword(_trk.MakeLocation(st), str)
+        else          
+          Token.Identifier(_trk.MakeLocation(st), str)
+      }
+      
+      // Parse a literal identifier
+      private ParseLiteralIdentifier(st: TextPoint) : Token {
+        mutable ch: char = ReadChar();
+        def sb = _builder.Clear();
+        
+        // Check if the first character is an operator character
+        def isOperatorLiteral = Keywords.OperatorChars.Contains(ch);
+        
+        // Continue reading until end of identifier/keyword or end of file        
+        while(!_buffer.EndOfFile && !_trk.IsEndOfLine && !EndOfIdentifier(ch, isOperatorLiteral)) {
+            _ = sb.Append(ch);
+            ch = ReadChar();
+        }
+        
+        // Backup to last char (unless space)
+        Backup(ch);
+        
+        Token.IdentifierLiteral(_trk.MakeLocation(st), sb.ToString())
+      }
+      
+      // Parse operator
+      private ParseOperator(initialCh: char, st: TextPoint) : Token {
+        mutable ch: char = initialCh;
+        def sb = _builder.Clear();
+        
+        // Continue reading until end of identifier/keyword or end of file        
+        do {
+            _ = sb.Append(ch);
+            // If we encounter an end-of-file here, it is an error
+            when(_buffer.EndOfFile)
+              throw Exception("End-of-File encountered while trying to parse operator.");              
+            
+            ch = ReadChar();
+        } while(!_trk.IsEndOfLine && !EndOfOperator(ch));
+        
+        // Check should backup one char
+        BackupUnlessNewline(ch);
+        
+        def opStr = sb.ToString();
+        
+        // Check is reserved
+        def isReserved = Keywords.ReservedOperators.Contains(opStr);
+        
+        Token.Operator(_trk.MakeLocation(st), opStr, isReserved)
+      }
+      
+      // Parse string
+      private ParseString(st: TextPoint) : Token {        
+        def sb = _builder.Clear();        
+        def nominalStr = "\"";
+        def multilineStr = "\"\"\"";
+        mutable ch: char = ReadChar();
+
+        def ensureNotEnd() {             
+          // If we encounter an end-of-file here, it is an error
+          when(_buffer.EndOfFile)
+            throw Exception("End-of-File encountered while trying to parse string.");              
+        }
+        
+        def parseNominal() {
+          if (ch == '"') Token.StringLiteral(_trk.MakeLocation(st), "", "\"\"")
+          else {          
+            while(ch != '"') {
+              _ = sb.Append(ch);
+              ch = ReadChar();
+              ensureNotEnd();
+            }
+            
+            def str = sb.ToString();
+            Token.StringLiteral(_trk.MakeLocation(st), str, nominalStr + str + nominalStr)
+          }
+        }
+        
+        // Detect the end of a multiline string
+        def endOfMultilineString(c: char): bool {
+          // if the first char is a double quote
+          if (c != '"') false
+          else {          
+            // Check the next two characters
+            if (Peek().HasValueEqualTo('"') && _buffer.PeekAhead(1).HasValueEqualTo('"')) {
+              // Read the upcomming double-quote off the buffer
+              _ = ReadChar(); _ = ReadChar();
+              true
+            } else false
+          }
+        }
+
+        def parseMultiline() {
+          do {
+            ensureNotEnd();
+            _ = sb.Append(ch);            
+            ch = ReadChar();
+          } while(!endOfMultilineString(ch));
+                     
+          def str = sb.ToString();
+          Token.StringLiteral(_trk.MakeLocation(st), str, multilineStr + str + multilineStr)
+        }
+
+        // Check for literal string vs. nominal string
+        if ((ch == '"') && Peek().HasValueEqualTo('"')) { 
+          // Read those upcomming double-quotes off the buffer
+          _ = ReadChar(); ch = ReadChar();
+          parseMultiline()
+        } else parseNominal()        
+      }
+      
+      // Parse character literal
+      private ParseCharacterLiteral(st: TextPoint) : Token {
+        // Read the next character
+        def firstChar = ReadChar();
+        mutable ch: char = '\0';
+        
+        // If it is a backslash, the next character is a literal
+        if (firstChar == '\\') {
+          // Match the next char
+          match(ReadChar()) {
+            | 'a' => ch = '\a'
+            | 'b' => ch = '\b'
+            | 'f' => ch = '\f'
+            | 'n' => ch = '\n'
+            | 'r' => ch = '\r'
+            | 't' => ch = '\t'
+            | 'v' => ch = '\v'
+            | '\'' => ch = '\''
+            | '\\' => ch = '\\'
+            | _ => throw Exception("Invalid escaped character.")
+          }
+        } else { ch = firstChar }
+        
+        // Ensure next character is a single quote
+        if (Peek().HasValueEqualTo('\'')) _ = ReadChar();
+        else throw Exception("Unterminated character literal.");
+        
+        Token.CharLiteral(_trk.MakeLocation(st), ch)
+      }
+      
+      // Flags for parsing Decimal
+      static DecimalFlags = NumStyles.AllowDecimalPoint | NumStyles.AllowExponent | NumStyles.AllowLeadingSign;
+      
+      // Parse Numerics
+      private ParseNumeric(initialCh: char, st: TextPoint) : Token {
+        mutable ch: char = initialCh;
+        def sb = _builder.Clear();
+        
+        // Read the numeric literal
+        do {
+            _ = sb.Append(ch);
+            // If we encounter an end-of-file here, it is an error
+            when(_buffer.EndOfFile)
+              throw Exception("End-of-File encountered while trying to numeric expression.");              
+            
+            ch = ReadChar();
+        } while(!_trk.IsEndOfLine && !EndOfNumeric(ch));
+
+        // Check should backup one char
+        Backup(ch);
+                
+        def numStr = sb.ToString();
+        def loc = _trk.MakeLocation(st);
+        mutable tok: Token = null;
+        
+        def handleInteger(suffix: String, numeric: String) : Token {
+            // Depending on the suffix
+            match(suffix.ToUpperInvariant()) {
+            | "B"    => Token.ByteLiteral(loc, Byte.Parse(numeric))
+            | "S"    => Token.ShortLiteral(loc, short.Parse(numeric))
+            | "US"   => Token.UShortLiteral(loc, ushort.Parse(numeric))
+            | "U"    => Token.UIntegerLiteral(loc, UInt32.Parse(numeric))
+            | "L"    => Token.LongLiteral(loc, long.Parse(numeric))
+            | "UL"   => Token.ULongLiteral(loc, ulong.Parse(numeric))
+            | _      => Token.IntegerLiteral(loc, Int32.Parse(numeric))
+          }            
+        }
+        
+        def handleFloat(suffix: option[String], numeric: String, exponent: option[String]) : Token {
+          def numericExpr = numeric + { match(exponent) { | Some(e) => e | None => "" } };
+          match(suffix.WithDefault("D").ToUpperInvariant()) {
+            | "D" => Token.DoubleLiteral(loc, double.Parse(numericExpr))
+            | "F" => Token.FloatLiteral(loc, float.Parse(numericExpr))
+            | _   => throw Exception($"Invalid floating-point expression: $numStr")
+          }
+        }
+        
+        // Match the numeric by regex
+        regexp match (numStr) {
+          // Integer
+          | @"(?<numeric>[-]?[0-9]+)(?<suffix>\w{1,2}?)" => tok = handleInteger(suffix, numeric)
+          // Floating Point
+          | @"(?<numeric>[-+]?[0-9]*\.[0-9]+|[0-9]+)(?<exp>[eE][-+]?[0-9]+)?(?<suffix>[Ff]|[Dd])?" =>
+            tok = handleFloat(suffix, numeric, exp)
+          // Decimal
+          | @"(?<mStr>[-+]?[0-9]*\.[0-9]+|[0-9]+)(?<eStr>[eE][-+]?[0-9]+)?[Mm]" =>
+            def expPart = match(eStr) { Some(e) => e | None => "" };
+            def m = mStr + expPart;
+            if (expPart == "") 
+              tok = Token.DecimalLiteral(loc, decimal.Parse(m));
+            else 
+              tok = Token.DecimalLiteral(loc, decimal.Parse(m, DecimalFlags));
+          // Fault
+          | _ => throw Exception("Invalid numeric expression.")
+        }
+        
+        tok
+      }
+      
+      #endregion
+      
+      #region Helper Methods     
+      
+      // Tests for the start of a numeric literal
+      private static StartOfNumeric(ch: char, nextChar: option[char]) : bool {
+        if (Char.IsDigit(ch)) true;
+        else if (ch == '-' && nextChar.HasValue && Char.IsDigit(nextChar.Value)) true;
+        else false
+      }
+      
+      // Tests for the end of a numeric expression
+      private static EndOfNumeric(ch: char) : bool {
+        if (Char.IsDigit(ch)) false
+        else match(Char.ToUpper(ch)) {
+          // Minus sign
+          | '-' => false
+          // Decimals
+          | '.' => false
+          // Named numeric types      
+          | 'B' | 'S' | 'U' | 'L' /* | 'H' */ | 'D' | 'F' | 'M' | 'E' => false
+          // otherwise
+          | _ => true
+        }
+      }
+      
+      // Tests for the end of an identifier
+      private static EndOfIdentifier(ch: char, operatorIdentifier: bool = false) : bool {
+        if (Char.IsLetterOrDigit(ch)) false
+        else {
+          // Check for underscore or operator characters
+          if (ch == '_') false
+          // Check for operator identifiers
+          else if (operatorIdentifier && Keywords.OperatorChars.Contains(ch)) false
+          // Otherwise
+          else true
+        }
+      }
+      
+      // Test for the end of an operator
+      private static EndOfOperator(ch: char) : bool {
+          if (Keywords.OperatorChars.Contains(ch)) false
+          else true
+      }
+            
+      #endregion
+      
+  }
+}

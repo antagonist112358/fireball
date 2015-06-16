@@ -1,0 +1,317 @@
+﻿using Nemerle;
+using NC = Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+using Fireball.Compiler.IO;
+
+namespace Fireball.Compiler.PreParser
+{
+  /// <summary>
+  /// Description of PreParser.
+  /// </summary>
+  public class GroupBuilder
+  {
+	private _rawList : TokenStream;
+	private _root : TokenGroup.Root;
+	
+	public Elapsed : TimeSpan { get; private set; }
+	
+	public this(tokens: List[Token]) {
+	  // Grab the last token
+	  def lastTok = tokens.Last();
+	  assert (lastTok is Token.EndOfFile);
+	  
+	  // Grab all the other tokens besides the last
+	  _rawList = TokenStream(List(tokens.Take(tokens.Count() - 1)));
+
+	  // Set the root
+	  _root = TokenGroup.Root(lastTok)
+	}
+	
+	public Organize() : TokenGroup.Root {
+	  def stream = _rawList;
+	  
+	  def loop(acc: list[TokenGroup]) {
+		match(stream.Peek) {
+		  | None =>
+			if(acc.IsEmpty) _root
+			else { _root.Child = LinkChildren(acc); _root }
+		  | Some(_) => match(stream.Pop()) {
+			// Newlines, Semicolons: skip
+			| NewLine | Semicolon => loop(acc)
+			// Using declarations
+			| Keyword(i) as id when(i == "using") => 
+			  def usingDec = ExtractUsing(id, stream);
+			  loop(usingDec :: acc)
+			// Namespace declaration
+			| Keyword(i) as id when(i == "namespace") =>
+			  def namespaceDec = ExtractNamespace(id, stream);
+			  loop(namespaceDec :: acc)
+			// Comments: skip
+			| Comment | BlockComment => loop(acc)
+			// Dot or Comma: Error
+			| Dot as d | Comma as d =>
+			  def tok = d;
+			  throw PreParserException(tok, $"Unexpected token $d at root level.")
+			// Any start brace type: Recurse
+			| StartRound as start => loop(ExtractRound(start, stream) :: acc)
+			| StartSquare as start => loop(ExtractSquare(start, stream) :: acc)            
+			| StartBrace as start => loop(ExtractBrace(start, stream) :: acc)
+			// Any end brace type: Error
+			| EndRound as end
+			| EndSquare as end
+			| EndBrace as end => 
+			  throw PreParserException(end, $"Un-matched brace $end at root level.")
+			// Anything else
+			| tok => loop(ExtractSet(tok, stream) :: acc)			
+		  }
+		}
+	  }
+			
+	  def timer = Timer("Organization");
+	  
+	  def result = loop([]);
+	  
+	  timer.Stop();
+	  Elapsed = timer.Elapsed;
+	  
+	  result
+	}    
+	
+	#region Extractors
+	
+	private static ExtractUsing(start: Token.Keyword, stream: TokenStream) : TokenGroup.Using {
+		
+		// For alias using
+		def parseAlias(alias: Token.Identifier, last: option[Token], acc: list[Token]) : TokenGroup.Using {
+		  match(stream.Pop()) {
+			| tok is Token.Identifier => 
+			  if (last.IsNone || last is Some(Token.Dot)) parseAlias(alias, Some(tok), tok :: acc) 
+			  else throw PreParserException(tok, $"Expected '.' after $tok")
+			| tok is Token.Dot => 
+			  if (last is Some(Token.Identifier)) parseAlias(alias, Some(tok), tok :: acc) 
+			  else throw PreParserException(tok, $"Expected namespace identifier after $tok")
+			| nl is Token.NewLine =>               
+			  if (!(last is Some(Identifier))) throw PreParserException(nl, "Cannot terminate 'using' declaraction on '{dot}'.")
+			  else if (acc.IsEmpty) throw PreParserException(nl, "Empty 'using' declaration.")
+			  else TokenGroup.Using(start.Location, start, Some(alias), TokenGroup.TokenSet(acc.ToList()))       
+			| tok => throw PreParserException(tok, $"Unexpected token \"$tok\" in 'using' declaration.")
+		  }
+		}
+		
+		// For nominal using
+		def parseNominal(last: option[Token], acc: list[Token]) : TokenGroup.Using {
+		  match(stream.Pop()) {
+			| tok is Token.Identifier => 
+			  if (last.IsNone || last is Some(Token.Dot)) parseNominal(Some(tok), tok :: acc) 
+			  else throw PreParserException(tok, $"Expected '.' after $(last.ValueOrElse(tok))")
+			| tok is Token.Dot => 
+			  if (last is Some(Token.Identifier)) parseNominal(Some(tok), tok :: acc) 
+			  else throw PreParserException(tok, $"Expected namespace identifier after $(last.ValueOrElse(tok))")
+			| nl is Token.NewLine => 
+			  if (!(last is Some(Identifier))) throw PreParserException(nl, "Cannot terminate 'using' declaraction on '{dot}'")
+			  else if (acc.IsEmpty) throw PreParserException(nl, "Empty 'using' declaration.")
+			  else TokenGroup.Using(start.Location, start, None(), TokenGroup.TokenSet(acc.ToList()))
+			| Token.Operator(op, _) as o when (op == "=") && (last is Some(Identifier)) => 
+			  if (acc.IsEmpty) throw PreParserException(o, "Expected alias identifier before equals operator in 'using' declaration.")
+			  else if (acc.Length > 1) throw PreParserException(o, "Expected a single identifer alias before equals operator in 'using' declaration.")
+			  else if (!stream.EndOfStream) parseAlias(acc.Head :> Token.Identifier, None(), [])
+			  else throw PreParserException(o, "Unexpected end of tokens stream in 'using' declaration.")
+			| tok => throw PreParserException(tok, $"Unexpected token \"$tok\" in 'using' declaration.")
+		  }
+		}       
+		
+		parseNominal(None(), [])
+	}
+	
+	private static ExtractNamespace(start: Token.Keyword, stream: TokenStream) : TokenGroup.Namespace {
+	  
+	  def loop(last: option[Token], acc: list[Token]) {
+		match(stream.Pop()) {
+		  | tok is Token.Identifier => 
+			if (last.IsNone || last is Some(Token.Dot)) loop(Some(tok), tok :: acc) 
+			else throw PreParserException(tok, $"Expected '.' after $tok")
+		  | tok is Token.Dot => 
+			if (last is Some(Token.Identifier)) loop(Some(tok), tok :: acc) 
+			else throw PreParserException(tok, $"Expected namespace identifier after $tok")
+		  | nl is Token.NewLine =>                
+			  if (!(last is Some(Identifier))) throw PreParserException(nl, $"Expected 'namespace' declaration to terminate on identifier, not $last.")
+			  else if (acc.IsEmpty) throw PreParserException(nl, "Empty 'namespace' declaration.")
+			  else TokenGroup.Namespace(start, TokenGroup.TokenSet(acc.ToList()))
+		  | tok => throw PreParserException(tok, $"Unexpected token \"$tok\" in 'namespace' declaration")
+		}
+	  }
+	  
+	  loop(None(), [])
+	}
+	
+	private static ExtractRound(start: Token.StartRound, stream: TokenStream) : TokenGroup.Round {
+	  
+	  def finish(end: Token.EndRound, children: list[TokenGroup]) : TokenGroup.Round {
+		if (children.IsEmpty) TokenGroup.Round(TokenGroup.Empty(), start, end)
+		else TokenGroup.Round(LinkChildren(children), start, end)
+	  }
+	  
+	  def loop(children: list[TokenGroup]) {
+		match(stream.Peek) {
+		  | None => throw PreParserException(start, "Unexpected end of token stream (need a closing round-brace.")
+		  | Some(tok) => match(tok) {
+			// Done
+			| EndRound => finish(stream.PopAs(), children)
+			// Not allowed
+			| EndSquare | EndBrace => throw PreParserException(tok, $"Unmatched ending brace '$tok' found in round-braces.")
+			| Identifier(i) when i == "namespace" => throw PreParserException(tok, "Namespace declarations are only allowed at the top (file) level.")
+			// New Groups
+			| StartSquare => loop(ExtractSquare(stream.PopAs(), stream) :: children)
+			| StartRound  => loop(ExtractRound(stream.PopAs(), stream) :: children)
+			| StartBrace  => loop(ExtractBrace(stream.PopAs(), stream) :: children)
+			// Skip
+			| NewLine | Comment | BlockComment =>
+			  _ = stream.Pop();
+			  loop(children)
+			// All others
+			| _ => loop(ExtractSet(stream.Pop(), stream) :: children)			
+		  }
+		}
+	  }
+	  
+	  loop([])      
+	}
+	
+	private static ExtractSquare(start: Token.StartSquare, stream: TokenStream) : TokenGroup.Square {
+	  
+	  def finish(end: Token.EndSquare, children: list[TokenGroup]) : TokenGroup.Square {
+		if (children.IsEmpty) TokenGroup.Square(TokenGroup.Empty(), start, end)
+		else TokenGroup.Square(LinkChildren(children), start, end)
+	  }
+	  
+	  def loop(children: list[TokenGroup]) {
+		match(stream.Peek) {
+		  | None => throw PreParserException(start, "Unexpected end of token stream (need a closing round-brace.")
+		  | Some(tok) => match(tok) {
+			// Done
+			| EndSquare => finish(stream.PopAs(), children)
+			// Not allowed
+			| EndRound | EndBrace => throw PreParserException(tok, $"Unmatched ending brace '$tok' found in round-braces.")
+			| Identifier(i) when i == "namespace" => throw PreParserException(tok, "Namespace declarations are only allowed at the top (file) level.")
+			// New Groups
+			| StartSquare => loop(ExtractSquare(stream.PopAs(), stream) :: children)
+			| StartRound  => loop(ExtractRound(stream.PopAs(), stream) :: children)
+			| StartBrace  => loop(ExtractBrace(stream.PopAs(), stream) :: children)
+			// Skip
+			| NewLine | Comment | BlockComment => 
+  			  _ = stream.Pop();
+              loop(children)			
+			// All others
+			| _ => loop(ExtractSet(stream.Pop(), stream, true) :: children)
+		  }
+		}
+	  }
+	  
+	  loop([])        
+	}
+	
+	private static ExtractBrace(start: Token.StartBrace, stream: TokenStream) : TokenGroup.Brace {
+	  
+	  def finish(end: Token.EndBrace, children: list[TokenGroup]) : TokenGroup.Brace {
+		if (children.IsEmpty) TokenGroup.Brace(TokenGroup.Empty(), start, end)
+		else TokenGroup.Brace(LinkChildren(children), start, end)
+	  }
+	  
+	  def loop(children: list[TokenGroup]) {
+		match(stream.Peek) {
+		  | None => throw PreParserException(start, "Unexpected end of token stream (need a closing round-brace.")
+		  | Some(tok) => match(tok) {
+			// Done
+			| EndBrace => finish(stream.PopAs(), children)
+			// Not allowed
+			| EndSquare | EndRound => throw PreParserException(tok, $"Unmatched ending brace '$tok' found in round-braces.")
+			| Identifier(i) when i == "namespace" => throw PreParserException(tok, "Namespace declarations are only allowed at the top (file) level.")
+			// New Groups
+			| StartSquare => loop(ExtractSquare(stream.PopAs(), stream) :: children)
+			| StartRound  => loop(ExtractRound(stream.PopAs(), stream) :: children)
+			| StartBrace  => loop(ExtractBrace(stream.PopAs(), stream) :: children)
+			// Skip
+			| NewLine | Comment | BlockComment => 
+			  _ = stream.Pop();  
+			  loop(children)
+			// All others
+			| _ => loop(ExtractSet(stream.Pop(), stream) :: children)
+		  }
+		}
+	  }
+	  
+	  loop([])        
+	}    
+	
+	private static ExtractSet(start: Token, stream: TokenStream, skipNewlines: bool = false) : TokenGroup.TokenSet {
+	  /*
+	  End of Set Tokens:
+		- Semicolon
+		- Newline
+		- StartRound, EndRound, StartSquare, EndSquare, StartBrace, EndBrace             
+	  */      
+	  def loop(last: Token, acc: list[Token]) {
+		match(stream.Peek) {
+		  | Some(tok) => match(tok) {
+			| Semicolon | StartRound | StartSquare
+			| EndRound | EndSquare | EndBrace
+			| StartBrace => TokenGroup.TokenSet((last :: acc).Reverse().ToList())
+			// Newlines
+			| NewLine when(!skipNewlines) => match(stream.PeekAhead(1)) {
+			  | Some(futureTok) => match(futureTok) {
+			    // Keywords which can never start a new statement
+			      | Keyword("else") | Keyword("impliments") | Keyword("extends") => 
+			        _ = stream.Pop(); _ = stream.Pop();
+			        loop(futureTok, acc)
+			      | _ => TokenGroup.TokenSet((last :: acc).Reverse().ToList())
+			    }
+			  | None => TokenGroup.TokenSet((last :: acc).Reverse().ToList())
+			}
+            // Skip comments
+			| Comment | BlockComment => loop(stream.Pop(), acc)
+			// Tokens which always start new statements
+			| Keyword("case") => TokenGroup.TokenSet((last :: acc).Reverse().ToList())
+			| _ => loop(stream.Pop(), last :: acc)
+		  }
+		  | None => throw PreParserException(last, "Unexpected end of token stream while parsing TokenSet.")          
+		}
+	  }
+	  
+	  loop(start, [])
+	}
+	
+	#endregion
+	
+	
+	#region Helper Methods
+	
+	private static PopAs[T](this stream: TokenStream) : T where T : Token {
+	  stream.Pop() :> T
+	}
+	
+	private static LinkChildren(l: list[TokenGroup]) : TokenGroup {
+	  def lst = l.Reverse();
+	  def head = lst.Head;
+	  
+	  def link(h: TokenGroup, t: list[TokenGroup]) {
+		match(t) {
+		  | x :: xs => h.Next = x; link(x, xs)
+		  | [] => ()
+		}
+	  }
+	  
+	  link(head, lst.Tail);
+	  
+	  head
+	}
+	
+	#endregion
+  }
+}

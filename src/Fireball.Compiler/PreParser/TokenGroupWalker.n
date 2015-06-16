@@ -1,0 +1,173 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.PreParser
+{
+  /// <summary>
+  /// Description of TokenGroupWalker.
+  /// </summary>
+  public class TokenGroupWalker : IEnumerable[TokenGroup]
+  {
+      rootNode : TokenGroup.Root;
+      
+      public this(root: TokenGroup.Root) {
+        rootNode = root;
+      }
+      
+      public GetEnumerator() : IEnumerator[TokenGroup] {
+        def walk(node: TokenGroup) {
+          // Current node
+          yield node;
+          
+          match(node) {
+            // Check children first
+            | Round (child, _, _) | Square (child, _, _) | Brace (child, _, _)
+            | Root (child, _) when !(child is TokenGroup.Empty) => walk(child);
+            // Check next nodes
+            | _ => when(node.Next != null && !(node.Next is TokenGroup.Empty)) walk(node.Next)          
+          }
+        }
+        
+        walk(rootNode);
+      }
+
+      public override ToString() : String { PrettyPrinter(rootNode).ToString() }
+      
+      public MakeList() : List[String] {
+        def lst = List();
+                
+        def printRecursive(node: TokenGroup) : void {                  
+          match(node)
+          {
+            | Root as r => when (!(r.Child is TokenGroup.Empty)) printRecursive(r.Child)
+            | Empty => ()
+            | Namespace as n =>
+              lst.Add(n.ToString());
+              when(n.Next != null && !(n.Next is TokenGroup.Empty)) printRecursive(n.Next)
+            | Using as u =>              
+              lst.Add(u.ToString());
+              when(u.Next != null && !(u.Next is TokenGroup.Empty)) printRecursive(u.Next)
+            | TokenSet as ts =>
+              lst.Add(ts.ToString());
+              when(ts.Next != null && !(ts.Next is TokenGroup.Empty)) printRecursive(ts.Next)
+            | Round(child, _, _) as r =>
+              lst.Add("( ");
+              when(child != null && !(child is TokenGroup.Empty)) printRecursive(child);
+              lst.Add(" )");
+              when(r.Next != null && !(r.Next is TokenGroup.Empty)) printRecursive(r.Next)
+            | Square(child, _, _) as s =>
+              lst.Add("[ ");
+              when(child != null && !(child is TokenGroup.Empty)) printRecursive(child);
+              lst.Add(" ]");
+              when(s.Next != null && !(s.Next is TokenGroup.Empty)) printRecursive(s.Next)
+            | Brace(child, _, _) as b =>
+              lst.Add("{ ");
+              when(child != null && !(child is TokenGroup.Empty)) printRecursive(child);
+              lst.Add(" }");
+              when(b.Next != null && !(b.Next is TokenGroup.Empty)) printRecursive(b.Next)                  
+          }
+        }        
+        
+        printRecursive(rootNode);
+        
+        lst
+      }
+      
+      private class PrettyPrinter {
+        sb = StringBuilder();
+        rootNode : TokenGroup.Root;
+        
+        public this(root: TokenGroup.Root) { rootNode = root }
+
+        public override ToString() : String { 
+          _ = sb.Clear();
+          print(rootNode.Child);
+          sb.ToString();
+        }
+        
+        appendLine(s: String) : void { _ = sb.AppendLine(s) }
+        append(s: String) : void { _ = sb.Append(s) }
+        nl() : void { _ = sb.AppendLine() }        
+
+        printTopLevel(topNode : TokenGroup) : void {
+          match(topNode) {
+            | Namespace | Using => appendLine(topNode.ToString())
+            | _ => ()
+          }
+        }
+        
+        printRound(round: TokenGroup.Round) : void {                    
+          append("( ");
+          printWithin(round.Child);
+          append(" ) ");
+        }
+        
+        printSquare(square: TokenGroup.Square) : void {          
+          append("[ ");
+          printWithin(square.Child);
+          append(" ] ");        
+        }
+        
+        printBrace(brace: TokenGroup.Brace) : void {
+          appendLine(" {");
+          print(brace.Child);
+          append(" }"); nl();
+        }
+        
+        printWithin(node : TokenGroup) : void {
+          def loop(curr: TokenGroup) {
+            def next = curr.Next ?? TokenGroup.Empty();
+            match(curr) {
+              | Using | Namespace => printTopLevel(curr)
+              | TokenSet => append(curr.ToString())
+              | Round as r => printRound(r)
+              | Square as s => printSquare(s)
+              | Brace as b => printBrace(b)
+              | Root => ()    // Not possible - Only adding to silence compiler warning
+              | Empty => ()
+            }
+            
+            when(!(next is TokenGroup.Empty)) loop(next)
+          }
+            
+          when(node != null && !(node is TokenGroup.Empty)) {
+            loop(node)
+          }            
+        }
+        
+        print(node: TokenGroup) : void {
+          
+          def loop(curr: TokenGroup) {
+            def next = curr.Next ?? TokenGroup.Empty();
+            match(curr) {
+              | Using | Namespace => printTopLevel(curr)
+              | TokenSet => 
+                if (next is TokenGroup.Round  || 
+                    next is TokenGroup.Square ||
+                    next is TokenGroup.Brace) append(curr.ToString())
+                else appendLine(curr.ToString())
+              | Round as r => printRound(r)
+              | Square as s => printSquare(s)
+              | Brace as b => printBrace(b)
+              | Root => ()    // Not possible - Only adding to silence compiler warning
+              | Empty => ()
+            }
+            
+            when(!(next is TokenGroup.Empty)) loop(next)
+          }
+            
+          when(node != null && !(node is TokenGroup.Empty)) {
+            loop(node)
+          }
+        }
+        
+      }
+  }
+}

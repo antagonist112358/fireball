@@ -1,0 +1,126 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.Lexer
+{
+  /// <summary>
+  /// Description of Token.
+  /// </summary>
+  public variant Token
+  {
+      // Identifiers
+      | Identifier { name: String }
+      | IdentifierLiteral { name: String }
+      // Keywords
+      | Keyword { name: String }
+      // Reserved Lexical Operators
+      | Semicolon
+      | Dot
+      | Comma
+      // Other Operators
+      | Operator { name: String; isReserved: bool = false}
+      // Braces
+      | StartRound  | EndRound
+      | StartSquare | EndSquare
+      | StartBrace  | EndBrace
+      // Character Literals
+      | StringLiteral { value : string; rawString : string; this(val : string) { this(val, "") } }
+      | CharLiteral { value: char }
+      // Numeric Literals
+      | BooleanLiteral  { value: bool }
+      | ByteLiteral     { value: byte }
+      | ShortLiteral    { value: short }
+      | UShortLiteral   { value: ushort }
+      | IntegerLiteral  { value: int }
+      | UIntegerLiteral { value: uint }
+      | LongLiteral     { value: long }
+      | ULongLiteral    { value: ulong }
+      | FloatLiteral    { value: float; }
+      | DoubleLiteral   { value: Double; }
+      | DecimalLiteral  { value: Decimal; }      
+      // Comments
+      | Comment { value: string }
+      | BlockComment { value: string }
+      // Others
+      | NewLine
+      | EndOfFile
+      
+      // Variant members
+      public mutable Location: Location;
+      
+      // Constructors
+      public this() { }
+      
+      public this(loc: Location) { Location = loc }
+      
+      // Methods
+      public override ToString() : string {
+        match(this) {
+            | Identifier            (name)     => name
+            | IdentifierLiteral     (name)     => "@" + name
+            | Keyword               (name)     => name
+            | Semicolon                        => ";"
+            | Dot                              => "."
+            | Comma                            => ","
+            | Operator              (name, _)  => name
+            | StartRound                       => "("
+            | EndRound                         => ")"
+            | StartSquare                      => "["
+            | EndSquare                        => "]"
+            | StartBrace                       => "{"
+            | EndBrace                         => "}"
+            | StringLiteral         (_, raw)   => raw
+            | CharLiteral           (value)    => "'" + value.ToString() + "'"
+            | BooleanLiteral        (value)    => if (value) "{true}" else "{false}"
+            | ByteLiteral           (value)    => value.ToString() + "B"
+            | ShortLiteral          (value)    => value.ToString() + "S"
+            | UShortLiteral         (value)    => value.ToString() + "US"
+            | IntegerLiteral        (value)    => value.ToString()
+            | UIntegerLiteral       (value)    => value.ToString() + "U"
+            | LongLiteral           (value)    => value.ToString() + "L"
+            | ULongLiteral          (value)    => value.ToString() + "UL"
+            | FloatLiteral          (value)    => value.ToString() + "F"
+            | DoubleLiteral         (value)    => value.ToString() + "D"
+            | DecimalLiteral        (value)    => value.ToString() + "M"
+            | Comment               (value)    => "//" + value
+            | BlockComment          (value)    => "/*" + value + "*/"
+            | NewLine                          => @"{newline}"
+            | EndOfFile                        => "/*EOF*/"
+        }
+      }
+      
+      public static AreSame(left: Token, right: Token) : bool {
+        if (left.GetType() != right.GetType())
+            false
+        else match(left) {
+          | StartRound  | EndRound | StartSquare | EndSquare
+          | StartBrace  | EndBrace | Comma       | Semicolon
+          | EndOfFile   | NewLine  | Dot         | Comment
+          | BlockComment => true
+          | Identifier(name)           => (right :> Identifier).name == name
+          | IdentifierLiteral(name)    => (right :> IdentifierLiteral).name == name
+          | Keyword(name)              => (right :> Keyword).name == name
+          | Operator(name, _)          => (right :> Operator).name == name
+          | StringLiteral(value, _)    => (right :> StringLiteral).value == value
+          | CharLiteral(value)         => (right :> CharLiteral).value == value
+          | BooleanLiteral(value)      => (right :> BooleanLiteral).value == value
+          | ByteLiteral(value)         => (right :> ByteLiteral).value == value
+          | ShortLiteral(value)        => (right :> ShortLiteral).value == value
+          | UShortLiteral(value)       => (right :> UShortLiteral).value == value
+          | IntegerLiteral(value)      => (right :> IntegerLiteral).value == value
+          | UIntegerLiteral(value)     => (right :> UIntegerLiteral).value == value
+          | LongLiteral(value)         => (right :> LongLiteral).value == value
+          | ULongLiteral(value)        => (right :> ULongLiteral).value == value
+          | FloatLiteral(value)        => (right :> FloatLiteral).value == value
+          | DoubleLiteral(value)       => (right :> DoubleLiteral).value == value
+          | DecimalLiteral(value)      => (right :> DecimalLiteral).value == value
+        }
+      }
+  }
+}

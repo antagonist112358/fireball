@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>8.0.30703</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>04c20e02-6974-4865-8913-cbf1ab2365ca</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Fireball.Compiler</RootNamespace>
+    <AssemblyName>Fireball.Compiler</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <NoStdLib>true</NoStdLib>
+    <NemerleVersion>Net-4.0</NemerleVersion>
+    <NemerleBinPathRoot Condition=" '$(NemerleBinPathRoot)' == '' ">$(ProgramFiles)\Nemerle</NemerleBinPathRoot>
+    <Nemerle Condition=" '$(Nemerle)' == '' ">$(NemerleBinPathRoot)\$(NemerleVersion)</Nemerle>
+    <Name>Fireball.Compiler</Name>
+    <DocumentationFile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <OutputPath>..\..\bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <RunDebugger>false</RunDebugger>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugSymbols>false</DebugSymbols>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <DocumentationFile>$(OutputPath)\$(AssemblyName).xml</DocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib" />
+    <Reference Include="System" />
+    <Reference Include="System.Core">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+    </Reference>
+    <Reference Include="System.Xml.Linq">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+    </Reference>
+    <Reference Include="System.Data.DataSetExtensions">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+    </Reference>
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+    <Reference Include="Nemerle">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(Nemerle)\Nemerle.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <MacroReference Include="Nemerle.Linq">
+      <HintPath>$(Nemerle)\Nemerle.Linq.dll</HintPath>
+    </MacroReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="AST\AstNode.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="AST\LiteralNode.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="AST\VariableName.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="CompilerException.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Extensions.n" />
+    <Compile Include="FireballModifiers.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="IO\TokenBuffer.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="IO\TokenStream.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\FilesSet.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\Keywords.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\Location.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\TextPoint.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\Token.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Lexer\Tokenizer.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PreParser\GroupBuilder.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PreParser\PreParserException.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PreParser\TokenGroup.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PreParser\TokenGroupWalker.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PreParser\TokenPattern.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Properties\AssemblyInfo.n" />
+    <Compile Include="Timer.n">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="AST" />
+    <Folder Include="Lexer" />
+    <Folder Include="IO" />
+    <Folder Include="PreParser" />
+    <Folder Include="TypeSystem" />
+    <Folder Include="Properties\" />
+  </ItemGroup>
+  <Import Project="$(Nemerle)\Nemerle.MSBuild.targets" />
+  <!--
+		To modify your build process, add your task inside one of the targets below and uncomment it. 
+		Other similar extension points exist, see Microsoft.Common.targets.
+
+	<Target Name="BeforeBuild">
+	</Target>
+	<Target Name="AfterBuild">
+	</Target>
+	-->
+</Project>

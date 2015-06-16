@@ -1,0 +1,73 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.Lexer
+{
+  /// <summary>
+  /// Description of FilesSet.
+  /// </summary>
+  public sealed class FilesSet : System.Collections.Generic.ICollection[String]
+  {
+      private _files: List[String] = List();
+      
+      #region ICollection Impl
+      
+      public Count : int {
+          get { _files.Count }
+      }
+      
+      public IsReadOnly : bool {
+          get { false }
+      }
+      
+      public Add(file: String) : void {
+          unless(!_files.Contains(file))
+            throw ArgumentException($"File: $file already exists in the FilesSet");
+        
+          _files.Add(file)
+      }
+      
+      public Clear() : void {
+          _files.Clear()
+      }
+      
+      public Contains(file: String): bool {
+          _files.Contains(file)
+      }
+      
+      public CopyTo(arr : array[String], index: int) : void {
+          _files.CopyTo(arr, index)
+      }
+      
+      public Remove(file: String) : bool {
+          _files.Remove(file)
+      }
+      
+      public GetGenericEnumerator() : IEnumerator[String] implements System.Collections.Generic.IEnumerable[String].GetEnumerator {
+          _files.GetEnumerator()
+      }
+      
+      public GetEnumerator() : System.Collections.IEnumerator {
+          _files.GetEnumerator();
+      }
+      
+      #endregion
+      
+      public GetFileName(index: int) : String {
+          unless(_files.Count > index)
+            throw ArgumentException($"File index $index does not exist in FilesSet");
+            
+          _files[index]
+      }
+      
+      public GetFileIndex(file: String) : int {
+          _files.IndexOf(file)
+      }
+  }
+}

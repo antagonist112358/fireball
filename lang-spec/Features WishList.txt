@@ -1,0 +1,2 @@
+Named tuples: Allow for naming the tuple value names. Example: def method1(a: int) : (min: Int, max: Int) = {...}
+No nulls, but allow for Optional Type (UnionOf[Null|T]), with the shorthand T := Type, T? = [Null|T]

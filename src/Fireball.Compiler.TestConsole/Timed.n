@@ -1,0 +1,28 @@
+﻿using Nemerle;
+using Nemerle.Assertions;
+
+using System;
+using System.Console;
+using System.Diagnostics;
+
+namespace Fireball.Compiler.TestConsole
+{
+  /// <summary>
+  /// Description of Timed.
+  /// </summary>
+  public class Timed : IDisposable
+  {
+      timer = Stopwatch();
+      nameOf : String;
+      
+      public this([NotNull] name: String) {
+        nameOf = name;
+        timer.Start()        
+      }
+      
+      public Dispose() : void {
+        timer.Stop();
+        WriteLine($"$nameOf took $(timer.Elapsed.TotalMilliseconds)ms to complete.")
+      }
+  }
+}

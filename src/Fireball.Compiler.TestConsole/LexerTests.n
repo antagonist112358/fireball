@@ -1,0 +1,49 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+using SysIO = System.IO;
+
+
+namespace Fireball.Compiler.TestConsole
+{
+  /// <summary>
+  /// Description of LexerTests.
+  /// </summary>
+  module LexerTests
+  {
+      static sourceFile : SysIO.FileInfo = SysIO.FileInfo("./Resources/LexerSource.fb");      
+      
+      // Test instantiate Tokenizer
+      public TestInstantiateTokenizer() : void {
+        def tokenizer = Tokenizer(sourceFile);          
+        assert(tokenizer != null);
+      }
+            
+      
+      // Test can tokenize
+      public TestTokenizerCanTokenize() : List[String] {
+        def tokenizer = Tokenizer(sourceFile);        
+        def tokens = tokenizer.Tokenize();
+        
+        assert(tokens.Count() > 0);
+
+        tokens.Select(t => t.GetType().Name + ": " + t.ToString()).ToList();
+      }
+      
+      // Test Tokenizer performance
+      public TestTokenizerPerformance() : List[String] {
+        def tokenizer = Tokenizer(sourceFile);        
+        _ = tokenizer.Tokenize();
+        
+        List( array[$"Tokenization took $(tokenizer.TokenizerElapsed.TotalMilliseconds.ToString())ms to complete."] )
+      }
+  }
+}

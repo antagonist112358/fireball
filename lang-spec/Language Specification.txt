@@ -1,0 +1,49 @@
+Fireball::Variables
+
+Syntax:
+var <variable name> = <assignment>
+var <variable name> : [<type>]
+var <variable name> : [<type>] = <assignment>
+
+Example:
+var i = 5
+var list: List[String]
+var d: double = 5.0
+
+Variables are mutable and can be changed after declaration.
+
+Fireball::Values
+
+Syntax:
+val <value name> = <assignment>
+val <value name> : [<type>] = <assignment>
+
+Example:
+val i = 5
+val list : List[String] = new List()
+
+
+
+Fireball::Modules
+
+Syntax: 
+module <module name> { ... }
+
+All members within a module are statically scoped.
+
+Fireball::Modules::Companion Modules
+
+Modules defined with the same assembly as a class of the same name are called "Companion Modules".
+
+Classes have access to all of the members of their companion modules as if they were the same entity. In
+other words private members of a Companion Module are still accessible to its partner class.
+
+The class and its companion module must have the same access level. For example:
+class A {}
+module A {}
+This is allowed as both of these types have the "public" access level.
+protected class A {}
+module A {}
+This is not allowed since the class "A" has "protected" access and its companion module has "public" scope.
+
+

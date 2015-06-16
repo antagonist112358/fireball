@@ -1,0 +1,120 @@
+Method invocation takes the form of:
+<Method Name> <Parameter1>, <Parameter2>, ..., <ParameterN>
+
+Method parameters are, in essence, the result of computing:
+<Method Name> ({Parameter Groups}* flatten)
+
+Consider the following example:
+
+// Given these methods (method signatures):
+def method(a: A, b: B c: Void -> C = new C()) : Void { ... }
+def AsToBs(a: A) : B { ... }
+def convert(b: B) : Void -> C { ... }
+def AltConvert(a: A, b: B) : Void -> C { ... }
+
+method(someA, someB)		// OK!
+												// This is computed as: method <- Group1: (someA, someB) flatten 
+												// which becomes: method <- (someA, someB)
+method someA, someB			// OK!
+method(someA), (someB)	// OK!
+method someA, (someB)		// OK!
+
+method(someA, someB, () => new C)				// OK! (method <-(someA, someB, lambda: Void -> C => new C))
+method someA, someB, () => new C				// OK! (method <-(someA, someB, lambda: Void -> C => new C))
+method someA, someB, { () => new C() }	// OK! (method <-(someA, someB, expression { lambda: Void -> C => new C) })
+method (someA, someB), { () => new C }
+
+method(someA, someB, convert(someB))
+method someA, someB, convert(someB)
+method (someA, someB), convert(someB)
+method someA, someB, convert someB
+method (someA, someB), convert (someB)
+
+method(someA, AsToBs(someA), convert(AsToBs(someA)))	// C-style: OK!
+method someA, AsToBs(someA), convert(AsToBs(someA))		// OK!
+method (someA, AsToBs someA), convert AsToBs(someA)		// Curried-style: OK!
+method (someA, AsToBs someA), convert(AsToBs someA)		// OK!
+method someA, AsToBs someA, convert AsToBs someA			// Fireball-style: OK!!!
+
+
+val cGenerator = convert AsToBs someA									// OK!
+val cGenerator = AltConvert someA, AsToBs someB				// Surprisingly OK!
+																											// AltConvert <- (someA, AsToBs <- (someB))
+
+
+method someA, AsToBs someA, AltConvert someA, someB			// Parameter assignment ambiguity: NOT OK!
+																												// Will be interpreted as: method <- (someA, AsToBs <- (someA, AltConvert <- (someA, someB)))
+method someA, AsToBs someA, AltConvert(someA, someB)		// OK!
+method (someA, AsToBs someA), AltConvert someA, someB		// Surprisingly OK!
+																												// method <- Group1:(someA, AsToBs <- someA), AltConvert <-(someA, someB)
+method (someA, AsToBs someA), (AltConvert someA, someB)	// Parameter grouping: OK!
+
+
+vs. accessing child properties or methods of an object:
+
+// Given the following classes:
+class One { def AsToBs(a: A) : B { ... } }
+class Two { def BsToCs(b: B) : C { ... } }
+class Three { def AandBtoC(a: A, b: B) : C { ... } }
+class Four {
+	val _twoInstance = new Two
+	def TwoInstance = _twoInstance
+	def converter(a: A, b: B, c: C) : String { ... }
+}
+
+val b = One AsToBs someB								// OK!
+																				// Spaces perform "nesting"
+																				// Commas perform "grouping"
+val c = Two BsToCs One AsToBs someA			// Surprisingly OK!
+																				// From right to left: (AsToBs <- someA)
+																				// One::AsToBs <- someA
+																				// BsToCs <- (One::AsToBs <- someA)
+																				// Two::BsToCs <-(One::AsToBs <- someA)
+val str = Four converter someA, someB, Three AandBtoC someA, someB
+// Which traditionally in a C-like language would be written like:
+val str = Four.converter(someA, someB, Three.AandBtoC(someA, someB))
+// Think about the grouping vs. nesting here...
+// The above would be converted to this:
+// Four::converter(someA, someB, Three::AandBtoC(someA, someB))
+// And miraculously would be OK!
+// However it is recommended you group arguments together in this case for readability:
+val str = Four converter (someA, someB, (Three AandBtoC (someA, someB)))
+
+val c = Four TwoInstance BsToCs someB		// NOT OK!
+// Compiler has no way to know that TwoInstance needs to yield its value first before the latter is evaluated
+// It will assume that TwoInstance is a method that takes the result of (BsToCs <- someB) as an argument
+// The following are OK ways to write this expression
+val c = Four.TwoInstance BsToCs(someB)
+val c = Four.TwoInstance BsToCs someB
+val c = { Four.TwoInstance } BsToCs someB
+val c = Four TwoInstance :: BsToCs someB
+
+// The "Left Result into Right operator" evaluates everything to the left of it and then applies the functions to the right
+// The signature is: expression(Void -> T) { ... } :: expression(T -> U) { ... }
+// This expression:
+val c = Four TwoInstance :: BsToCs someB
+// Can be interpreted as:
+val temp = Four.TwoInstance
+def leftExpr[U](func: Two -> U) => func(temp)
+val c = leftExpr(inst => inst.BsToCs(someB))
+
+Let's look at Linq and functional composition:
+
+// Given the following:
+val listOfNumbers = List(1, 2, 3, 4, 5)
+val evenNumbers = listOfNumbers.Where(_ % 2 == 0)
+val doubled = evenNumbers.Select(_ * 2)
+val summed = doubled.Sum()
+
+// How can this be shortened?
+val evenNumbers = List(1, 2, 3, 4, 5) Where (_ % 2 == 0)
+val doubled = evenNumbers Select (_ * 2)
+val summed = doubled Sum
+
+// Can this become a single-line?
+val summed = {{ List(1, 2, 3, 4, 5) Where (_ % 2 == 0) } Select (_ * 2)} Sum
+// But the above is hideous...
+// Lets use the Left-Yielding operator ( :: )
+val summed = List(1, 2, 3, 4, 5) Where (_ % 2 == 0) :: Select (_ * 2) :: Sum
+// ...straight sexy, and obvious what is intended.
+// Note: The above is converted into the previous expression by the compiler.

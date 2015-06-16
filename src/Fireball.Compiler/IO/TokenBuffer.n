@@ -1,0 +1,95 @@
+﻿using Nemerle;
+using Nemerle.Text;
+using Nemerle.Utility;
+using NC = Nemerle.Collections;
+
+using System;
+using System.Text;
+using System.Linq;
+using System.IO;
+using System.Collections.Generic;
+
+
+namespace Fireball.Compiler.IO
+{
+  /// <summary>
+  /// Description of TokenBuffer.
+  /// </summary>
+  public class TokenBuffer
+  {
+      _charBuffer : array[char];
+      _length : int;
+      mutable _bufferIndex: int;
+      
+      public this(file: String) {
+          using(reader = StreamReader(file)) {
+              _charBuffer = reader.ReadToEnd().ToCharArray();
+              _length = _charBuffer.Length;
+          }      
+      }
+      
+      public this(source: Stream) {
+          using(reader = StreamReader(source)) {
+              _charBuffer = reader.ReadToEnd().ToCharArray();
+              _length = _charBuffer.Length;
+          }          
+      }
+            
+      #region Buffer Control
+      
+      public Read() : char { 
+          def index = _bufferIndex;
+          _bufferIndex++;
+          _charBuffer[index]
+      }
+            
+      public Peek() : option[char] {
+        if (_bufferIndex == _length) None()
+        else Some(_charBuffer[_bufferIndex])
+      }
+      
+      public PeekAhead(count: int) : option[char] {
+          if(count + _bufferIndex >= _length)
+            None()
+          else
+            Some(_charBuffer[_bufferIndex + count])
+      }
+            
+      public Last() : char { _charBuffer[_bufferIndex] }
+      
+      public Position : int { get { _bufferIndex } }      
+      
+      public Length : int { get { _length } }
+      
+      public EndOfFile : bool { get { if (_bufferIndex == _length) true else false } }
+      
+      public PeekNext(numChars: int) : List[char] {
+        def output = List();
+        
+        for(mutable i = 0; i < numChars; i++) {
+          when(i + _bufferIndex < _length) {
+              output.Add(_charBuffer[i + _bufferIndex]);
+          }
+        }
+        
+        output
+      }
+
+      public Backup() : void {
+          if (_bufferIndex == 0) { throw Exception("Attempted to backup past beginning of TokenBuffer."); }
+          else _bufferIndex--;
+      }
+      
+      #endregion
+      
+      #region HelperMethods
+      
+      public static IsEndOfLine(ch: char) : bool {
+        | '\n' | '\u2028' | '\u2029' | '\u0085' => true
+        | _ => false        
+      }
+            
+      #endregion
+      
+  }
+}

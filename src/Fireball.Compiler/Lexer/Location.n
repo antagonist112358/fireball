@@ -1,0 +1,400 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Assertions;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.Lexer
+{
+  /// <summary>
+  /// Description of Location.
+  /// </summary>
+  [System.Diagnostics.DebuggerDisplay(<#{File + ":" + Line + ":" + Column + ":" + EndLine + ":" + EndColumn + (IsGeneratedOrEmpty ? "-gen" : "")}#>)]
+  public struct Location : IComparable[Location], IEquatable[Location]
+  {      
+  
+      public static Default : Location = Location("1781E7BA-902E-4944-8DAB-A25C01073285", 0, 0, 0, 0);
+  
+      _fileName: String;
+      _fileHashcode: int;
+      _line: int;
+      _endLine: int;
+      _col: int;      
+      _endCol: int;
+      mutable _generated: bool;
+      
+      internal this([NotNull] fileName: String, line: int, col: int, endLine: int, endCol: int) {
+          _fileName = fileName; _line = line; _col = col; _endLine = endLine; _endCol = endCol;
+          _fileHashcode = _fileName.GetHashCode();
+          _generated = String.IsNullOrEmpty(fileName)
+      }
+      
+      internal this([NotNull] fileName: String, line: int, col: int, endLine: int, endCol: int, generated: bool) {
+          this(fileName, line, col, endLine, endCol);
+          _generated = generated
+      }
+
+      private this(source: Location, line: int, col: int, endLine: int, endCol: int) {
+          this(source._fileName, line, col, endLine, endCol);
+          _generated = source._generated
+      }
+      
+      #region IComparable[Location] Impl
+      
+      public CompareTo(x: Location) : int {
+          if (_fileHashcode == x._fileHashcode)
+            if (_line == x._line)
+                _col - x._col
+            else
+                _line - x._line
+         else
+            _fileName.CompareTo(x._fileName)
+      }
+      
+      #endregion
+      
+      #region IEquatable[Location] Impl
+      
+      [Nemerle.OverrideObjectEquals]
+      public Equals(other: Location) : bool implements System.IEquatable[Location].Equals
+      {
+          _fileHashcode == other._fileHashcode
+          && _line == other._line
+          && _col == other._col
+          && _endLine == other._endLine
+          && _endCol == other._endCol
+      }
+      
+      public override GetHashCode() : int {
+          _fileHashcode ^ _line ^ _col ^ _endLine ^ _endCol * (if (_generated) 3 else 17)
+      }
+      
+      #endregion            
+      
+      #region ToString Impl
+      
+      public override ToString() : String {
+          if (this == Default)
+            ""
+          else
+            if (EndLine != 0)
+                $"$File:$Line:$Column:$EndLine:$EndColumn: "
+            else if (Line != 0)
+                $"$File:$Line:$Column: "
+            else
+                File + ": "          
+      }
+      
+      #endregion
+      
+      #region Operator Overloads
+      
+      public static @== (x : Location, y : Location) : bool { x.Equals (y) }
+      public static @!= (x : Location, y : Location) : bool { !x.Equals (y) }
+   
+      /// This operator is not commutative!
+      public static @+ (x : Location, y : Location) : Location
+      {
+          def xFileHash = x._fileHashcode;
+          if (xFileHash == y._fileHashcode && x.IsGenerated == y.IsGenerated)
+          {                
+            Location(
+                x._fileName,
+                x.Line,
+                x.Column,
+                if (y.EndLine > x.EndLine) y.EndLine else x.EndLine,
+                if (x.EndLine < y.EndLine)          y.EndColumn 
+                else if (x.EndLine > y.EndLine)     x.EndColumn 
+                else if (x.EndColumn < y.EndColumn) y.EndColumn 
+                else                                x.EndColumn);
+          }
+          else if (y == Default || y.IsGenerated)
+            x
+          else
+            y
+    }         
+      
+      #endregion
+      
+      #region Static Extension Methods
+      
+      public static EnclosingLocation(this lst: list[Location]) : Location {
+          System.Diagnostics.Debug.Assert(lst.IsOrdered((x, y) => x.CompareTo(y) > 0));
+          System.Diagnostics.Debug.Assert(!lst.IsEmpty);
+          lst.Head + lst.Last
+      }
+      
+      public static IndexOfMostNested2[T](this seq : IList[T], convert : System.Converter[T, Location], line : int, col : int) : int
+      {
+          IndexOfMostNested(seq, convert(_), line, col)
+      }
+
+      /// Return index of object in seq which conain most nested Lication.
+      public static IndexOfMostNested[T](this seq : IList[T], convert : T -> Location,
+                                         line : int, col : int) : int
+        {
+            def (_, resIndex, _) = seq.Fold((0, -1, Location.Default), fun(elem, (i, resIndex, curr))
+            {
+                def loc = convert(elem);
+                if (loc.Contains(line, col) && (resIndex < 0 || curr.StrictlyContains(loc)))
+                    (i + 1, i, loc)
+                else
+                    (i + 1, resIndex, curr);
+            });
+
+            resIndex
+        }
+      
+      #endregion
+      
+      public Line : int { get { _line } }
+      
+      public EndLine : int { get { _endLine } }
+      
+      public Column : int { get { _col } }
+      
+      public EndColumn : int { get { _endCol } }
+      
+      public Begin : TextPoint { get { TextPoint(Line, Column) } }
+      
+      public End : TextPoint { get { TextPoint(EndLine, EndColumn) } }
+      
+      public FilePath : String {
+          get { _fileName }
+      }
+      
+      public File : String {
+          get  { System.IO.Path.GetFileName(_fileName) }
+      }
+      
+      public IsSourceAvailable : bool {
+          get { !String.IsNullOrEmpty(_fileName) && System.IO.File.Exists(_fileName) }
+      }
+      
+      public IsGenerated : bool { get { _generated } set { _generated = value } }
+      
+      public IsEmpty : bool
+      {
+          get { EndLine == 0 || EndLine < Line || (EndLine == Line && EndColumn <= Column) }
+      }      
+      
+      public IsGeneratedOrEmpty : bool { get { IsGenerated || _line == 0 } }
+      
+      public AsGenerated() : Location {
+          def loc = Location(_fileName, _line, _col, _endLine, _endCol);
+          loc.IsGenerated = true;
+          loc
+      }
+      
+      public FromStart () : Location { Location(_fileName, Line, Column, Line, Column) }
+
+      public FromStartAsGenerated() : Location { Location(_fileName, Line, Column, Line, Column, true) }
+
+      public FromEnd () : Location  { Location(_fileName, EndLine, EndColumn, EndLine, EndColumn) }
+
+      public FromEndAsGenerated() : Location { Location(_fileName, EndLine, EndColumn, EndLine, EndColumn, true) }
+      
+      public Contains(point: TextPoint) : bool { Contains(point.Line, point.Column) }
+      
+      /// Returns whether the first location is strictly inside the second
+      public StrictlyContains(other: Location) : bool {
+          Contains(other) && this != other
+      }
+      
+      public Contains(testLine : int, testCol : int) : bool
+      {
+          if (testLine >= this.Line && testLine <= this.EndLine)
+          {
+              if (testLine == this.Line)
+              {
+                  if (testLine == this.EndLine)
+                      testCol >= this.Column && testCol <= this.EndColumn
+                  else
+                      testCol >= this.Column
+              }
+              else if (testLine == this.EndLine)
+                  testCol <= this.EndColumn
+              else
+                  true
+          }
+          else
+              false
+    }
+    
+      public Contains(testFile: String, testLine : int, testCol : int) : bool {
+          if (_fileName == testFile) Contains(testLine, testCol) else false
+      }
+    
+      /// Returns whether the first location is (not strictly) inside the second
+      public Contains(other: Location) : bool {
+          if (_fileHashcode == other._fileHashcode)
+              Contains(other.Line, other.Column) && Contains(other.EndLine, other.EndColumn)
+          else
+              false
+      }
+      
+      /// Returns whether the first location is (not strictly) 
+      /// before the second (the left of first is to the left of second)
+      public StartsBefore(second: Location) : bool
+      {
+          if (Line < second.Line)
+              true
+          else if (Line > second.Line)
+              false
+          else if (Column < second.Column)
+              true
+          else if (Column > second.Column)
+              false
+          else
+              true
+    }
+    
+      public TrimStart(second : Location) : Location
+      {
+          TrimStart(second, true)
+      }
+
+      public TrimStart(l2 : Location, adjustBegin : bool) : Location
+      {
+          mutable lbeg;
+          mutable cbeg;
+
+          def adj = if (adjustBegin) 1 else 0;
+
+          if      (Line < l2.EndLine) { lbeg = l2.EndLine; cbeg = l2.EndColumn + adj; }
+          else if (Line > l2.EndLine) { lbeg = Line;    cbeg = Column; }
+          else
+          {
+              lbeg = Line;
+              cbeg = if (Column < l2.EndColumn) l2.EndColumn + adj else Column;
+          }
+
+          Location(this, lbeg, cbeg, EndLine, EndColumn)
+      }
+
+      public TrimEnd(l2 : Location) : Location
+      {
+          mutable lend;
+          mutable cend;
+
+          if      (EndLine > l2.Line) { lend = l2.Line;    cend = l2.Column - 1; }
+          else if (EndLine < l2.Line) { lend = EndLine; cend = l2.EndColumn; }
+          else
+          {
+              lend = EndLine;
+              cend = if (EndColumn > l2.Column) l2.Column else EndColumn;
+          }
+          Location(this, Line, Column, lend, cend)
+      }
+
+      public Trim(l2 : Location, line : int, col : int) : Location
+      {
+          if (line < l2.Line || line == l2.Line && col < l2.Column)
+              TrimEnd(l2)
+          else if (line > l2.EndLine || line == l2.EndLine && col > l2.EndColumn)
+              TrimStart(l2, true)
+          else
+              this
+      }
+
+      public Combine(l2 : Location) : Location
+      {
+          if (IsEmpty)
+              l2
+          else if (l2.IsEmpty)
+              this
+          else
+          {
+              mutable lbeg;
+              mutable cbeg;
+
+              if      (Line < l2.Line) { lbeg = Line; cbeg = Column; }
+              else if (Line > l2.Line) { lbeg = l2.Line; cbeg = l2.Column; }
+              else
+              {
+                  lbeg = Line;
+                  cbeg = if (Column < l2.Column) Column else l2.Column;
+              }
+
+              mutable lend;
+              mutable cend;
+
+              if  (EndLine > l2.EndLine) { lend = EndLine; cend = EndColumn; }
+              else if (EndLine < l2.EndLine) { lend = l2.EndLine; cend = l2.EndColumn; }
+              else
+              {
+                  lend = EndLine;
+                  cend = if (EndColumn > l2.EndColumn) EndColumn else l2.EndColumn;
+              }
+
+              Location(this, lbeg, cbeg, lend, cend)
+          }
+      }
+
+      public Intersect(l2 : Location) : Location
+      requires File == l2.File || String.IsNullOrEmpty(File) || String.IsNullOrEmpty(l2.File)
+      {
+          mutable lbeg;
+          mutable cbeg;
+
+          if      (Line < l2.Line) { lbeg = l2.Line; cbeg = l2.Column; }
+          else if (Line > l2.Line) { lbeg = Line;    cbeg = Column; }
+          else
+          {
+            lbeg = Line;
+            cbeg = if (Column < l2.Column) l2.Column else Column;
+          }
+
+          mutable lend;
+          mutable cend;
+
+          if      (EndLine > l2.EndLine) { lend = l2.EndLine; cend = l2.EndColumn; }
+          else if (EndLine < l2.EndLine) { lend = EndLine;    cend = EndColumn; }
+          else
+          {
+            lend = EndLine;
+            cend = if (EndColumn > l2.EndColumn) l2.EndColumn else EndColumn;
+          }
+
+          Location(this, lbeg, cbeg, lend, cend)
+      }      
+      
+      public IsIntersect(l2: Location) : bool
+      requires File == l2.File || String.IsNullOrEmpty(File) || String.IsNullOrEmpty(l2.File)
+      {
+          !Intersect(l2).IsEmpty
+      }
+      
+      public IsEqualExcludingFile(l2: Location) : bool {
+          Line == l2.Line      &&  EndLine == l2.EndLine  &&
+          Column == l2.Column  &&  EndColumn == l2.EndColumn
+      }
+  }
+  
+  public class LocationFactory {
+      _filesList : FilesSet;
+      
+      public this(filesList: FilesSet)
+      requires filesList != null
+      {
+          _filesList = filesList
+      }
+      
+      public From(fileIndex: int, line: int, col: int) : Location {
+          Location(_filesList.GetFileName(fileIndex), line, col, line, col)
+      }
+      
+      public From(fileName: String, line: int, col: int, endLine: int, endCol: int) : Location {
+          assert(_filesList.Contains(fileName));
+          Location(fileName, line, col, endLine, endCol)
+      }
+      
+      public From(fileIndex: int, line: int, col: int, endLine: int, endCol: int) : Location {
+          Location(_filesList.GetFileName(fileIndex), line, col, endLine, endCol)
+      }
+      
+      
+  }
+}

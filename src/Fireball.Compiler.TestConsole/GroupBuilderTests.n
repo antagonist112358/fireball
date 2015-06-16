@@ -1,0 +1,63 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+using Fireball.Compiler.PreParser;
+
+using SysIO = System.IO;
+
+namespace Fireball.Compiler.TestConsole
+{
+  /// <summary>
+  /// Description of GroupBuilderTests.
+  /// </summary>
+  module GroupBuilderTests
+  {
+    static simpleFile = System.IO.FileInfo("./Resources/Simple.fb");
+    static sourceFile : SysIO.FileInfo = SysIO.FileInfo("./Resources/LexerSource.fb");      
+    
+    static simpleResults: List[Token] = {
+      def tokenizer = Tokenizer(simpleFile);
+      tokenizer.Tokenize();
+    }
+    
+    static lexerResults: List[Token] = {
+      def tokenizer = Tokenizer(sourceFile);
+      tokenizer.Tokenize();
+    }
+      
+    // Test instantiate Tokenizer
+    public TestInstantiateGroupBuilder() : void {
+      def organizer = GroupBuilder(simpleResults);
+      assert(organizer != null);
+    }
+    
+    // Test organization
+    public TestGroupBuilderCanOrganize() : List[string] {
+      def organizer = GroupBuilder(lexerResults);
+      def results = organizer.Organize();
+      
+      assert(results != null);
+      assert(results.Child != null);
+      
+      //("" :: TokenGroupWalker(results).ToString() :: []).ToList()
+      List( array[$"Tokenization took $(organizer.Elapsed.TotalMilliseconds.ToString())ms to complete."] )
+    }
+    
+    public TestGroupBuilderOrganizeOutput() : List[string] {
+      def organizer = GroupBuilder(simpleResults);
+      def results = organizer.Organize();
+      
+      assert(results != null);
+      assert(results.Child != null);
+      
+      ("" :: TokenGroupWalker(results).ToString() :: []).ToList()
+    }
+  }
+}
