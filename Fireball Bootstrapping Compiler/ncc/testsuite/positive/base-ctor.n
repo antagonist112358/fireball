@@ -1,0 +1,80 @@
+using Nemerle.IO;
+
+class JustTryToDeriveFromMe {
+  protected this (params p : array [string]) {
+    printf ("base ctor, len %d\n", p.Length);
+  }
+}
+
+class OkITried : JustTryToDeriveFromMe {
+}
+
+class X {
+  public this (m : string) {
+    printf ("X %s\n", m)
+  }
+  public this () {
+    printf ("X()\n")
+  }
+}
+
+class Y : X {
+  public this (m : string) {
+    base ();
+    printf ("Y %s\n", m);
+  }
+  public this () {
+    base ("foobar");
+    printf ("Y()\n");
+  }
+  public this (_ : int) {
+    base ();
+    printf ("Y(int)\n");
+  }
+}
+
+[Record]
+variant foo : Y {
+  | F_1 { f1 : string; }
+}
+
+class R { 
+  this () { printf ("R()\n") }
+  public this (_ : int) { printf ("R(int)\n"); this (); printf ("R(int)\n"); }
+}
+
+module M {
+  public Main () : void {
+    def _ = X ("foo");
+    def _ = X ();
+    def _ = Y ("foobarbaz");
+    def _ = Y ();
+    def _ = Y (3);
+    def _ = foo.F_1 ("foo");
+    def _ = foo.F_1 ("bux", "foo");
+    def _ = R (4);
+    _ = OkITried ();
+    ()
+  }
+}
+
+/*
+BEGIN-OUTPUT
+X foo
+X()
+X()
+Y foobarbaz
+X foobar
+Y()
+X()
+Y(int)
+X foobar
+Y()
+X()
+Y bux
+R(int)
+R()
+R(int)
+base ctor, len 0
+END-OUTPUT
+*/

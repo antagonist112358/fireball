@@ -1,0 +1,52 @@
+Pass 1
+~~~~~~
+The first typing pass binds symbols, infers types and invokes macros.
+It traverses the trees several times in ,,random'' order.
+
+Operators and conversions on primitive types are handled just like
+ordinary overloaded operators -- external symbol importer adds bogus
+overloads, that are then expanded in the code generation.
+
+
+Implicit conversion
+~~~~~~~~~~~~~~~~~~~
+The implicit conversion is possible in the following places:
+  
+  * call arguments (and thus also operator arguments)
+  * type cast body
+  * type enforcement body
+  * rhs of assignment
+  * function return value
+
+Implicit conversion is not applied to the macro arguments, though a
+special function is exposed to perform this inside macros.
+
+It would be desirable to have implicit conversion when joining branches
+of computations (match, try-catch), but we don have it (yet?).
+
+There are also no implicit conversions during variable initialization.
+That is mutable x = 0; will always define x to be of the type int.
+
+
+Pass 2
+~~~~~~
+The second typing pass is responsible for:
+
+  * marking values for closure conversion
+  * tail call detection
+  * transforming property getter calls to property setters, on the lhs 
+    of the assignment operator.
+  * unused value warning
+  * ignored computation warning
+  * warning when the implicit conversion makes the call non-tail [TODO]
+  * folding Delayed and ImplicitConversion nodes out
+  * changing foo.Event = System.Delegate.Combine (foo.Event, bar) to 
+    foo.add_Event (bar) when applicable
+  * warning/error for object.==(some_type, some_type), where 
+    some_type != object
+  * checking if we're not calling an indexer property [TODO, only for overloaded
+    indexers?, for plain it works]
+  
+It is not extensible, just a plain tree traversal.
+
+

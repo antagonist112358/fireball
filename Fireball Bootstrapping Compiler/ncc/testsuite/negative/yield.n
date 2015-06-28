@@ -1,0 +1,28 @@
+using System.Collections.Generic;
+
+module M
+{
+  public foo () : System.Collections.Generic.IEnumerable[int]
+  {
+     _ = x ; // E: unbound
+    yield 1;
+    _ = y; // E: unbound
+  }
+}
+
+class R
+{
+  public f () : System.Collections.Generic.IEnumerable[int]
+  {
+    yield 1;
+    Nemerle.Imperative.Return (true); // E: 
+  }
+}
+
+class D
+{
+  public GetEnumerator () : string //E: yield used in a `GetEnumerator' function, which is returning string
+  {
+    yield "foo";
+  }
+}

@@ -1,0 +1,29 @@
+using Nemerle.Collections;
+module M {
+  public Main () : void {
+    def l : list[int] = [1,2,3,4];
+    match (l) {
+      | ((_) as x) :: _ => Nemerle.IO.printf ("%d\n", x)
+      | _ => ()
+    };
+    match (l) {
+      | (_ :: _) as k =>
+        Nemerle.IO.printf ("%d\n", NList.Length (k));
+        Nemerle.IO.printf ("%d\n", k.hd)
+      | _ => ()
+    };
+    match ([] : list [int]) {
+      | (_ :: _) as k =>
+        Nemerle.IO.printf ("%d\n", k.hd)
+      | _ => ()
+    }
+  }
+}
+
+/*
+BEGIN-OUTPUT
+1
+4
+1
+END-OUTPUT
+*/

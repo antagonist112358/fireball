@@ -1,0 +1,27 @@
+
+public module TestChecked
+{
+  private TestIt (x : int) : long
+  {
+    checked {      
+      def _ = System.UInt64.MaxValue * -1; // E: the operation overflows at compile-time during constants folding in checked mode
+      def x = System.UInt64.MaxValue + 20 + x; // E: the operation overflows at compile-time during constants folding in checked mode
+      def y = System.Int64.MinValue * -1; // OK
+      def z = System.Int64.MinValue - System.Int64.MaxValue; // E: the operation overflows at compile-time during constants folding in checked mode
+
+      _ = 1 /0; // E: division by zero during constants folding
+      
+      x+y+z
+    }
+  }
+  
+  public Main () : void
+  {
+    ignore (TestIt (10))
+  }
+}
+
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/

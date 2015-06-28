@@ -1,0 +1,108 @@
+using Nemerle.IO;
+
+[Record]
+class A {
+  public X : int;
+  public SomeProp : int
+  {
+    get { X + 3 }
+  }
+
+  public BoolProp : bool
+  {
+    get { false }
+  }
+}
+
+class C 
+{
+    public static Main():void
+    {
+      match (A (42)) {
+        | A where (X = 42, SomeProp = 42) =>
+          print ("bad\n");
+
+        | A where (X = 42, SomeProp = 45) =>
+          print ("good\n");
+          
+        | _ =>
+          print ("wtf?\n");
+      }
+      
+      match (A (42)) {
+        | A where (BoolProp = true) =>
+          print ("bad\n");
+
+        | A where (BoolProp = false) =>
+          print ("good\n");
+          
+        | _ => // W: this match clause is unused
+          print ("wtf?\n");
+      }
+      
+      match (A (42)) { // W: matching is not exhaustive, example unmatched value
+        | A where (BoolProp = false) =>
+          print ("great\n");
+      }
+
+      OmitPrefix.M.Run ();
+
+      System.Console.WriteLine();
+    }
+}
+
+namespace OmitPrefix {
+  
+class Foo {
+  public Prop : int
+  {
+    get { 3 }
+  }
+}
+
+variant Qux {
+  | A
+  | B { x : int; }
+}
+
+enum Buxx {
+  | A
+  | B
+}
+
+module M {
+  
+  public Run () : void
+  {
+    match (Foo()) {
+      | (Prop = 3) => {}
+      | _ => assert(false)
+    }
+    
+    def q = Qux.A() : Qux;
+
+    match (q) {
+      | A => {}
+      | B (_) => assert(false)
+    }
+
+    match (Buxx.A) {
+      | A => {}
+      | B => assert(false)
+    }
+
+    // this one is problematic
+    // assert(! (Buxx.A is B));
+    
+    match (Nemerle.Utility.Getopt.CliOption.PreHelp ("") 
+               : Nemerle.Utility.Getopt.CliOption) {
+      | PreHelp => {}
+      | _ => assert(false)
+    }
+
+    // bug 622
+    def (Key = _x, Value = _y) = System.Collections.Generic.KeyValuePair ();
+
+  }
+}
+}

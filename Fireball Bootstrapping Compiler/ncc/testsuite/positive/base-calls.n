@@ -1,0 +1,120 @@
+using Nemerle.IO;
+
+internal class ClassFormatError {
+ internal this(_msg : string , params _p : array[object]) {}
+}
+
+class UnsupportedClassVersionError : ClassFormatError {
+  this(msg : string) { base(msg) }
+}
+
+class A {
+  public virtual m () : void {
+    printf ("A.m\n");
+  }
+  public virtual Prop : int
+  {
+    get { 
+      printf ("A.Prop\n"); 3
+    }
+    set {
+      printf ("A.Prop set\n");
+      ignore (value)
+    }
+  }
+  public this () {}
+}
+
+class B : A {
+  public override m () : void {
+    base.m();
+    printf ("B.m\n");
+  }
+  public this () {}
+  public override Prop : int
+  {
+    get { 
+      printf ("B.Prop\n"); base.Prop
+    }
+    set {
+      base.Prop = value;
+      printf ("B.Prop set\n");
+    }
+  }
+
+  public static Main () : void
+  {
+    def b = B ();
+    b.m ();
+    b.Prop += 3;
+    def _ = Inherit(1);
+    _ = Closurising (5);
+    _ = A2 ();
+    _ = A3 ("");
+  }
+}
+
+class Base
+{
+ public this(_ : int) { print("A()\n"); }
+}
+
+class Inherit : Base
+{
+ public this(_ : int)
+ {
+   print("B()\n");
+   base(2);
+ }
+}
+
+class Closurising : Base {
+  myfun : void -> void;
+  fld : int;
+  
+  public this (x : int)  {
+    mutable str = "aaa";
+    fld = 1;
+    myfun = () => print ("fun $x and $str and no fld\n"); // we do not use 'fld', so closure can be created safely
+    myfun ();
+        base (x);
+    str = "bbb";
+    fld = 7;
+    myfun ();    
+  }
+}
+class A2 : Base {
+  public this (y : int = 7) {
+    if (y == 1) 
+      base (3); 
+    else 
+      base (4);
+  }
+}
+struct A3 {
+  public this (x : int) {
+    System.Console.WriteLine (x);
+  }
+  public this (_ : string) {
+    this (1);
+    this (2);
+  }       
+}
+/*
+BEGIN-OUTPUT
+A.m
+B.m
+B.Prop
+A.Prop
+A.Prop set
+B.Prop set
+B()
+A()
+fun 5 and aaa and no fld
+A()
+fun 5 and bbb and no fld
+A()
+1
+2
+END-OUTPUT
+*/

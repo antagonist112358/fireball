@@ -1,0 +1,44 @@
+
+module Test1
+{
+  doo () : void
+  {
+    _ = Hoo (bla, // E: unclosed bracket
+      bla; // E: parse error near operator `;'.+you forget a closing bracket\?
+    Trata (tututu); 
+  } // H: unexpected closing bracket `}' when parsing this `\(' brace group
+}
+
+module M {
+  public boo () : void {
+    match (2) {
+      | _ =>
+        ()
+        _ = 34; // E: expected `;'
+    }
+  }
+
+  public baa () : void {
+    match () {  // E: .*expecting non-empty `\(\.\.\)' after `match'
+      | _ => ()
+    }
+  }
+
+  typof () : void {
+    typeof (); // E: expecting single type in.*typeof.*
+      
+  }
+  
+  faa () : void {
+    match (3) {
+      | 1 =>     // E: match case body cannot be empty
+      | _ => {}
+    }
+  }
+  
+}
+
+module Unclosed { // E: when parsing this
+    foo () : void  {
+        
+    } // E: unexpected end of file

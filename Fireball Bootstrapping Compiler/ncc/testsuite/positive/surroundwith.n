@@ -1,0 +1,49 @@
+using System.Console;
+using Nemerle.Surround;
+
+[assembly: DefineSurround("surround1", false, WriteLine("Surround1Before"), WriteLine("Surround1After"))]
+[assembly: DefineSurround("surround2", false, WriteLine("Surround2Before"), WriteLine("Surround2After"))]
+[assembly: DefineSurround("surround3", false, WriteLine("Surround3Before"), WriteLine("Surround3After"))]
+
+module Test
+{
+  Main() : void
+  {
+    surroundwith (surround1, surround2, surround3)
+      WriteLine("Test1");
+
+    WriteLine();
+	  
+    surroundwith (surround1)
+      WriteLine("Test2");
+
+    WriteLine();
+
+    surroundwith (surround1)
+    surroundwith (surround2)
+      WriteLine("Test3");
+
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Surround1Before
+Surround2Before
+Surround3Before
+Test1
+Surround3After
+Surround2After
+Surround1After
+
+Surround1Before
+Test2
+Surround1After
+
+Surround1Before
+Surround2Before
+Test3
+Surround2After
+Surround1After
+END-OUTPUT
+*/

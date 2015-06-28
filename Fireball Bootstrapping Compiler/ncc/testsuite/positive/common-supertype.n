@@ -1,0 +1,24 @@
+class A {}
+class B : A { public this () {} }
+class C : A { public this () {} }
+
+variant foo {
+  | F_a
+  | F_b
+}
+
+module M {
+  public Main () : void {
+    def x =
+      match (null) {
+        | foo.F_a => B ()
+        | foo.F_b => C ()
+      };
+    def _ =
+      match (null) {
+        | foo.F_a => x
+        | foo.F_b => x
+      };
+    ()
+  }
+}

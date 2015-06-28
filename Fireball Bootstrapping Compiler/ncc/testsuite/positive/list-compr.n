@@ -1,0 +1,130 @@
+#pragma indent
+using System.Console
+
+WriteLine ($[ (x,y) | x in [1,2,3], y in [1,2,3], x > y ])
+
+def _allMembers =
+  $[m | a in System.AppDomain.CurrentDomain.GetAssemblies (),
+        t in a.GetTypes (), m in t.GetMembers ()].ToArray ()
+
+WriteLine ($[ x | x in [1 .. 12] ])
+WriteLine ($[ x | x in [1, 3..12] ])
+WriteLine ($[ x | x in [10, 9.. 1] ])
+
+
+def foo(k)
+  WriteLine ($"foo($k)")
+  k
+  
+def bar(k)
+  WriteLine ($"bar($k)")
+  k
+  
+// test side effects ordering
+WriteLine ($[ x | x in [foo (1), foo(3) .. foo (5)] ])
+
+WriteLine ($[ (x,y) | x in [foo (1), foo (3) .. foo (7)],
+                      y in [bar (2), bar (4) .. bar (8)] ])
+
+foreach (x in [1 ..5]) WriteLine (x)
+foreach (x in [5, 4..1]) WriteLine (x)
+
+WriteLine ($[1 .. 10])
+WriteLine ($[1, 3 .. 10])
+
+WriteLine ("-------- Imperative ----");
+foreach(i in $[2..10]) {
+  when (i % 2 == 0)
+    Nemerle.Imperative.Continue();
+  System.Console.WriteLine(i);
+}
+foreach(i in $[2, 4..20]) {
+  when (i % 3 == 0)
+    Nemerle.Imperative.Continue();
+  System.Console.WriteLine(i);
+  when (i == 14) Nemerle.Imperative.Break ();
+}
+System.Console.WriteLine ("--");
+foreach (i in $[int.MaxValue .. int.MaxValue])
+  System.Console.WriteLine (i);
+System.Console.WriteLine ("--");  
+foreach (i in $[int.MaxValue-2,int.MaxValue-1  .. int.MaxValue])
+  System.Console.WriteLine (i);  
+System.Console.WriteLine ("--");    
+foreach (i in $[int.MaxValue-3,int.MaxValue-1  .. int.MaxValue])
+  System.Console.WriteLine (i);   
+System.Console.WriteLine ("--");
+foreach (i in $[int.MinValue,int.MinValue+1  .. int.MinValue])
+  System.Console.WriteLine (i);   
+
+// because we deal with floats it should not depend on national formatting
+System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+
+System.Console.WriteLine ("--");
+foreach (f in $[1.0 .. 2.9])
+  System.Console.WriteLine (f);
+
+/*
+BEGIN-OUTPUT
+[(2, 1), (3, 1), (3, 2)]
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+[1, 3, 5, 7, 9, 11]
+[10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+foo(1)
+foo(3)
+foo(5)
+[1, 3, 5]
+foo(1)
+foo(3)
+foo(7)
+bar(2)
+bar(4)
+bar(8)
+bar(2)
+bar(4)
+bar(8)
+bar(2)
+bar(4)
+bar(8)
+bar(2)
+bar(4)
+bar(8)
+[(1, 2), (1, 4), (1, 6), (1, 8), (3, 2), (3, 4), (3, 6), (3, 8), (5, 2), (5, 4), (5, 6), (5, 8), (7, 2), (7, 4), (7, 6), (7, 8)]
+1
+2
+3
+4
+5
+5
+4
+3
+2
+1
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+[1, 3, 5, 7, 9]
+-------- Imperative ----
+3
+5
+7
+9
+2
+4
+8
+10
+14
+--
+2147483647
+--
+2147483645
+2147483646
+2147483647
+--
+2147483644
+2147483646
+--
+-2147483648
+--
+1
+2
+END-OUTPUT
+*/

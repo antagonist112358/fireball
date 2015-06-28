@@ -1,0 +1,74 @@
+using System.Globalization;
+using System.Console;
+
+[Record]
+struct A {
+  x : double;
+
+  public override ToString () : string {
+    x.ToString (CultureInfo.InvariantCulture)
+  }
+}
+
+class X {
+
+  public static foo['a] (_x : array['a]) : void
+  {
+    foreach (x in _x)
+      System.Console.WriteLine (x);
+  }
+
+  public static Main () : void
+  {
+    foo (array ["foo", "bar"]); 
+    foo (array [1, 2, 3]); 
+    foo (array [1 : object, 2, 3]); 
+    foo (array [A(1.0), A(2.3)]); 
+
+    def f['a] (_ : 'a) : void
+    {
+      Write ($ "f [$(typeof ('a))] called\n");
+    }
+
+    def g () {
+      Write ("g called\n");
+      object ()
+    }
+
+    f (g ());
+
+    // bug 503
+    def better_to_string ['a] (x : 'a) {
+       match (x) {
+         | str is string => "\"" + str + "\""
+         | ch is char => "'" + ch.ToString () + "'"
+         | _ => x.ToString ()
+       }
+    }
+     
+
+    System.Console.WriteLine (better_to_string ("foo"));
+    System.Console.WriteLine (better_to_string ('f'));
+    System.Console.WriteLine (better_to_string (4));
+  }
+}
+
+/*
+BEGIN-OUTPUT
+foo
+bar
+1
+2
+3
+1
+2
+3
+1
+2.3
+g called
+f [System.Object] called
+"foo"
+'f'
+4
+END-OUTPUT
+*/

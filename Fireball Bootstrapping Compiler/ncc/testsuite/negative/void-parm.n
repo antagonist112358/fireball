@@ -1,0 +1,14 @@
+﻿module M
+{
+  public foo (_xxx : void) : void // E: has void argument
+  {
+  }
+
+  public bar (_xxx : System.Void) : void // E: has void argument
+  {
+  }
+ 
+  public Main () : void // OK
+  {
+  }
+}

@@ -1,0 +1,949 @@
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+
+The algorithm used here is based on the ``ML pattern match compilation
+and partial evaluation'' by Peter Sestoft, available at:
+
+  http://www.dina.kvl.dk/~sestoft/papers/match.ps.gz
+
+However the partial evaluator used there is purely functional, while we use
+a more imperative, but conceptually simpler approach.
+
+The idea is to build a decision tree (type Decision) out of a list
+of patterns. The nodes in the tree represent a constructor (type Con)
+equality tests, while the leafs contains the result of matching (either
+failure or a branch to be taken).
+
+If given branch is not found in the output tree, then given pattern
+never matches and is thus redundant.
+
+If there is at least one Failure leaf, the matching is not exhaustive.
+The counter example (type CounterExample) is constructed by walking the
+path to the Failure leaf and adding positive and negative information
+to it.
+
+The idea used in building the decision tree is to use available static
+information.  It is encoded in a ``skeleton'' of a term we're currently
+matching (type Skeleton). For example given a pattern: Foo (Bar), if the
+head of the term matches Foo, but the argument ain't Bar, then in this
+branch we're confident that the term is Foo(NOT(Bar)) (this Foo(NOT(Bar))
+is an example of a skeleton) that is and if the next pattern to check
+is Foo (Baz), we just need to check for Baz.
+
+The data flow is: 
+  list [Match_case] ->             // input
+  list [Pattern * bool * int] ->   // pattern, has_guard, id
+  the first element of the above list is used to construct the first
+  TopLevelPattern, rest of patterns are handled automatically by
+  TopLevelPattern in its failure branches ->
+  Decision // output
+
+*/
+
+using Nemerle.Collections;
+using Nemerle.IO;
+using Nemerle.Utility;
+
+using Nemerle.Compiler;
+using Nemerle.Compiler.Typedtree;
+
+using PT = Nemerle.Compiler.Parsetree;
+
+namespace Nemerle.Compiler
+{
+  [ManagerAccess]
+  class DecisionTreeBuilder
+  {
+
+    // this is used internally to tell CheckMatching to renounce
+    // the counter example being constructed and try to find
+    // another one
+    // a counter example is rejected in two cases:
+    // 1) when it contains 'null'
+    // 2) when it contains a numerical constant for an enum
+    //    that wasn't declared with System.Flags attribute
+    class IgnoreCounterExample : System.Exception
+    {
+      public this ()
+      {
+      }
+    }
+
+    internal variant Con : System.IEquatable[Con]
+    {
+      | Variant { ti : TypeInfo; }
+      | Lit { lit : Nemerle.Compiler.Literal; }
+      | Type { ti: FixedType; }
+      // Decision.IsEq (Path.Here, Con.Guard, _, _) is used to simulate
+      // guard check
+      | Guard
+      
+      // These two are used only in the counter example building, not in
+      // the skeleton
+      | Unspecified
+      | Not { lst : list [Con]; }
+
+      [OverrideObjectEquals]
+      public Equals (con : Con) : bool
+        implements System.IEquatable[Con].Equals
+      {
+        match ((this, con)) {
+          | (Variant (ti1), Variant (ti2)) => ti1.Equals (ti2)
+          | (Lit (lit1), Lit (lit2)) => lit1.Equals (lit2)
+          | (Type (ti1), Type (ti2)) => ti1.Equals (ti2)
+          | (Guard, Guard) => true
+          | _ => false
+        }
+      }
+
+      /** Return a string representation of a value of the same kind
+          as values in [cons], but different than any of them. 
+
+          throw_ignore == true tells the function to throw
+          IgnoreCounterExample whenever it is unable to find
+          such value; otherwise (throw_ignore == false) the
+          compiler bails out with ``internal error''
+      */
+      static FindValueExcept (cons : list [Con], throw_ignore = false) : string
+      {
+        match (cons) {
+          | [] => "_"
+          | Lit (Literal.Bool (true)) :: _ => "false"
+          | Lit (Literal.Bool (false)) :: _ => "true"
+
+          | (Lit (Literal.Enum (_, tc, _)) :: _) as lits
+            when ! tc.HasAttribute (tc.Manager.InternalType.FlagsAttribute_tc) =>
+
+            // seems that both cases are possible (Enum & Integer; the latter
+            // for example when enumeration is defined in different assembly 
+            // than the code that uses it)
+            def get_cmpf (val)
+            {
+              if (val is Literal.Enum)
+                fun (l) {
+                  | Lit (v) => val.Equals (v)
+                  | _ => false
+                }
+              else {
+                assert(val is Literal.Integer);
+                fun (l) {
+                  | Lit (Literal.Enum (v, _, _)) => val.Equals (v)
+                  | _ => false
+                }
+              }
+            }
+
+            mutable res = null;
+            foreach (fld is IField in tc.GetMembers ())
+              when (fld.IsLiteral && fld.DeclaringType.Equals (tc) &&
+                    !lits.Exists (get_cmpf (fld.GetValue ())))
+                res = fld.Name;
+            when (res == null && throw_ignore) 
+              throw IgnoreCounterExample ();
+            assert(res != null);
+            res
+          
+          | (Variant (tc) :: _) as variants =>
+            match (Option.UnSome (tc.SuperClass ()).GetTydecl ()) {
+              | TypeDeclaration.Variant (opts) => 
+                mutable res = null;
+                foreach (opt in opts)
+                  when (!variants.Contains (Variant (opt)))
+                    res = opt.Name;
+                when (res == null && variants.ForAll (fun (x) { ! (x is Con.Lit (Literal.Null)) }))
+                  if (throw_ignore)
+                    throw IgnoreCounterExample ();
+                  else
+                    res = "null";
+                assert(res != null);
+                res
+              | _ => assert(false)
+            }
+
+          | vals => $ "(anything except $vals)"
+        }
+      }
+
+      public ToString (throw_ignore : bool) : string
+      {
+        match (this) {
+          | Variant (ti) => ti.ToString ()
+          | Lit (lit) => lit.ToString ()
+          | Type (ti) => $ "is $ti"
+          | Guard => "GUARD"
+          | Unspecified => "UNSPECIFIED"
+          | Not (x) => FindValueExcept (x, throw_ignore) 
+            // + $ "NOT($x)"
+        }
+      }
+
+      public override ToString () : string
+      {
+        ToString (false);
+      }
+
+      public override GetHashCode () : int
+      {
+        match (this) {
+            | Variant (ti) => ti.GetHashCode ()
+            | Type (ti) => ti.GetHashCode ()
+            | Lit (lit) => lit.GetHashCode ()
+            | Guard => 4
+            | Unspecified 
+            | Not => 0
+        }
+      }
+
+      /// Return number of possible constructors of given type.
+      /// -1 means infinity.
+      public Span : int
+      {
+        get {
+          match (this) {
+// this case is ok for CheckMatching () but doesn't work when a decision
+// tree is compiled (examples in new-matching-enums.n testcase)
+//            | Lit (Literal.Enum (_, tc))
+//              when ! tc.HasAttribute (InternalType.FlagsAttribute_tc) =>
+//              mutable cnt = 0;
+//              foreach (fld is IField in tc.GetMembers ())
+//                when (fld.IsLiteral && fld.DeclaringType.Equals (tc))
+//                  ++cnt;
+//              cnt
+
+            | Variant (ti) =>
+              match (Option.UnSome(ti.SuperClass()).GetTydecl())
+              {
+                | TypeDeclaration.Variant (opts) => opts.Length + 1 // + 1 for null value
+                | TypeDeclaration.Class          => -1
+                | _                              => assert(false)
+              }
+
+            | Lit (Literal.Bool) => 2
+            | Lit (Literal.Void) => 1
+
+            | Unspecified
+            | Lit
+            | Type
+            | Guard 
+            | Not => -1
+          }
+        }
+      }
+    }
+
+    /** Represent our current state of the knowledge about the term 
+        matched.  */
+    class Skeleton
+    {
+      field : IMember;
+      
+      mutable is_not : list [Con];
+      
+      mutable is_con : Con;
+      mutable args : list [Skeleton];
+      
+
+      /** The head of the matched term is [con].  */
+      public AddPositive (con : Con) : void
+      {
+        assert(is_con == null);
+        is_con = con;
+        args = [];
+        is_not = null;
+      }
+
+
+      /** The head of the matched term is not [con].  */
+      public AddNegative (con : Con) : void
+      {
+        assert(is_con == null);
+        assert(! is_not.Contains (con));
+        is_not = con :: is_not;
+      }
+      
+
+      /** Check if the head of the term is [con] (for sure).  */
+      public IsIt (con : Con) : bool
+      {
+        if (is_con == null)
+          if (is_not is [] && con.Span != 1 || is_not.Contains (con))
+            false
+          else {
+            def span = 
+              if (con is Con.Lit (Nemerle.Compiler.Literal.Null))
+                 is_not.Head.Span;
+              else 
+                 con.Span;
+            if (is_not.Length + 1 == span) {
+              AddPositive (con);
+              true
+            } else false
+          }
+        else
+          match ((is_con, con)) {
+            | (Variant, _)
+            | (Lit, _) => is_con.Equals (con)
+            | (Type (ti1), Type (ti2)) => ti1.TryRequire (ti2)
+            | _ => false
+          }
+      }
+      
+
+      /** Check if the head of the term can be [con] (that is we're not
+          confident it is something else).  */
+      public CanBe (con : Con) : bool
+      {
+        if (is_con == null)
+          ! is_not.Contains (con)
+        else
+          match ((is_con, con)) {
+            | (Variant, _)
+            | (Lit, _) => is_con.Equals (con)
+            | (Type (ti1), Type (ti2)) => ti1.TryRequire (ti2)
+            | _ => false
+          }
+      }
+      
+
+      /** Store the state of the current node.  */
+      public Save () : list [Con] * Con * list [Skeleton]
+      {
+        (is_not, is_con, args)
+      }
+      
+
+      /** Restore the state of the current node.  */
+      public Restore (is_not : list [Con], is_con : Con, args : list [Skeleton]) : void
+      {
+        this.is_not = is_not;
+        this.is_con = is_con;
+        this.args = args;
+      }
+
+      this (f : IMember)
+      {
+        field = f;
+        is_not = [];
+      }
+      
+      
+      /** Don't-know-anything skeleton.  */
+      public static Empty () : Skeleton
+      {
+        Skeleton (null)
+      }
+
+
+      /** Return a child named [fld] of the term represented by [this].  */
+      public Select (fld : IMember) : Skeleton
+      {
+        when (is_con == null) {
+          is_con = Con.Unspecified ();
+          is_not = null;
+          args = [];
+        }
+
+        match (args.Find (fun (td) { td.field.Equals (fld) })) {
+          | Some (td) => td
+          | None =>
+            def td = Skeleton (fld);
+            args = td :: args;
+            td
+        }
+      }
+
+      public override ToString () : string
+      {
+        if (is_con == null)
+          $ "Neg($is_not)"
+        else
+          $ "Pos($is_con($args))"
+      }
+    }
+
+
+    /** Represent an access path to a subterm.  */
+    internal variant Path : System.IEquatable[Path]
+    {
+      | Here
+      | Field { field : IMember; path : Path; }
+
+      // TypeVar of Pattern that this Path node was created for
+      // necessary to compute access_expr 
+      ty : TypeVar;
+
+      // TExpr that loads object this path points to on the VM stack
+      // field used by DecisionTreeCompiler to memoize computed TExprs
+      [Accessor (flags = WantSetter)]
+      mutable access_expr : TExpr;
+
+      public this (ty : TypeVar)
+      {
+        this.ty = ty;
+        this.access_expr = null;
+      }
+
+      public this ()
+      {
+        this.ty = null;
+        this.access_expr = null;
+      }
+
+      public Type : TypeVar
+      {
+        get { ty }
+      }
+
+      public override ToString () : string
+      {
+        match (this) {
+          | Here => "obj"
+          | Field (f, p) => $ "($p : $(f.DeclaringType)).$(f.Name)"
+        }
+      }
+
+      [OverrideObjectEquals]
+      public Equals (path : Path) : bool
+        implements System.IEquatable[Path].Equals
+      {
+        match ((this, path)) {
+          | (Here, Here) => true
+          | (Field (f1, p1), Field (f2, p2)) => f1.Equals (f2) && p1.Equals (p2)
+          | _ => false
+        }
+      }
+
+      [Memoize]
+      public override GetHashCode () : int
+      {
+        match (this)
+        {
+          | Here => 0
+          | Field (f, p) => unchecked ( f.GetHashCode () + p.GetHashCode () )
+        }
+      }
+    }
+
+
+    /** Represent a decision tree.  */
+    internal variant Decision : System.IEquatable[Decision]
+    {
+      | Success { res : int; }
+      | Failure
+      | Assign { 
+          path : Path;
+          decl : LocalValue;
+          dtree : Decision;
+        }
+      | IfEq {
+          path : Path;
+          con : Con;
+          if_true : Decision;
+          if_false : Decision;
+        }
+
+      ToString (indent : string) : string
+      {
+        match (this) {
+          | Success (res) =>
+            $"$(indent)success $res\n"
+          | Failure =>
+            $"$(indent)failure\n"
+          | Assign (path, decl, dtree) =>
+            def i2 = indent + "   ";
+            $"$(indent)def $(decl.Name) = $path\n"
+             "$(dtree.ToString (i2))"
+          | IfEq (path, con, tr, fl) =>
+            def i2 = indent + "   ";
+            $"$(indent)if $path = $con:\n"
+             "$(tr.ToString(i2))"
+             "$(indent)else:\n"
+             "$(fl.ToString(i2))"
+        }
+      }
+
+      public override ToString () : string
+      {
+        "\n" + ToString ("")
+      }
+
+      // in-degree of this node in decision dag
+      [Accessor (flags = WantSetter)]
+      mutable in_deg : int;
+
+      [Accessor] mutable location        : Location;
+      [Accessor] mutable is_debug_marked : bool;
+
+      internal MarkDebug () : void
+      {
+        is_debug_marked = true;
+      }
+
+      public IsShared : bool
+      {
+        get { in_deg > 1 }
+      }
+
+      // DecisionTreeCompiler labels shared nodes so they can
+      // be reused in IL (goto label_id) 
+      [Accessor (flags = WantSetter)]
+      mutable label_id : option [int];
+
+      public this (loc : Location)
+      {
+        in_deg = 0;
+        label_id = None ();
+        this.location = loc;
+      }
+
+      // this equality test is used for bottom-up detection of shared
+      // nodes and that's why it compares subtrees by their references
+      [OverrideObjectEquals]
+      public Equals (other : Decision) : bool
+        implements System.IEquatable[Decision].Equals
+      {
+        match ((this, other)) {
+          | (IfEq (path1, con1, if_true1, if_false1),
+             IfEq (path2, con2, if_true2, if_false2)) =>
+             (if_true1 : object) == if_true2 && 
+             (if_false1 : object) == if_false2 && 
+             con1.Equals (con2) && path1.Equals (path2)
+
+          | (Assign (path1, decl1, dtree1), 
+             Assign (path2, decl2, dtree2)) =>
+            (dtree1 : object) == dtree2 && decl1.Equals (decl2) && 
+            path1.Equals (path2)
+
+          | (Success (res_id1), Success (res_id2)) => 
+            res_id1 == res_id2
+
+          | (Failure, Failure) => true
+
+          | _ => false
+        }
+      }
+
+      public override GetHashCode () : int
+      {
+        unchecked match (this) {
+          | IfEq (path, con, _, _) => path.GetHashCode () + con.GetHashCode ()
+          | Assign (path, decl, _) => path.GetHashCode () + decl.GetHashCode ()
+          | Success (res_id) => 1 + res_id
+          | Failure => 0
+        }
+      }
+
+    }
+
+
+    /** Used for compilation of the top-level patterns.  */
+    [Record]
+    class TopLevelPattern {
+      has_guard : bool;
+      res_id : int;
+      mutable res_loc : Location;
+      continuation : list [Pattern * bool * int];
+      skel : Skeleton;
+      // used to detect shared nodes
+      // TODO: don't need a dictionary here (but don't have any
+      // meaningful comparator for a Set)
+      nodes : Hashtable [Decision, Decision];
+
+      /** Called when we have failed to match the current pattern.  */
+      BuildFailure () : Decision
+      {
+        match (continuation) {
+          | [] => Decision.Failure (Location.Default)
+          | (pat, has_guard, res_id) :: rest =>
+            def p = TopLevelPattern (has_guard, res_id, pat.Location, rest, skel, nodes);
+            //Message.Debug ($ "build failure for $continuation ");
+            p.Build ([(Path.Here (pat.Type), skel, pat)])
+        }
+      }
+
+
+      /** Called when we finally succeeded with the matching.  This is 
+          a separate function because of the guards we may need to call.  */
+      BuildSuccess () : Decision
+      {
+        if (has_guard)
+          Decision.IfEq (Location.Default, Path.Here (), Con.Guard (), 
+                         Decision.Success (res_loc, res_id),
+                         BuildFailure ())
+        else
+          Decision.Success (res_loc, res_id)
+      }
+
+
+      /** Build a decision tree for given set of patterns.  All the patterns
+          in [pats] must match.
+          
+          The idea here is to queue patterns that yet need to be matched in
+          argument of this function.  When matching fails we use 
+          [this.continuation] for building rest of the entire matching.  */
+      public Build (pats : list [Path * Skeleton * Pattern]) : Decision
+      {
+        //Message.Debug ($"Build($pats)");
+        match (pats) {
+          | [] => BuildSuccess ()
+          | (path, skel, pat) :: rest =>
+
+            /* This function checks if the head of [path] is [con] and if
+               so check [rest] of the patterns, otherwise fail to
+               [this.continuation] using [BuildFailure()].
+               
+               This function exploits and updates the static information 
+               available in [skel].
+               
+               All the skeleton building is done in this function.  */
+            def check_if (con, rest) {
+              def positive = skel.IsIt (con);
+              def negative = !skel.CanBe (con);
+              
+              //Message.Debug ($ "check if: $con, $rest, $positive, $negative");
+              if (positive)
+                Build (rest)
+              else if (negative)
+                BuildFailure ()
+              else {
+                def state = skel.Save ();
+                
+                skel.AddPositive (con);
+                def if_true = Build (rest);
+                skel.Restore (state);
+
+                skel.AddNegative (con);
+                def if_false = BuildFailure ();
+                skel.Restore (state);
+                
+                Decision.IfEq (pat.Location, path, con, if_true, if_false)
+              }
+            }
+
+            def dtree =            
+              match (pat) {
+                | Pattern.Wildcard
+                | Pattern.Error => Build (rest)
+              
+                | Pattern.As (pat, decl) =>
+
+                  // Check if by always choosing if_true branch in decision subtree we
+                  // eventually stop at either Failure or Success with res_id equal
+                  // to the current one.
+                  // This check is needed for Decision.Assign, because `if_true' path
+                  // in tree can cross TopLevelPatterns (see new-matching-as.n test case)
+                  // and assignment would be placed in wrong match effect (resulting in
+                  // InvalidCastException).
+                  def check_resid (decision) {
+                    | Decision.Success (res) => res == res_id
+                    | Decision.IfEq (_, _, if_true, _) => check_resid (if_true)
+                    | Decision.Assign (_, _, dtree) => check_resid (dtree)
+                    | Decision.Failure => true
+                  }
+
+                  def dtree = Build ((path, skel, pat) :: rest);
+
+                  if (check_resid (dtree))               
+                    match (dtree) 
+                    {
+                      | Decision.IfEq (_, Con.Guard, _, _) => Decision.Assign (dtree.Location, path, decl, dtree)
+
+                      | Decision.IfEq (p, con, if_true, if_false) => 
+                        def assign = Decision.Assign (if_true.Location, path, decl, if_true);
+                        Decision.IfEq (dtree.Location, p, con, assign, if_false);
+  
+                      | Decision.Success
+                      | Decision.Assign => Decision.Assign (dtree.Location, path, decl, dtree)
+
+                      | Decision.Failure => dtree
+                    }
+                  else dtree
+
+                // change tuple to record
+                | Pattern.Tuple (pats) =>
+                  mutable id = 0;
+                  def tt = pat.ty.Manager.InternalType.GetTupleType (pats.Length);
+                  def pats' =
+                    pats.Map (fun (pat) { ++id; (tt.GetField (id), pat) });
+                  def pat =
+                    Pattern.Record (pat.Location, pat.ty, pats');
+                  Build ((path, skel, pat) :: rest)
+
+                | Pattern.Literal (lit) =>
+                  check_if (Con.Lit (lit), rest)
+
+                | Pattern.Record (pats) =>
+                  def actions = pats.Map (fun (fld, p) {
+                    (Path.Field (p.Type, fld, path), skel.Select (fld), p)
+                  });
+                  Build (actions + rest)
+
+                | Pattern.HasType (ti) =>
+                  check_if (Con.Type (ti), rest)
+
+                | Pattern.Application(vart, subpat) =>
+                  def pat   = pat;
+                  def rest  = (path, skel, subpat) :: rest;
+                  def isVariant(tc)
+                  {
+                    match (tc.GetTydecl())
+                    {
+                      | TypeDeclaration.Variant | TypeDeclaration.VariantOption => true
+                      | _                                                       => false
+                    }
+                  }
+                  match (pat.Type.HintFast)
+                  {
+                    | Class(tc, _) when tc.Equals(vart) => Build(rest)
+                    | Class        when isVariant(vart) => check_if(Con.Variant(vart), rest)
+                    | _                                 => check_if(Con.Type(vart.GetFreshType()), rest)
+                  }
+
+                | Pattern.Enum (fld, val) =>
+                  def lit =
+                    match (val) {
+                      | Literal.Enum => val
+                      | Literal.Integer as i => Literal.Enum (i, fld.DeclaringType, fld)
+                      | _ => assert(false)
+                    }
+                  check_if (Con.Lit (lit), rest)
+             }
+
+              match (nodes.Get (dtree)) {
+                | None => 
+                  nodes.Add (dtree, dtree);
+                  match (dtree) {
+                    | IfEq (_, _, tr, fl) =>
+                      ++ tr.InDeg;
+                      ++ fl.InDeg
+                    | Assign (_, _, tree) =>
+                      ++ tree.InDeg
+                    | _ => {}
+                  }
+                  dtree
+                | Some (dtree) => 
+                  dtree
+              }
+              /*
+            else {
+              // ensure that leaves are shared even when DAG option is disabled
+              match (dtree) {
+                | Decision.Failure
+                | Decision.Success => dtree.InDeg = 2
+                | _ => {}
+              }
+              dtree
+            }
+            */
+        }
+      }
+    }
+    
+
+    /** Build decision tree for given list of (pattern, has_guard, id)
+        triples.  */
+    static Build (patterns : list [Pattern * bool * int]) : Decision
+    {
+      match (patterns) {
+        | (pat, has_guard, res_id) :: rest =>
+          def skel = Skeleton.Empty ();
+          def nodes = Hashtable ();
+          def p = TopLevelPattern (has_guard, res_id, pat.Location, rest, skel, nodes);
+          p.Build ([(Path.Here (pat.Type), skel, pat)])
+        | _ => assert(false)
+      }
+    }
+
+
+    /** Represent a counter example for non exhaustive matching.  */
+    variant CounterExample
+    {
+      | Anything
+      | Exactly { con : Con; args : list [IMember * CounterExample]; }
+
+
+      /** Add information that [path] matched [con] (which can be 
+          negative).  */
+      public With (con : Con, path : Path) : CounterExample
+      {
+        match (path) {
+          | Path.Here =>
+            match (this) {
+              | Anything =>
+                Exactly (con, [])
+              | Exactly (con', args) =>
+                def con =
+                  if (con' == null) con
+                  else match (con') {
+                    | Con.Not (lst) =>
+                      match (con) {
+                        | Con.Not (lst') => Con.Not (lst' + lst)
+                        | c =>
+                          assert(!lst.Contains (c));
+                          c
+                      }
+                    | _ => con'
+                  }
+                Exactly (con, args)
+            }
+          | Path.Field (fld, path) =>
+            match (this) {
+              | Anything =>
+                Exactly (null, [(fld, Anything ().With (con, path))])
+              | Exactly (con', args) =>
+                mutable example = Anything ();
+                def args = args.FoldLeft ([], fun (elem, acc) {
+                  def (fld', example') = elem;
+                  if (fld'.Equals (fld)) {
+                    example = example';
+                    acc
+                  } else elem :: acc
+                });
+                Exactly (con', (fld, example.With (con, path)) :: args)
+            }
+        }
+      }
+
+      static FieldToString (mem : IMember, example : CounterExample) : string
+      {
+        if (TupleType.IsTupleMember (mem)) $"$example"
+        else                               $"$(mem.Name) = $example"
+      }
+
+      public override ToString () : string
+      {
+        match (this) {
+          | Anything            => "_"
+          | Exactly (null, [])  => "_"
+          | Exactly (con, [])   => con.ToString (true)
+          | Exactly (null, lst) =>      $<#(..$(lst; ", "; FieldToString))#>
+          | Exactly (con, lst)  => $<#$con (..$(lst; ", "; FieldToString))#>
+        }
+      }
+    }
+
+
+    static BuildCounterExample (path : list [Path * Con]) : string
+    {
+      def res = path.FoldLeft (CounterExample.Anything (), fun (elem, acc) {
+        def (access, con) = elem;
+        match (con) {
+          | Con.Guard
+          | Con.Not ([Con.Guard]) => acc
+          | _ =>
+            acc.With (con, access)
+        }
+      });
+      res.ToString ()
+    }
+
+
+    mutable patterns : list [Pattern * bool * int] = [];
+    decision : Decision;
+
+    public this (cases : list [Match_case]) 
+    {
+      mutable no = 0;
+      
+      foreach (case in cases)
+        foreach ((pat, guard, _) in case.patterns) {
+          Manager = pat.Type.Manager;
+          def no_guard = 
+            match (guard)
+            {
+              | TExpr.DebugInfo(TExpr.Literal(Literal.Bool(true)), _)
+              |                 TExpr.Literal(Literal.Bool(true)) => true
+              | _ => false
+            };
+          patterns = (pat, ! no_guard, no) :: patterns;
+          ++no;
+        }
+
+      patterns = patterns.Rev ();
+      
+      decision = Build (patterns)
+    }
+
+    internal GetDecision () : Decision
+    {
+      decision
+    }
+
+    /** Give warnings about ``pattern matching not exhaustive'' and 
+        ``unused match clause''.  */    
+    public CheckMatching () : void
+    {
+      //Message.Debug ($ "tree for $patterns: $decision");
+      def pat_arr = array (patterns.Length);
+      foreach ((pat, _, k) in patterns)
+        pat_arr [k] = pat;
+
+      mutable non_exhaustive_shown = false;
+
+      def traverse (path, n) {
+        match (n) {
+          | Decision.Success (res) =>
+            pat_arr [res] = null
+            
+          | Decision.Failure =>
+            if (non_exhaustive_shown) {}
+            else 
+              try {
+                def example = BuildCounterExample (path);
+                non_exhaustive_shown = true;
+                Message.Warning ($ "matching is not exhaustive, example unmatched value: $example")
+              } catch {
+                | _ is IgnoreCounterExample => {}
+              }
+            
+          | Decision.Assign (_, _, dtree) => 
+            traverse (path, dtree)
+
+          | Decision.IfEq (access, con, n1, n2) =>
+            traverse ((access, con) :: path, n1);
+            traverse ((access, Con.Not ([con])) :: path, n2);
+        }
+      }
+
+      traverse ([], decision);
+      
+      foreach (pat in pat_arr)
+        when (pat != null)
+          Message.Warning (pat.Location, "this match clause is unused");
+    }
+    
+    /** Construct a Decision tree and call CheckMatching () on it. */
+    public static CheckMatching (cases : list [Match_case]) : void
+    {
+      def builder = DecisionTreeBuilder (cases);
+      builder.CheckMatching ();
+    }
+  }
+}

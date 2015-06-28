@@ -1,0 +1,47 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.AST
+{
+  /// <summary>
+  /// Description of DeclarationBase.
+  /// </summary>
+  public abstract class DeclarationBase : AstNode
+  {
+    private mutable _attributes : list[CustomAttribute] = [];        
+    
+    public this(name: Named, modifiers: FireballModifiers, attributes: Seq[CustomAttribute] = null)
+    {
+      this(Location.Default, name, modifiers, attributes)
+    }
+    
+    public this(loc: Location, name: Named, modifiers: FireballModifiers, attributes: Seq[CustomAttribute] = null)
+    {
+      base(loc);
+      
+      Name = name;
+      Modifiers = modifiers;
+      
+      attributes?.ForEach(e => _attributes ::= e);
+    }
+    
+    public Name : Named { get; set }
+    public Attributes : list[CustomAttribute] { get { _attributes } }
+    public Modifiers : FireballModifiers { get; set }
+    
+    public ParsedName : String { get { Name.Id } }
+    
+    public AddCustomAttribute(attrib : CustomAttribute) : void
+    {
+      _attributes ::= attrib;
+    }
+  }
+}

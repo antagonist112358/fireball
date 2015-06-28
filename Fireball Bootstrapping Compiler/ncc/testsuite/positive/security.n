@@ -1,0 +1,59 @@
+using System;
+using System.IO;
+using System.Security;
+using System.Security.Permissions;
+
+#if !NET_4_0
+[FileIOPermission (SecurityAction.Deny, AllFiles=FileIOPermissionAccess.AllAccess)]
+#endif
+ 
+module LimitedType
+{
+  public Test () : void
+  {
+    Test.CreateFile ();
+  }
+}
+
+module Test
+{
+  public CreateFile () : void
+  {
+  	try
+  	{
+      File.Create ("dummy").Close ();
+      File.Delete ("dummy");
+      Console.WriteLine ("Succeeded");
+    }
+    catch
+    {
+    | ex => Console.WriteLine (ex.GetType ().Name)
+    }
+  }
+
+  /* Usually, Internet zone does not have permission to ceate a file. */
+  [PermissionSet (SecurityAction.PermitOnly, Name="Internet")]
+  LimitedMethod () : void
+  {
+    CreateFile ();
+  }
+
+  Main () : void
+  {
+    CreateFile ();
+#if RUNTIME_MS && !NET_4_0
+    LimitedType.Test ();
+    LimitedMethod ();
+#else
+    repeat(2) Console.WriteLine("SecurityException");
+#endif	  
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Succeeded
+SecurityException
+SecurityException
+END-OUTPUT
+*/

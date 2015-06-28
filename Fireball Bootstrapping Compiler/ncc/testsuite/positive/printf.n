@@ -1,0 +1,169 @@
+using Nemerle.IO;
+using System.Console;
+using System.IO;
+
+class T {
+  public this () {}
+  public override ToString () : string
+  {
+  //  def x = 3;
+    "some T"
+  }
+
+  public a () : string { $ "$this" }
+}
+
+public module G {
+  public mutable bla : int;
+  public mutable bla1 : int;
+
+  this () { bla =/**/ 0; bla1 = 2; }
+}
+
+class X {
+  public this () {}
+}
+
+module M {
+  mutable uid : int;
+  
+  f () : int { ++uid; uid }
+
+  
+  public Main () : void {
+    System.Console.WriteLine ("Core type unification test.");
+    System.Console.WriteLine ("{0} {1} {2}", "I can see", 120, "devils dancing on the wall.");
+
+    printf ("Ala %d ma %s i %s\n"/**/, 101010, "koat", "paes");
+    printf ("Dziala%s czy %d nie %d %s\n", " mi to", 3, 4, "dziala?");
+    //def yyy = 4;
+    uid = 0;
+    mutable i = 1;
+    mutable n = 1;
+    while (i < 6) {
+      printf("li" /* fff*/ "cze %d\n", n);
+      i = i + 1;
+      n = i * n;
+    };
+
+    mutable a = 1;
+    mutable b = 2;
+    def x = System.Text.StringBuilder ("al" // fdgds
+                                       "abal");
+    printf ("a %d, b %d x %s\n", a, b, x.ToString ());
+    a <-> b;
+    G.bla <-> G.bla1;
+    printf ("bla %d %d\n", G.bla, G.bla1);
+/*
+    Nemerle.Macros.pretty_print_expr ({
+      x[f()] <-> x[f()];
+      if ({printf ("bla %d gh\n", 4); 1 == 4 * 4}) true else false;
+      }, true);
+*/      
+/*
+ def (tmp1, tmp2) = (x, f ());
+  def (tmp1d, tmp2d) = (x, f ());
+  def tmp = tmp1d[tmp2d];
+  tmp1d[tmp2d] = tmp1[tmp2];
+  tmp1[tmp2] = tmp;
+*/
+    x[f()] <-> x[f()];
+    printf ("a %d, b %d x %s\n", a, b, x.ToString ());
+    
+    mutable teststr = 
+      sprintf ("Dynamicznie %s string o " "%s %d i z %d numerkiem\n"
+               "A to druga %s\n", "generowany", "liczba", 2, 3, "linijka");
+    System.Console.Write (teststr);
+
+    def a1 = 1; def b1 = "bla";
+    print ("foo $a1 bl\nah $b1 krad\n");
+    
+    def c = X();
+    print ("X = $c, Y = $(T())\n");
+
+    def lo (n : int, acc) { // W: a local function.* was never used
+      if (n <= 0) acc
+      else lo (n - 1, 1 :: acc)
+    };
+
+    def x = "Alamakota";
+    def y = 660;
+    print (sprint ("Mr. $x likes $(y + 6).\n"));
+    try {
+      printf ("this %s will be %d interrupted %s\n", "output", (null : string).Length, "!!");
+    }
+    catch {
+      | _ is System.NullReferenceException => printf ("ok-catched\n");
+    }
+    
+    printf ("%s\n", 5.5.ToString (System.Globalization.NumberFormatInfo.InvariantInfo));
+    printf ("%i %u %ld %lu\n", 1, 2u, 3L, 4ul);
+
+    using (sw = StreamWriter ("test_out.txt")) {
+      fprintf (sw, "Alabama %s long %ld lasts\n", "dream", 7L);
+      fprintf (sw, "BUM: %u %u\n", 1u, 2u);
+    }
+    using (sr = StreamReader ("test_out.txt")) {
+      mutable str = null;
+      mutable lon = long ();
+      mutable unsig = uint ();
+      fscanf (sr, "Alabama %s long %ld lasts\n", str, lon);
+      printf ("%s %ld\n", str, lon);
+      fscanf (sr, "BUM: %u %u\n", unsig, unsig);
+      print ($"bla $unsig bal\n");
+    }
+
+
+    def quxx = 3;
+    def mux' = 42;
+    print ("$quxx' $(T().a()) $(mux')\n");
+    print ("wrong ${1} splicing\n"); // W: expected variable name or expression.* after
+
+    def x = 1;
+    def lst = [1, 2, 3, 52];
+    def cnv = x => "0x" + x.ToString("X");
+    WriteLine ($@"lst = ..$(lst; ""; "");");
+    def sep = "; ";
+    WriteLine ($@"lst = ..$(lst; sep);");
+    WriteLine ($@"x = $x; lst = ..  $(lst; ""; ""; cnv);");
+    WriteLine ($".$x;");
+    WriteLine ($"lst = '..$(lst)';");
+    WriteLine ($"lst = '..$lst';");
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Core type unification test.
+I can see 120 devils dancing on the wall.
+Ala 101010 ma koat i paes
+Dziala mi to czy 3 nie 4 dziala?
+licze 1
+licze 2
+licze 6
+licze 24
+licze 120
+a 1, b 2 x alabal
+bla 2 0
+a 2, b 1 x aalbal
+Dynamicznie generowany string o liczba 2 i z 3 numerkiem
+A to druga linijka
+foo 1 bl
+ah bla krad
+X = X, Y = some T
+Mr. Alamakota likes 666.
+ok-catched
+5.5
+1 2 3 4
+dream 7
+bla 2 bal
+3' some T 42
+wrong ${1} splicing
+lst = 1; 2; 3; 52;
+lst = 1; 2; 3; 52;
+x = 1; lst = 0x1; 0x2; 0x3; 0x34;
+.1;
+lst = '1, 2, 3, 52';
+lst = '1, 2, 3, 52';
+END-OUTPUT
+*/

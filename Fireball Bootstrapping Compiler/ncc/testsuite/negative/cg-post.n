@@ -1,0 +1,51 @@
+struct X {
+  public mutable x : int;
+}
+
+module Bug621 {
+    public F(_:object):void {}
+    
+    Run () : void { 
+      Bug621.F(throw System.Exception()) // E: `throw' is not allowed here
+   }
+}
+
+class M {
+  bar () : void
+  {
+    match (3) {
+      | 1 =>
+        mutable x = array (3);
+        x [throw System.Exception ()] = 3; // E: `throw' is not allowed here
+      | 2 =>
+        mutable x = array (3);
+        x [throw System.Exception ()] = 13; // E: `throw' is not allowed here
+      | 3 =>
+        System.Console.WriteLine ("foo", throw System.Exception ()); // E: `throw' is not allowed here
+      | 4 =>
+        throw (throw System.Exception ()) // E: `throw' is not allowed here
+      | 5 =>
+        _ = 3 + throw System.Exception () // E: `throw' is not allowed here
+      | 6 =>
+        _ = array [3, throw System.Exception (), 7]; // E: `throw' is not allowed here
+      | 7 =>
+        _ = array (3, throw System.Exception (), 7); // E: `throw' is not allowed here
+      | 8 =>
+        mutable x = X();
+        x.x = throw System.Exception (); // E: `throw' in assignment source
+      | _ => ()
+    } 
+  }
+  
+  static foo (x : ref int) : void
+  {
+    x = 42;
+  }
+  
+  public static Main () : void
+  {
+    X ().x = 3; // E: cannot load value type address
+
+    foo (ref (X ().x)); // E: a ref or out argument must be an assignable variable
+  }
+}

@@ -1,0 +1,1280 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/* Transformations of quoted expressions into syntax trees
+ */
+
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Imperative;
+using Nemerle.IO;
+using Nemerle.Utility;
+
+using System.Text;
+
+using SCG = System.Collections.Generic;
+using TT  = Nemerle.Compiler.Typedtree;
+
+namespace Nemerle.Compiler {
+
+  using Parsetree.TopDeclaration;
+  using Parsetree.ClassMember;
+  
+[ManagerAccess(ManagerClass.Instance)]
+public partial module Macros
+{
+  /// PUBLIC API FOR USAGE IN MACROS
+
+  this ()
+  {
+  }
+
+  /** generates new unique symbol, which can be safely used
+      as name of quoted variables, functions, etc.
+   */
+  public NewSymbol () : Name
+  {
+    NewSymbol ("")
+  }
+  
+  /** generates new unique symbol, which can be safely used
+      as name of quoted variables, functions, etc.
+      The [root] parameter can be used to specify a string to be 
+      part of the name, mostly for debugging purposes.
+   */
+  public NewSymbol (root : string) : Name
+  {
+    // passing global context here makes little sense, but as name is unique here,
+    // we can pass any to do not introduce nulls into Name
+    def ctx = 
+      if (Manager.MacroColors.UseContext == null) Manager.CoreEnv
+      else Manager.MacroColors.UseContext;
+    Name (Util.tmpname (root), Manager.MacroColors.Color, ctx)
+  }
+
+  /** controlled hygiene breaking - generates symbol, which
+      placed in generated code would bind to variables
+      at macro-use site
+   */
+  public UseSiteSymbol (id : string) : Name
+  {
+    Name (id, Manager.MacroColors.UseColor, Manager.MacroColors.UseContext)
+  }
+
+  /** Checks if given expression describes name of a type, like
+      [System.Console] (it is a class)
+   */
+  public IsTypeName (e : PExpr) : bool
+  {
+    def collect_member (obj : PExpr, acc) {
+      match (obj) {
+        // name in expressions has always one element in name
+        | <[ $(n : name) ]> =>
+          def env = n.context;
+          match (env.LookupType (n.Id :: acc)) {
+            | Some => true
+            | _ => false
+          }
+        | <[ $head.$(id : dyn) ]> => collect_member (head, id :: acc)
+        | _ => false
+      }
+    };
+    collect_member (e, [])
+  }
+
+  /** Checks if given expression describes name of a type, like
+      [System.Console] (it is a class)
+   */
+  public GetIfIsType (env : GlobalEnv, e : PExpr) : option [TypeInfo]
+  {
+    def collect_member (obj : PExpr, acc)
+    {
+      match (obj)
+      {
+        // name in expressions has always one element in name
+        | <[ $(n : name) ]> =>
+          def env = n.GetEnv (env);
+          env.LookupType (n.Id :: acc)
+        | <[ $head.$(id : dyn) ]> => collect_member (head, id :: acc)
+        | _ => None ()
+      }
+    }
+
+    collect_member (e, [])
+  }
+
+  public DefaultValueOfType (ty : FixedType) : PExpr
+  {
+    def tExpr = Typedtree.TExpr.DefaultValue(ty);
+    tExpr.ty = ty;
+    PExpr.Typed(tExpr)
+  }
+  
+  /// Lifts given list of expressions to syntax tree of list containing
+  /// elements, whose syntax trees are defined by those expressions.
+  /// (expressions on the list are not lifted)
+  internal Lift(@list : list[PExpr]) : PExpr
+  {
+    | x :: xs => <[ $x :: $(Lift(xs)) ]>
+    | []      => <[ list.Nil() ]>
+  }
+
+  /// Lifts given list to syntax tree of this list, applying
+  /// supplied function to each of its elements. The function
+  /// is used here to lift elements of list, so we can build
+  /// entire syntax trees from them.
+  public Lift[T](@list : list[T], f : T -> PExpr) : PExpr
+  {
+    <[ [..$(NList.Map(@list, f))] ]>
+  }
+
+  public Lift(@list : list[PExpr], f : PExpr -> PExpr) : PExpr
+  {
+    foreach (PExpr.Ellipsis(PExpr.Spliced) in @list)
+    {
+      def code = SCG.List();
+      code.Add(<[ def result = SCG.List(); ]>);
+      foreach (elem in @list)
+      {
+        | PExpr.Ellipsis(PExpr.Spliced(expr)) => code.Add(<[ Nemerle.Compiler.Macros.AddChoose(result, $expr); ]>);
+        | _                                   => code.Add(<[ result.Add($(f(elem))); ]>);
+      }
+      code.Add(<[ result.NToList() ]>);
+
+      return <[ {..$(code.NToList()) } ]>;
+    }
+
+    <[ [..$(NList.Map(@list, f))] ]>
+  }
+
+  public static AddChoose[T](lst : SCG.List[T], seq : SCG.IEnumerable[T]) : void
+  {
+    lst.AddRange(seq)
+  }
+
+  public static AddChoose(lst : SCG.List[PExpr], expr : PExpr) : void
+  {
+    match (expr)
+    {
+      | PExpr.Sequence(exprs) => lst.AddRange(exprs)
+      | null                  => ()
+      | _                     => lst.Add(expr)
+    }
+  }
+  
+  public Lift[T](o : option[T], f : T -> PExpr) : PExpr
+  {
+    match (o)
+    {
+      | Some (v) => <[ Some($(f(v))) ]>
+      | _        => <[ None() ]>
+    }
+  }
+  
+  /** Creates syntax tree of given number (expression building it) */
+  public Lift (x : int) : PExpr { <[ $(x : int) ]> }
+
+  public Lift (x : string) : PExpr { <[ $(x : string) ]> }
+
+
+  // QUOTATION HANDLING SECTION
+  public TypedChoose(e : Typedtree.TExpr)           : PExpr                         { PExpr.Typed(e) }
+  public TypedChoose(e : TypeVar)                   : PExpr                         { PExpr.TypedType(e) }
+  
+  //public QuotationChoose(expr : Typedtree.TExpr)  : PExpr                         { PExpr.Typed(expr) }
+  public QuotationChoose[T](expr : T)               : T       where T : Located     { expr }
+  public QuotationChoose[T](expr : list[T])         : list[T] where T : Located     { expr }
+  public QuotationChoose[T](seq : Seq[T])           : list[T] where T : Located     { seq.NToList() }
+
+  // literals:
+  public QuotationChoose(expr : string)             : PExpr                         { PExpr.Literal(Literal.String    (expr)) }
+  public QuotationChoose(expr : int)                : PExpr                         { PExpr.Literal(Literal.FromInt   (expr)) }
+  public QuotationChoose(expr : byte)               : PExpr                         { PExpr.Literal(Literal.FromByte  (expr)) }
+  public QuotationChoose(expr : sbyte)              : PExpr                         { PExpr.Literal(Literal.FromSByte (expr)) }
+  public QuotationChoose(expr : short)              : PExpr                         { PExpr.Literal(Literal.FromShort (expr)) }
+  public QuotationChoose(expr : ushort)             : PExpr                         { PExpr.Literal(Literal.FromUShort(expr)) }
+  public QuotationChoose(expr : uint)               : PExpr                         { PExpr.Literal(Literal.FromUInt  (expr)) }
+  public QuotationChoose(expr : long)               : PExpr                         { PExpr.Literal(Literal.FromLong  (expr)) }
+  public QuotationChoose(expr : ulong)              : PExpr                         { PExpr.Literal(Literal.FromULong (expr)) }
+  public QuotationChoose(expr : bool)               : PExpr                         { PExpr.Literal(Literal.Bool      (expr)) }
+  public QuotationChoose(expr : char)               : PExpr                         { PExpr.Literal(Literal.Char      (expr)) }
+  public QuotationChoose(expr : float)              : PExpr                         { PExpr.Literal(Literal.Float     (expr)) }
+  public QuotationChoose(expr : double)             : PExpr                         { PExpr.Literal(Literal.Double    (expr)) }
+  public QuotationChoose(expr : decimal)            : PExpr                         { PExpr.Literal(Literal.Decimal   (expr)) }
+
+  /** Lifts up [Splicable]. [Splicable.Expression] is substituted by its
+      content and appropriate [Splicable.Name] expression is created.
+   */
+  quoted_sstring (st : Splicable) : PExpr
+  {
+    match (st)
+    {
+      | Splicable.Name (name) =>
+        assert(name.context != null);
+        <[ Splicable.Name ($(quoted_name (name))) ]>
+
+      | Splicable.Expression (PExpr.TypeEnforcement (e,  <[ $(ty : name) ]> )) =>        
+        match (ty.Id)
+        {
+          | "name"    => <[ Splicable.Name ($e) ]>
+          | "global"  => <[ Splicable.Name (Name.Global (Macros.Manager(), $e)) ]>
+          | "dyn"     => <[ Splicable.Name (Name ($e, -1, ManagerClass.Instance.MacroColors.UseContext)) ]>
+          | "usesite" => <[ Splicable.Name (Name ($e, ManagerClass.Instance.MacroColors.UseColor,
+                                                         ManagerClass.Instance.MacroColors.UseContext)) ]>
+          | x => Message.FatalError ("unsupported splicing type `" + x + "' in splicable expression")
+        }
+
+      | Splicable.Expression (e) => e
+
+      | Splicable.HalfId =>
+        Util.ice ("completion not supported here")
+        
+      | null => <[ null ]>
+    }
+  }
+
+  /** Lifts up [Name] giving it supplied context number. */
+  quoted_name (n : Name, context : int) : PExpr
+  {
+    // VladD2: Name.NameInCurrentColor() remove color information from quasi-quotation.
+    // TODO: VladD2: Maybe use the Name.NameInCurrentColor() only if color > 1?
+    <[ Name.NameInCurrentColor ($(n.Id : string),
+                                $("_N_MacroContexts" : dyn).Get ($(context : int), ManagerClass.Instance)) ]>
+  }
+
+  quoted_name (n : Name) : PExpr
+  {
+    quoted_name (n, n.context.GetMacroContext())
+  }
+  
+  public QuotedMatchCase (cas : MatchCase) : PExpr
+  {
+    def guards = cas.patterns;
+    def expr = cas.body;
+
+    match (guards)
+    {
+      | [PExpr.Ellipsis (args)] => <[ MatchCase ($(quoted_expr (args)), $(quoted_expr (expr))) ]>
+      | _                       => <[ MatchCase ($(Lift (guards, quoted_expr)), $(quoted_expr (expr))) ]>
+    }
+  }
+
+  public quoted_fparam (p : PParameter) : PExpr
+  {
+    def result = match (p)
+    {
+      | PParameter where (name = name, Type = ty, modifiers = AttributesAndModifiers where 
+          (custom_attrs = [<[ System.ComponentModel.DefaultValueAttribute ($expr) ]>])) =>
+      
+        <[ PParameter(name      = $(quoted_sstring (name)),
+                      Type      = $(quoted_expr (ty)),
+                      modifiers = AttributesAndModifiers(mods = NemerleModifiers.None, custom_attrs = []),
+                      DefaultValue = Some($(quoted_expr(expr)))
+                      ) ]>
+
+      | PParameter where (name = name, Type = ty, DefaultValue = Some(expr), modifiers = AttributesAndModifiers where (custom_attrs = attrs)) =>
+        def attrs = attrs.Filter(x => !(x is <[ System.ComponentModel.DefaultValueAttribute($_) ]>)); // remove default value attribute
+        def attrs = AttributesAndModifiers(NemerleModifiers.None, attrs);
+        <[ PParameter(name      = $(quoted_sstring(name)),
+                      Type      = $(quoted_expr(ty)),
+                      modifiers = $(quoted_attributes(attrs)),
+                      DefaultValue = Some($(quoted_expr(expr)))
+                      ) ]>
+
+      | <[ parameter: params $name : $ty ]> =>
+        def qattr = quoted_expr (<[ System.ParamArrayAttribute ]>);
+        <[ PParameter (name     = $(quoted_sstring (name)),
+                      Type        = $(quoted_expr (ty)),
+                      modifiers = AttributesAndModifiers(mods = NemerleModifiers.None, custom_attrs = [$qattr])) ]>
+
+      | <[ parameter: $name : $ty ]> =>
+        <[ PParameter(name      = $(quoted_sstring(name)), 
+                      modifiers = AttributesAndModifiers(mods = NemerleModifiers.None, custom_attrs = []), 
+                      Type        = $(quoted_expr(ty))) ]>
+                      
+      | <[ parameter: ..$attrs $name : $ty ]> =>
+        <[ PParameter (name = $(quoted_sstring (name)),
+                       Type = $(quoted_expr (ty)),
+                       modifiers = $(quoted_attributes (attrs))) ]>
+                      
+
+    }
+
+    result
+  }
+
+  quoted_tparms(tyvars : list[Splicable], constraints : list[Constraint]) : PExpr 
+  {
+    def quoted_constr(c : Constraint)
+    {
+      <[ Constraint($(quoted_sstring(c.TypeParameterName)), $(quoted_expr(c.Expression)), $(c.IsSpecial : bool)) ]>
+    }
+    match (constraints)
+    {
+      | [Constraint where(null, PExpr.Tuple([PExpr.Wildcard, PExpr.Ellipsis(PExpr.Spliced(e))]))] =>
+        <[ Typarms($(Lift(tyvars, quoted_sstring)), $e) ]>
+
+      | [Constraint where(null, PExpr.Tuple([PExpr.Ellipsis(PExpr.Spliced(e1)), PExpr.Ellipsis(PExpr.Spliced(e2))]))] =>
+        <[ Typarms($e1, $e2) ]>
+
+      |  Constraint where(null, PExpr.Tuple([PExpr.Ellipsis(PExpr.Spliced(e)), PExpr.Void])) :: where_cts =>
+        <[ Typarms($e, $(Lift(where_cts, quoted_constr))) ]>
+
+      | _ => <[ Typarms($(Lift(tyvars, quoted_sstring)), $(Lift(constraints, quoted_constr))) ]>
+    }
+  }
+
+  make_quoted_funheader (parms : list[PParameter], qtparms : PExpr, ty : PExpr, qname : PExpr) : PExpr
+  {
+    def qparms =
+      match (parms)
+      {
+        | [PParameter where (name = Splicable.Name, Type = PExpr.Void, modifiers = 
+            AttributesAndModifiers where(custom_attrs = [PExpr.Ellipsis (e)]))] 
+          => quoted_expr (e)
+            
+        | _ => Lift (parms, quoted_fparam)
+      };
+    def qtype = quoted_expr (ty);
+    <[ PFunHeader($qtparms, $qname, $qtype, $qparms) ]>
+  } 
+  
+  make_quoted_fundecl (parms : list[PParameter], qtparms : PExpr, ty : PExpr, qname : PExpr, body : PExpr) : PExpr
+  {
+    def qheader = make_quoted_funheader (parms, qtparms, ty, qname);
+    def qbody = quoted_expr (body);
+    <[ Function_decl ($qheader, $qbody) ]>
+  }
+  
+  quoted_attributes (attrs : AttributesAndModifiers) : PExpr
+  {
+    if (attrs == null) <[ null ]>
+    else match (attrs.custom_attrs.Partition(_ is PExpr.Ellipsis))
+    {
+      | ([PExpr.Ellipsis(e)], []) => quoted_expr(e)
+      | ([PExpr.Ellipsis(e)], custAttrs) => 
+        def mods    = quoted_expr(e);
+        def modsVar = Macros.NewSymbol("mods");
+        <[
+          def $(modsVar : name) = $mods;
+          AttributesAndModifiers(($((attrs.mods :> int) : int) :> NemerleModifiers) | $(modsVar : name).mods,
+                  $(Lift (custAttrs, quoted_expr)) + $(modsVar : name).custom_attrs)
+        ]>
+
+      | ([], _) =>
+        def quoted_modifiers(modifiers : NemerleModifiers) : PExpr
+        {
+          mutable result = [];
+      
+          when (modifiers %&& NemerleModifiers.Public)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Public ]>;
+          when (modifiers %&& NemerleModifiers.Private)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Private ]>;
+          when (modifiers %&& NemerleModifiers.New)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.New ]>;
+          when (modifiers %&& NemerleModifiers.Protected)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Protected ]>;
+          when (modifiers %&& NemerleModifiers.Abstract)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Abstract ]>;
+          when (modifiers %&& NemerleModifiers.Virtual)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Virtual ]>;
+          when (modifiers %&& NemerleModifiers.Sealed)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Sealed ]>;
+          when (modifiers %&& NemerleModifiers.Static)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Static ]>;
+          when (modifiers %&& NemerleModifiers.Mutable)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Mutable ]>;
+          when (modifiers %&& NemerleModifiers.Internal)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Internal ]>;
+          when (modifiers %&& NemerleModifiers.Override)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Override ]>;
+          when (modifiers %&& NemerleModifiers.Struct)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Struct ]>;
+          when (modifiers %&& NemerleModifiers.Macro)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Macro ]>;
+          when (modifiers %&& NemerleModifiers.Volatile)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Volatile ]>;
+          when (modifiers %&& NemerleModifiers.SpecialName)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.SpecialName ]>;
+          when (modifiers %&& NemerleModifiers.Partial)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Partial ]>;
+          when (modifiers %&& NemerleModifiers.Extern)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.Extern ]>;
+          when (modifiers %&& NemerleModifiers.CompilerMutable)
+            result ::= <[ Nemerle.Compiler.NemerleModifiers.CompilerMutable ]>;
+        
+          match (result)
+          {
+            | []  => <[ Nemerle.Compiler.NemerleModifiers.None ]>
+            | [x] => x
+            | xs  => xs.Tail.FoldLeft(xs.Head, (x, acc) => <[ $x | $acc ]>)
+          }
+        }
+
+        <[ AttributesAndModifiers($(quoted_modifiers(attrs.mods)), $(Lift(attrs.custom_attrs, quoted_expr))) ]>
+
+      | ((first :: _) as attrs, _) => 
+        Message.Error(first.Location, $"more than one splice for custom attributes and modifiers defined (..$attrs)");
+        PExpr.Error(first.Location)
+    }
+  }
+
+  internal quoted_member (mem : ClassMember) : PExpr
+  {
+    def qnm = quoted_sstring (mem.name);
+    def qattrs = quoted_attributes (mem.modifiers);
+
+    match (mem)
+    {
+      | ClassMember.TypeDeclaration(td) => <[ ClassMember.TypeDeclaration(td = $(quoted_tydecl(td))) ]>
+      // | <[ decl: ..$_ $_ : $t; ]> => // field
+      | ClassMember.Field(t) => <[ ClassMember.Field(name = $qnm, modifiers = $qattrs, ty = $(quoted_expr(t))) ]>
+      // Example:  <[ decl: ..$attrs $name [..$typeParameters] (..$parameters) : $returnType where ..$constrants implements ..$impl $body ]> 
+      | ClassMember.Function( header = PFunHeader where (TypeParameters = 
+          Typarms where (tparms, cts), ReturnType = t, Parameters = fparms), implemented = implemented, body = bd) =>
+        def qtparms = quoted_tparms (tparms, cts);
+        def qhd = make_quoted_funheader (fparms, qtparms, t, qnm);
+        
+        <[ ClassMember.Function (name = $qnm,
+                       modifiers = $qattrs,
+                       header = $qhd,
+                       implemented = $(lift_with_ellipsis (implemented)),
+                       body = $(quoted_funbody (bd))) ]>
+        
+      | ClassMember.EnumOption(val) =>
+        def qval = Lift (val, quoted_expr);
+        <[ ClassMember.EnumOption (name = $qnm, modifiers = $qattrs, value = $qval) ]>
+        
+      | ClassMember.Event(ty = t, add = a, remove = r, field = f) =>
+        <[ ClassMember.Event (name = $qnm, modifiers = $qattrs, ty = $(quoted_expr (t)),
+                    add = $(quoted_member (a)),
+                    remove = $(quoted_member (r)),
+                    field = $(if (f != null) quoted_member (f) else <[ null ]>)) ]>
+        
+      | ClassMember.Property(returnType = t, parameters = fps, setter = s, getter = g) =>
+        def qfps = Lift(fps, quoted_fparam);
+        <[ ClassMember.Property(modifiers = $qattrs, name = $qnm, 
+                                parameters = $qfps, returnType = $(quoted_expr(t)),
+                                getter = $(Lift(g, quoted_member)), 
+                                setter = $(Lift(s, quoted_member))
+                                ) ]>
+    }
+  }
+  
+  private lift_members (members : list [ClassMember]) : PExpr
+  {
+    | [Field (Ellipsis (e)) as f] when f.name == null && f.modifiers == null => quoted_expr (e)
+    | _ => Lift (members, quoted_member);
+  }
+
+  private lift_with_ellipsis (exprs : list [PExpr]) : PExpr
+  {
+    | [Ellipsis (e)] => quoted_expr (e)
+    | _ => Lift (exprs, quoted_expr);
+  }
+  
+  internal quoted_tydecl (td : TopDeclaration) : PExpr {
+    def qn = quoted_sstring (td.name);
+    def qattr = quoted_attributes (td.modifiers);
+    def qtparms = if (td.typarms != null) quoted_tparms (td.typarms.tyvars, td.typarms.constraints) else <[ null ]>;
+    
+    match (td) {
+      | TopDeclaration.Class  ( t_extends = extend, decls = members) 
+      | TopDeclaration.Record ( t_extends = extend, decls = members) =>
+        def qexten = lift_with_ellipsis (extend);
+        def qmems = lift_members (members);
+                          
+        <[ TopDeclaration.Class(name = $qn, modifiers = $qattr, t_extends = $qexten,
+                                 typarms = $qtparms, decls = $qmems) ]>
+
+      | TopDeclaration.Alias ( ty = t) =>
+        <[ TopDeclaration.Alias (name = $qn, modifiers = $qattr, typarms = $qtparms, ty = $(quoted_expr (t))) ]>
+        
+      | TopDeclaration.Interface (t_extends = extend, methods = members) =>
+        def qexten = lift_with_ellipsis (extend);
+        def qmems = lift_members (members);
+                          
+        <[ TopDeclaration.Interface (name = $qn, modifiers = $qattr, t_extends = $qexten,
+                                     typarms = $qtparms, methods = $qmems) ]>
+                     
+      | TopDeclaration.Variant (t_extends = extend, decls = members) =>
+        def qexten = lift_with_ellipsis (extend);
+        def qmems = lift_members (members);
+                          
+        <[ TopDeclaration.Variant (name = $qn, modifiers = $qattr, t_extends = $qexten,
+                                   typarms = $qtparms, decls = $qmems) ]>
+
+      | TopDeclaration.VariantOption (decls = members) =>
+        def qmems = lift_members (members);
+                          
+        <[ TopDeclaration.VariantOption (name = $qn, modifiers = $qattr, typarms = $qtparms, decls = $qmems) ]>
+
+      | TopDeclaration.Enum (t_extends = extend, decls = members) =>
+        def qexten = lift_with_ellipsis (extend);
+        def qmems = lift_members (members);
+                          
+        <[ TopDeclaration.Enum (name = $qn, modifiers = $qattr, t_extends = $qexten,
+                                typarms = $qtparms, decls = $qmems) ]>
+        
+      | TopDeclaration.Delegate (hea) =>
+        def qhtparms = quoted_tparms (hea.TypeParameters.tyvars, hea.TypeParameters.constraints);
+        def qhd = make_quoted_funheader (hea.Parameters, qhtparms, hea.ReturnType, quoted_sstring (hea.SplicableName));
+
+        <[ TopDeclaration.Delegate (name = $qn, modifiers = $qattr, typarms = $qtparms, header = $qhd) ]>
+
+      | TopDeclaration.Macro =>
+        Message.FatalError ("quoting macro is not supported - macros should not create macros, it is Bad(TM)");
+    }
+  }
+
+  quoted_funbody (x : FunBody) : PExpr
+  {
+    match (x) {
+      | FunBody.Parsed (expr) =>
+        <[ FunBody.Parsed ($(quoted_expr (expr))) ]>
+      | FunBody.Typed (expr) => <[ FunBody.Parsed ($(expr : typed)) ]>
+      | null  // this is for parsed events without accessors
+      | FunBody.Abstract => <[ FunBody.Abstract () ]>
+      | FunBody.ILed => <[ FunBody.ILed () ]>
+    }
+  }
+
+  quoted_literal (lit : Literal) : PExpr
+  {
+    | Literal.Void           => <[ Literal.Void () ]>
+    | Literal.Null           => <[ Literal.Null () ]>
+    | Literal.String   (val) => <[ Literal.String ($(val : string)) ]>
+    | Literal.Float    (val) => <[ Literal.Float ($(val : float)) ]>
+    | Literal.Double   (val) => <[ Literal.Double ($(val : double)) ]>
+    | Literal.Decimal  (val) => <[ Literal.Decimal ($(val : decimal)) ]>
+    | Literal.Bool     (val) => <[ Literal.Bool ($(val : bool)) ]>
+    | Literal.Char     (val) => <[ Literal.Char ($(val : char)) ]>
+    | Literal.Enum (l, _, _) => <[ Literal.Enum ($(quoted_literal (l)), null, null) ]>
+    | Literal.Integer (val, is_negative, _) => 
+      <[ Literal.Integer ($(val : ulong), $(is_negative : bool), null).WithProperType () ]>
+  }
+  
+  public quoted_fundecl (d : Function_decl) : PExpr
+  {
+    def <[ fundecl: $name [ ..$typarms] (..$args) : $ty where ..$tyconstrs $body ]> = d;
+    def qtparms = quoted_tparms (typarms, tyconstrs);
+    def qname = quoted_sstring (name);
+    make_quoted_fundecl (args, qtparms, ty, qname, body)
+  }
+
+  /// Creates parse tree of (expression which builds) given typed type.
+  public quoted_ttype(t : PExpr) : PExpr
+  {
+    def constructor(tycon, args)
+    {
+      def argsCount =
+        match (args)
+        {
+          | [PExpr.Ellipsis(_)] => -1
+          | _                   => args.Length
+        };
+      def tyco = 
+        match (Util.QidOfExpr(tycon))
+        {
+          | Some((s, _)) => Lift(s, Lift)
+          | _ => Message.FatalError("type constructor must be qualified id");
+        };
+      def findTypeInfo = <[
+        match (Nemerle.Macros.ImplicitCTX().Env.LookupType($tyco, null, $(argsCount : int)))
+        {
+          | Some(x) => x
+          | None    => Message.FatalError("unbound type " + $tyco.ToString("."))
+        }
+      ]>;
+      
+      match (args)
+      {
+        | [PExpr.Ellipsis(ar)] => <[ FixedType.Class($findTypeInfo, $(quoted_ttype(ar))) ]>
+        | _                    => <[ FixedType.Class($findTypeInfo, $(Lift(args, quoted_ttype))) ]>
+      }
+    }
+
+    match (t)
+    {
+      | <[ $tycon[ ..$args ] ]> => constructor(tycon, args)
+      | <[ $(_ : name) ]>
+      | <[ $_.$_ ]>             => constructor(t, [])
+      | <[ ref $ty ]>           => <[ FixedType.Ref($(quoted_ttype(ty))) ]>
+      | <[ out $ty ]>           => <[ FixedType.Out($(quoted_ttype(ty))) ]>
+      | <[ $from -> $to ]>      => <[ FixedType.Fun($(quoted_ttype(from)), $(quoted_ttype(to))) ]>
+      | <[ void ]>              => <[ Nemerle.Macros.ImplicitCTX().InternalType.Void ]>
+      | <[ @*(..$args) ]>       => <[ FixedType.Tuple($(Lift(args, quoted_ttype))) ]>
+      | <[ array[$r, $ty] ]>    => <[ FixedType.Array($(quoted_ttype(ty)), $(quoted_expr(r))) ]>
+      | <[ array[$ty] ]>        => <[ FixedType.Array($(quoted_ttype(ty)), 1) ]>
+
+      // rest of constructs must be in not quoted form, because they define
+      // internal data structures
+      | PExpr.Spliced(PExpr.TypeEnforcement(val, <[ $(ty : name) ]>)) =>
+        match (ty.Id)
+        {
+          | "name" => <[ FixedType.StaticTypeVarRef($val) ]>
+
+          // it doesn't make much sense here, as it is the same as <[ $v ]>,
+          // but we put it here for consistency
+          | "typed" => val
+          | x => Message.FatalError("unsupported type of spliced special token `" + x + "' in typed type")
+        }
+
+      | PExpr.Spliced(e)    => e
+      | PExpr.Wildcard      => <[ Nemerle.Macros.ImplicitCTX().Manager.Solver.FreshTypeVar() ]>
+      | PExpr.Ellipsis (ar) => <[ FixedType.Tuple($(quoted_ttype(ar))) ]>
+      | PExpr.Typed         => Util.ice ("You've got beer from me for generating such a code...");
+      
+      | _ => Util.ice ("quoted code not supported: " + PrettyPrint.SprintExpr (None (), t));
+    } 
+  }
+
+  public quoted_expr (expr : PExpr) : PExpr 
+  {
+    match (expr)
+    {
+      | null => <[ null ]>
+      | <[ $(id : name) ]> =>
+        assert(id.context != null, id.Id);
+        <[ PExpr.Ref ($(quoted_name (id, id.context.GetMacroContext ()))) ]>
+        
+      | <[ $obj . $mem ]> => 
+        <[ PExpr.Member ($(quoted_expr (obj)), $(quoted_sstring (mem))) ]>
+
+      | <[ $func (.. $parms) ]> =>
+        <[ PExpr.Call ($(quoted_expr (func)), $(lift_with_ellipsis (parms))) ]>
+
+      | <[ $func .[..$parms] ]> =>
+        <[ PExpr.GenericSpecifier ($(quoted_expr (func)), $(lift_with_ellipsis (parms))) ]>
+
+      | <[ $target = $source ]> =>
+        <[ PExpr.Assign ($(quoted_expr (target)), $(quoted_expr (source))) ]>
+
+      | <[ def $name = $val ]> =>
+        <[ PExpr.Define ($(quoted_expr (name)), $(quoted_expr (val))) ]>
+
+      | <[ mutable $name = $val ]> =>
+        <[ PExpr.DefMutable ($(quoted_expr (name)), $(quoted_expr (val))) ]>
+        
+      | <[ def .. $funs ]> =>
+        match (funs) {
+          | [Function_decl where (_, PExpr.Ellipsis (args))] =>
+            <[ PExpr.DefFunctions ($(quoted_expr (args))) ]>
+          | _ =>
+            <[ PExpr.DefFunctions ($(Lift (funs, quoted_fundecl))) ]>
+        };
+
+      | <[ fun [ ..$typarms] (..$args) : $ty where .. $tyconstrs $body ]> =>
+        def qtparms = quoted_tparms (typarms, tyconstrs);
+        def qname = <[ Splicable.Name (Name ("")) ]>;
+        // lift function declaration from lambda expression
+        def fdecl = make_quoted_fundecl (args, qtparms, ty, qname, body);
+        // return syntax tree of lifted lambda
+        <[ PExpr.Lambda ($fdecl) ]>
+
+      | <[ match ($expr) {.. $cases } ]> =>
+        match (cases) {
+          | [cas] when cas.patterns is [] =>
+            match (cas.body) {
+              | PExpr.Ellipsis (e) =>
+                <[ PExpr.Match ($(quoted_expr (expr)), $(quoted_expr (e))) ]>
+              | _ =>
+                Util.ice ("parser generated strange match_case")
+            }
+          | _ => <[ PExpr.Match ($(quoted_expr (expr)),
+                                 $(Lift (cases, QuotedMatchCase))) ]>
+        }
+
+      | <[ throw $exc ]> => 
+        <[ PExpr.Throw ($(quoted_expr (exc))) ]>
+
+      | <[ ref $e ]> =>
+        <[ PExpr.ParmByRef ($(quoted_expr (e))) ]>
+        
+      | <[ out $e ]> =>
+        <[ PExpr.ParmOut ($(quoted_expr (e))) ]>
+
+      | <[ try $body finally $handler ]> =>
+        assert(body != null);
+        assert(handler != null);
+        <[ PExpr.TryFinally ($(quoted_expr (body)),
+                             $(quoted_expr (handler))) ]>
+
+      | <[ try $body catch { ..$cases } ]> =>
+        def quoted_case (case) {
+          | TryCase.Catch (exn, exn_ty, handler) =>
+            <[ TryCase.Catch ($(quoted_sstring (exn)),
+                              $(quoted_expr (exn_ty)),
+                              $(quoted_expr (handler))) ]>
+          | TryCase.Filter (exn, exn_ty, filter, handler) =>
+            <[ TryCase.Filter ($(quoted_sstring (exn)),
+                               $(quoted_expr (exn_ty)),
+                               $(quoted_expr (filter)),
+                               $(quoted_expr (handler))) ]>
+          | TryCase.Ellipsis => Util.ice ("you can have either none or only TryCase.Ellipsis")
+        }
+        def qbody = quoted_expr (body);
+        match (cases) {
+          | [TryCase.Ellipsis (e)] =>
+            match (e) {
+              | PExpr.Ellipsis (e) =>
+                <[ PExpr.Try ($qbody, $(quoted_expr (e))) ]>
+              | _ => Util.ice ("parser generated strange try_case")
+            }
+          | _ =>
+            <[ PExpr.Try ($qbody, [.. $(cases.Map (quoted_case))]) ]>
+        }
+
+      | PExpr.Literal (lit) => <[ PExpr.Literal ($(quoted_literal (lit))) ]>
+
+      | <[ this ]> => <[ PExpr.This () ]>
+
+      | <[ base ]> => <[ PExpr.Base () ]>
+
+      | <[ typeof ($t) ]> => <[ PExpr.Typeof ($(quoted_expr (t))) ]>
+
+      | <[ $expr : $ty ]> =>
+        <[ PExpr.TypeEnforcement ($(quoted_expr (expr)), $(quoted_expr (ty))) ]>
+
+      | <[ $expr :> $ty ]> =>
+        <[ PExpr.TypeConversion ($(quoted_expr (expr)), $(quoted_expr (ty))) ]>
+
+      | <[ {.. $seq } ]> =>
+        <[ PExpr.Sequence ($(lift_with_ellipsis (seq))) ]>
+
+      | <[ (.. $args) ]> =>
+        <[ PExpr.Tuple ($(lift_with_ellipsis (args))) ]>
+
+      | <[ array .[ $rank ] $value ]> =>
+        <[ PExpr.Array ($(quoted_expr (rank)), $(quoted_expr (value))) ]>
+
+      | <[ array (.. $sizes) ]> =>
+        <[ PExpr.EmptyArray ($(lift_with_ellipsis (sizes))) ]>
+
+      | <[ $obj [.. $args] ]> =>  
+        <[ PExpr.Indexer ($(quoted_expr (obj)), $(lift_with_ellipsis (args))) ]>
+
+      | <[ _ ]>  => <[ PExpr.Wildcard () ]>
+
+      | <[ void ]> => <[ PExpr.Void () ]>
+
+      | <[ $pat as $name ]> => 
+        <[ PExpr.As ($(quoted_expr (pat)), $(quoted_sstring (name))) ]>
+
+      | <[ $e1 is $e2 ]> =>
+        <[ PExpr.Is ($(quoted_expr (e1)), $(quoted_expr (e2))) ]>
+
+      | <[ $e1 where $e2 ]> =>
+        <[ PExpr.Where ($(quoted_expr (e1)), $(quoted_expr (e2))) ]>
+
+      | PExpr.ListLiteral (elems) =>
+        <[ PExpr.ListLiteral ($(lift_with_ellipsis (elems))) ]>
+        
+      // rest of constructs must be in not quoted form, because they define
+      // internal data structures
+      | PExpr.MacroCall (name, namespc, parms) =>
+        def quoted_syntax (s)
+        {
+          | SyntaxElement.Expression (body)  => <[ SyntaxElement.Expression  ($(quoted_expr     (body))) ]>
+          | SyntaxElement.MatchCase (body)   => <[ SyntaxElement.MatchCase   ($(QuotedMatchCase (body))) ]>
+          | SyntaxElement.Function (body)    => <[ SyntaxElement.Function    ($(quoted_fundecl  (body))) ]>
+          | SyntaxElement.Parameter (body)   => <[ SyntaxElement.Parameter   ($(quoted_fparam   (body))) ]>
+          | SyntaxElement.ClassMember (body) => <[ SyntaxElement.ClassMember ($(quoted_member   (body))) ]>
+          | SyntaxElement.TType (body)       => <[ SyntaxElement.TType       ($(quoted_ttype    (body))) ]>
+          | SyntaxElement.RawToken
+          | SyntaxElement.TypeBuilder
+          | SyntaxElement.MethodBuilder
+          | SyntaxElement.FieldBuilder
+          | SyntaxElement.PropertyBuilder
+          | SyntaxElement.EventBuilder
+          | SyntaxElement.ParameterBuilder => Util.ice("syntax elements shouldn't appear in quotations")
+        };
+        assert(name.context != null);
+        <[ PExpr.MacroCall($(quoted_name(name, name.context.GetMacroContext())),
+                           ManagerClass.Instance.NameTree.ExactPath($(Lift(namespc.FullName, Lift))),
+                           $(Lift(parms, quoted_syntax))) ]>
+
+      | PExpr.Error      => <[ PExpr.Error() ]>
+      | PExpr.ToComplete => Util.ice ("completion not supported here")
+      | PExpr.Spliced (PExpr.TypeEnforcement (val, <[ $(ty : name) ]>)) =>
+        match (ty.Id)
+        {
+          | "name"    => <[ PExpr.Ref($val) ]>
+          | "usesite" => <[ PExpr.Ref(Name($val, ManagerClass.Instance.MacroColors.UseColor, ManagerClass.Instance.MacroColors.UseContext)) ]>
+          | "dyn"     => <[ PExpr.Ref(Name($val, -1, null)) ]>
+          | "global"  => <[ PExpr.Ref(Name.Global(Macros.Manager(), $val)) ]>
+          | "byte"    => <[ PExpr.Literal(Literal.FromByte      ($val)) ]>
+          | "sbyte"   => <[ PExpr.Literal(Literal.FromSByte     ($val)) ]>
+          | "short"   => <[ PExpr.Literal(Literal.FromShort     ($val)) ]>
+          | "ushort"  => <[ PExpr.Literal(Literal.FromUShort    ($val)) ]>
+          | "int"     => <[ PExpr.Literal(Literal.FromInt       ($val)) ]>
+          | "uint"    => <[ PExpr.Literal(Literal.FromUInt      ($val)) ]>
+          | "long"    => <[ PExpr.Literal(Literal.FromLong      ($val)) ]>
+          | "ulong"   => <[ PExpr.Literal(Literal.FromULong     ($val)) ]>
+          | "string"  => <[ PExpr.Literal(Literal.String        ($val)) ]>
+          | "bool"    => <[ PExpr.Literal(Literal.Bool          ($val)) ]>
+          | "char"    => <[ PExpr.Literal(Literal.Char          ($val)) ]>
+          | "float"   => <[ PExpr.Literal(Literal.Float         ($val)) ]>
+          | "double"  => <[ PExpr.Literal(Literal.Double        ($val)) ]>
+          | "decimal" => <[ PExpr.Literal(Literal.Decimal       ($val)) ]>
+          | "enum"    => <[ PExpr.Literal(Literal.FromObject    ($val)) ]>
+          | "typed"   => <[ Nemerle.Compiler.Macros.TypedChoose ($val) ]>
+          | x         => Message.FatalError("unsupported type `" + x + "' of spliced literal in expression")
+        }
+
+      | PExpr.Spliced (e) when !Manager.Macros_in_pattern => <[ Nemerle.Compiler.Macros.QuotationChoose($e) ]>
+      | PExpr.Spliced => expr
+      | PExpr.Lambda => Util.ice ("this kind of quoted fun () ... is not supported")
+      | PExpr.Quoted => Message.FatalError("compound of several <[ ... ]> macro scopes is not allowed");
+      | PExpr.Typed | PExpr.TypedPattern | PExpr.TypedType => 
+        Util.ice ("You've got beer from me for generating such a code (and me to)...");
+      | PExpr.Ellipsis =>
+        assert2(false);
+        Message.FatalError (expr.Location, "List of expression parameters outside of quoted sequence: use <[ { .. $x } ]> pattern")
+    }
+  } // end quoted_expr
+
+  /** transforms given expression (which is supposed to be generated from
+      quoted expression) into pattern 
+   */    
+  public patternize_quotation (exp : PExpr) : PExpr 
+  {
+    | <[ ClassMember.Function ($name,
+                               $modifiers,
+                               header = PFunHeader($qtparms, $hname, $qtype, $qparms),
+                               $implemented,
+                               $body) ]> when !(hname is PExpr.Wildcard) =>
+      patternize_quotation (
+      <[ ClassMember.Function ($name,
+                               $modifiers,
+                               header = PFunHeader($qtparms, _, $qtype, $qparms),
+                               $implemented,
+                               $body) ]> )
+
+    | PExpr.Ref => exp
+
+    | <[ $obj . $mem ]> => <[ $(patternize_quotation (obj)) . $mem ]>
+
+    // Literal.Integer (2, true, null).WithProperType ()
+    // (it is created only when quoting plain numeric literals
+    | <[ Literal.$_ ($v, $n, $_) . $_ () ]> =>
+      <[ Literal.Integer ($v, $n, _) ]>
+      
+    | <[ $a | $b ]> => <[ $(patternize_quotation(a)) | $(patternize_quotation(b)) ]>
+    | <[ @|(..$pars) ]> => <[ @|(..$(pars.Map(patternize_quotation))) ]>
+    | <[ $constr(..$pars) ]> =>
+      def (con, name) = Option.UnSome (Util.QidOfExpr(constr));
+      def last = con.Last;
+      match (name.context.LookupType (con))
+      {
+        | Some (tcon) =>
+          def convert_params (pars : list [PExpr], mems : list[IField], acc)
+          {
+            match (pars, mems)
+            {
+              | ([], []) => NList.Rev (acc)
+
+              | (<[ $(n : name) = $expr ]> :: xs, ms) =>
+                convert_params (xs, ms, <[ $(n : name) = $(patternize_quotation (expr)) ]> :: acc)
+
+              | (_, m :: ms) when m.IsCustomAttributeDefined("Nemerle.Internal.IgnoreFieldAttribute") =>
+                convert_params(pars, ms, acc)
+
+              | (expr :: xs, m :: ms) =>
+                convert_params (xs, ms, <[ $(m.Name : dyn) = $(patternize_quotation (expr)) ]> :: acc)
+
+              | ([], _ :: _) => convert_params ([], [], acc)
+
+              | (_ :: _, []) =>
+                assert2(false);
+                Message.Error ("number of supplied parameters is too large");
+                []
+            }
+          };
+
+          def unalias (tcon : TypeInfo)
+          {
+            def flds = tcon.GetFields (BindingFlags.DeclaredOnly %| BindingFlags.Public %| BindingFlags.NonPublic 
+                                       %| BindingFlags.Instance);
+
+            match (tcon.GetTydecl ())
+            {
+              | Typedtree.TypeDeclaration.VariantOption =>
+                def pars =
+                  if (last.EndsWith ("ClassMember.Function"))
+                    NList.Tail (pars)
+                  else
+                    pars;
+                PExpr.Call (constr, convert_params (pars, flds, []))
+
+              | Typedtree.TypeDeclaration.Class  =>
+                // we lose informations about constructor here, but as it's 
+                // compiler internal computation we can ignore it
+                def name_expr = Util.ExprOfQid (tcon.FullName);
+                if (last.EndsWith ("Name")) 
+                  <[ $name_expr where(idl = $(patternize_quotation(pars.Head))) ]>
+                else
+                  PExpr.Where(name_expr, PExpr.Tuple.Create(convert_params(pars, flds, [])))
+
+              | Typedtree.TypeDeclaration.Alias (FixedType.Class (tc, _)) => unalias (tc)
+              | _ => Util.ice ("expression generated from quotation has neither variant nor class constructor")
+            }
+          }
+
+          unalias (tcon)
+
+        | None when last.EndsWith ("NameInCurrentColor") =>
+          <[ Name where ( idl = $(patternize_quotation (NList.Head (pars))) ) ]>
+
+        | None when last.EndsWith ("ExactPath") => PExpr.Wildcard ()
+        
+        | None when last.EndsWith ("TypedChoose") =>
+          Message.Error ("typed tree cannot be used in pattern matching");
+          <[ () ]>
+
+        | None when last.StartsWith ("From") =>
+          <[ Literal.Integer ($(last.Replace ("From", "As") : dyn)
+                              = Some ($(patternize_quotation (NList.Head (pars))))) ]>
+          
+        | None =>
+          //Util.ice ($ "expression generated from quotation has broken constructor $exp")
+          Message.Error ($"expression generated from quotation has broken constructor $exp");
+          <[ () ]>
+      }
+
+    | PExpr.ListLiteral (elems) =>
+      PExpr.ListLiteral (NList.Map (elems, patternize_quotation))
+      
+    | <[ (..$elems) ]> => <[ (..$(NList.Map (elems, patternize_quotation))) ]>
+
+    | PExpr.Literal 
+    | PExpr.Wildcard => exp
+
+    | PExpr.Spliced (e) => e
+
+    | exp =>
+      Message.Error(exp.Location, "Bad format of quoted expression in pattern matching.");
+      <[ () ]>
+  }
+
+  /**
+   * Allows recursive analysing and rewriting given parse tree expression easily. It calls supplied function on every
+   * node of tree returning its result as new node.
+   * 
+   * [ctx] - when specified, then expression is first macro-expanded and expansion result is then further analyzed
+   * [expr] - expression to be processed
+   * [in_pattern] - context boolean used to provide information if we are currently in match case pattern
+   * [call] - function called for each node of tree, first parameter hold the [in_pattern] semantics; second denotes if we are calling the 
+   *          function before processing of subnodes (==false) and after (==true) - the function is always called twice for each node;
+   *          third passes the current node to operate on; return value (used only from second/postprocess call) is used as new node value
+   */
+  public TraverseExpr (ctx : option[Typer], expr : PExpr, in_pattern : bool,
+                       call : bool * bool * PExpr -> PExpr) : PExpr
+  {
+    if (expr == null) null
+    else
+      Util.locate (expr.Location, {
+        def expr = 
+          match (ctx) {
+            | Some (c) => MacroRegistry.expand_macro (c, expr) [0]
+            | _ => expr
+        };
+
+        
+        def traverse (x) { TraverseExpr (ctx, x, in_pattern, call) };
+        def traversep (x) { TraverseExpr (ctx, x, true, call) };
+
+        def trav_funparms (fps) {
+          def go_funparm (p : PParameter) 
+          {
+             | PParameter where (name = n, Type = t, modifiers = m, DefaultValue = Some(e)) => PParameter(name = n, Type = t, modifiers = m, DefaultValue = Some(traverse(e)))
+             | _                                                                            => p
+          };
+          NList.Map (fps, go_funparm)
+        };
+        
+        def trav_splicable(sp)
+        {
+          | Splicable.Expression(exp) => Splicable.Expression(traverse(exp))
+          | _ => sp
+        }
+        
+        def trav_fun_head(fh)
+        {
+          |  PFunHeader where (TypeParameters = Typarms where (tyvars = ty, constraints = c),
+                               SplicableName = n, ReturnType = ret, Parameters = pars) => 
+             PFunHeader(Typarms(ty.Map(trav_splicable), c), trav_splicable(n), traverse(ret), trav_funparms(pars))
+        }
+        
+        def trav_func(f)
+        {
+          | ClassMember.Function(name = n, header = h, modifiers = m, implemented = i, body = b) => 
+              def n = trav_splicable(n);
+              def h = trav_fun_head(h);
+              def b = match (b)
+                     {
+                       | FunBody.Parsed(expr) => FunBody.Parsed(traverse(expr))
+                       | _ => b
+                     }
+              ClassMember.Function(n, m, h, i.Map(traverse), b)
+                     
+        }
+        
+        def trav_field(f)
+        {
+          | ClassMember.Field(name = n, modifiers = m, ty = t) => ClassMember.Field(trav_splicable(n), m, traverse(t))
+        }
+        
+        def trav_top_decl(td)
+        {
+          | TopDeclaration.Alias(name = n, modifiers = m, typarms = tp, ty = ty) => Alias(trav_splicable(n), m, tp, traverse(ty))
+          | Class(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Class(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+          | Delegate(name = n, modifiers = m, typarms = tp, header = h) => Delegate(trav_splicable(n), m, tp, trav_fun_head(h))
+          | Enum(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Enum(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+          | Interface(name = n, modifiers = m, typarms = tp, t_extends = ext, methods = d) => Interface(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+          | Macro(name = n, modifiers = m, typarms = tp, header = h, synt = s, expr = ex) => Macro(trav_splicable(n), m, tp, trav_fun_head(h), s.Map(traverse), traverse(ex))
+          | Variant(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Variant(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+          | VariantOption(name = n, modifiers = m, typarms = tp, decls = d) => VariantOption(trav_splicable(n), m, tp, d.Map(trav_classmember))
+          | Record(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Record(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+        }
+        
+        and trav_classmember(cl)
+        {
+          | ClassMember.Function as f => trav_func(f)
+          | Field as f => trav_field(f)
+          | EnumOption(name = n, modifiers = m, value = v) => EnumOption(trav_splicable(n), m, v.Map(traverse))
+          | Event(name = n, modifiers = m, ty = t, field = f, add = a, remove = r) => 
+              Event(trav_splicable(n), m, traverse(t), trav_field(f), trav_func(a), trav_func(r))
+          | TypeDeclaration(name = n, modifiers = m, td = t) => TypeDeclaration(trav_splicable(n), m, trav_top_decl(t))
+          | Property(name = n, modifiers = m, returnType = rt, parameters = pars, getter = get, setter = set) =>
+              Property(trav_splicable(n), m, traverse(rt), trav_funparms(pars), get.Map(trav_func), set.Map(trav_func))
+        }
+        
+        _ = call (in_pattern, false, expr);
+ 
+        def recursed =
+          match (expr) {
+            | <[ $(_ : name) ]> => expr
+
+            | <[ $obj . $mem ]> => 
+              <[ $(traverse (obj)) . $(trav_splicable(mem)) ]>
+
+            | <[ $func (.. $parms) ]> =>
+              <[ $(traverse (func)) (..$(parms.Map (traverse))) ]>
+
+            | <[ $func .[.. $parms] ]> =>
+              <[ $(traverse (func)) .[..$(parms.Map (traverse))] ]>
+
+            | <[ $target = $source ]> =>
+              <[ $(traverse (target)) = $(traverse (source)) ]>
+
+            | <[ def $n = $val ]> =>
+              <[ def $(traversep (n)) = $(traverse (val)) ]>
+
+            | <[ mutable $n = $val ]> =>
+              <[ mutable $(traversep (n)) = $(traverse (val)) ]>
+
+            | <[ match ($mexpr) {.. $cases } ]> =>
+              def go_case (c : MatchCase) {
+                def go_guard (g : PExpr) {
+                  | <[ $pat when $e ]> => <[ $(traversep (pat)) when $(traverse (e)) ]>
+                  | _ => traversep (g)
+                };
+                def <[ case: | ..$guards => $exp ]> = c;
+                def guards = NList.Map (guards, go_guard);
+                <[ case: | ..$guards => $(traverse (exp)) ]>
+              };
+
+              def cases = NList.Map (cases, go_case);
+              <[ match ($(traverse (mexpr))) {.. $cases } ]>
+
+            | <[ throw $exc ]> => <[ throw $(traverse (exc)) ]>
+
+            | PExpr.TryFinally (body, handler) =>
+              PExpr.TryFinally (traverse (body), traverse (handler))
+
+            | PExpr.Try (body, cases) =>
+              def walk_case (case) {
+                | TryCase.Catch (exn, exn_ty, handler) =>
+                  TryCase.Catch (exn, exn_ty, traverse (handler))
+                | TryCase.Filter (exn, exn_ty, filter, handler) =>
+                  TryCase.Filter (exn, exn_ty, traverse (filter), traverse (handler))
+                | TryCase.Ellipsis (e) =>
+                  TryCase.Ellipsis (traverse (e))
+              }
+              PExpr.Try (traverse (body), cases.Map (walk_case))
+
+            | PExpr.Literal => expr
+
+            | <[ this ]> => expr
+
+            | <[ base ]> => expr
+
+            | <[ typeof ($_) ]> => expr
+
+            | <[ $expr :> $ty ]> => <[ $(traverse (expr)) :> $ty ]>
+
+            | <[ $expr : $ty ]> => <[ $(traverse (expr)) : $ty ]>
+
+            | <[ {.. $seq } ]> => <[ { ..$(NList.Map (seq, traverse)) } ]>
+
+            | <[ (.. $args) ]> => <[ ( ..$(NList.Map (args, traverse)) ) ]>
+
+            | <[ ref $e ]> => <[ ref $(traverse (e)) ]>
+
+            | <[ out $e ]> => <[ out $(traverse (e)) ]>
+
+            | <[ array (..$args) ]> => <[ array ( ..$(NList.Map (args, traverse)) ) ]>
+
+            | <[ array $args ]> => <[ array $(traverse (args)) ]>
+
+            | <[ array .[ $rank ] $args ]> =>
+              <[ array .[ $(traverse (rank))] $(traverse (args)) ]>
+
+            | <[ $obj [.. $args] ]> =>
+              <[ $(traverse (obj)) [ ..$(NList.Map (args, traverse)) ] ]>
+
+            | <[ fun [ ..$tparms] (..$args) where ..$tconstrs $body ]> =>
+              def args = trav_funparms (args);
+              <[ fun [ ..$tparms] (..$args) where ..$tconstrs $(traverse (body)) ]>
+
+            | <[ def ..$funs ]> =>
+              def go_fun (f : Function_decl) {
+                | <[ fundecl: $n [ ..$tparms] (..$args)
+                     where .. $tconstrs $body ]> =>
+                  def args = trav_funparms (args);
+                  <[ fundecl: $n [ ..$tparms] (..$args)
+                     where .. $tconstrs $(traverse (body)) ]>
+                | _ => f
+              };
+              <[ def ..$(NList.Map (funs, go_fun)) ]>
+
+            | <[ $pat as $nm ]> => PExpr.As (traverse (pat), nm)
+
+            | <[ $nm where $pat ]> => PExpr.Where (traverse (nm), traverse (pat)) 
+
+            | <[ $e1 is $e2 ]> => PExpr.Is (traverse (e1), traverse (e2))
+
+            | PExpr.ListLiteral (elems) =>
+              PExpr.ListLiteral (NList.Map (elems, traverse))
+
+            | PExpr.ToComplete 
+            | PExpr.Error | PExpr.Wildcard | PExpr.Void => expr
+
+            | PExpr.MacroCall (x, namespc, parms) =>
+              def go_parm (y : SyntaxElement)
+              {
+                | SyntaxElement.Expression (e) =>
+                  SyntaxElement.Expression (traverse (e))
+                | _ => y
+              };
+              PExpr.MacroCall (x, namespc, parms.Map (go_parm))
+
+            | PExpr.Spliced (e) => PExpr.Spliced (traverse (e))
+
+            | PExpr.Ellipsis (e) => PExpr.Ellipsis (traverse (e))
+
+            | PExpr.Quoted (quot) =>
+              def inner =
+              match (quot)
+              {
+                | SyntaxElement.Expression (body) => SyntaxElement.Expression (traverse (body))
+                | SyntaxElement.ClassMember(cl) => SyntaxElement.ClassMember(trav_classmember(cl))
+                | SyntaxElement.MatchCase
+                | SyntaxElement.Function
+                | SyntaxElement.Parameter
+                | SyntaxElement.TType
+                | SyntaxElement.TypeBuilder
+                | SyntaxElement.FieldBuilder
+                | SyntaxElement.MethodBuilder
+                | SyntaxElement.PropertyBuilder
+                | SyntaxElement.EventBuilder
+                | SyntaxElement.RawToken
+                | SyntaxElement.ParameterBuilder => quot
+              }
+              PExpr.Quoted (inner)
+
+            | PExpr.Typed | PExpr.TypedPattern | PExpr.TypedType => expr
+
+            | PExpr.Lambda => Util.ice ("Bad construction of PExpr.Lambda")
+          };
+        call (in_pattern, true, recursed)
+      })
+  }
+
+  public RecursiveRename (tc : TypeBuilder, expr : PExpr, from : Name, to : Name) : PExpr
+  {
+    def rename_expr (_, is_post, e) {
+      if (is_post) 
+        match (e) {
+          | <[ $(n : name) ]> when n.Equals (from) => 
+            <[ $(to : name) ]>
+
+          | <[ mutable $(n : name) = $val ]> when n.Equals (from) => 
+            <[ mutable $(to : name) = $val ]>
+
+          | <[ this.$(n : name) ]> when n.Equals (from) =>
+            <[ this.$(to : name) ]>
+
+          | <[ $obj.$(n : name) ]> when n.Equals (from) =>
+            match (GetIfIsType (tc.GlobalEnv, obj)) {
+              | Some (t) when t.Equals (tc) =>
+                <[ $obj.$(to : name) ]>
+              | _ => e
+            }
+
+          | <[ try $body catch { ..$cases } ]> =>
+            mutable changed = false;
+            def walk_case (case) {
+              | TryCase.Catch (Splicable.Name (exn), exn_ty, handler)
+                when exn.Equals (from) =>
+                changed = true;
+                TryCase.Catch (Splicable.Name (to), exn_ty, handler)
+              | TryCase.Filter (Splicable.Name (exn), exn_ty, filter, handler)
+                when exn.Equals (from) =>
+                changed = true;
+                TryCase.Filter (Splicable.Name (to), exn_ty, filter, handler)
+              | TryCase.Catch
+              | TryCase.Filter
+              | TryCase.Ellipsis => case
+            }
+            def cases = cases.Map (walk_case);
+            if (changed)
+              PExpr.Try (body, cases)
+            else
+              e
+          | _ => e
+        }
+      else e
+    }
+    Util.locate (expr.Location, {
+      TraverseExpr (None (), expr, false, rename_expr)
+    });
+  }
+}
+} // end ns

@@ -1,0 +1,242 @@
+using Nemerle.IO;
+
+module M {
+  f1 (_ : object) : void {}
+  
+  class X ['a] {
+    a : 'a; // W: field `a' is never assigned to, and will always have its default value
+    m () : void { f1 (a) }
+  }
+  
+  f () : void {
+    def f2 (acc, v) {
+      def (x, y) = acc; 
+      printf ("%s\n", x);
+      printf ("%s\n", y);
+      v
+    };
+    def _ = f2 (("foo", "bar"), 3);
+    ()
+  }
+
+  public class Set['a]
+  {
+     public class A {
+        public class B {
+           static public x : A = A();
+        }
+     }
+  }
+
+  public Main () : void {
+    def f2[a] (l) {
+      def arr =  (System.Array.CreateInstance (typeof (a), 4) :> array [a]);
+      Nemerle.Collections.NList.Append (l, [arr[0]])
+    };
+    def bb (b : list[int], c : list[int] -> list[int]) {
+      c(b)
+    };
+    ignore (bb ([1], f2));
+    def _ = [ ([["foo"]], "foo") ] : list[_];
+    System.Console.WriteLine (Set[int].A.B.x.GetType ());
+    Bug527.Run ();
+    Bug552.Run ();
+  }
+}
+
+module Bug527 {
+  public class LinkedList[T]
+  {
+          public class Node
+          { }
+  }
+
+  public class HashedLinkedList[T] : LinkedList[T]
+  {
+           static public mutable node : Node = Node (); // error here
+  }
+
+  public class XHashedLinkedList[T] : LinkedList[LinkedList[T]]
+  {
+           static public mutable node : Node = Node (); // error here
+  }
+
+  public static Run () : void {
+    System.Console.WriteLine (HashedLinkedList[int].node.GetType());
+    System.Console.WriteLine (XHashedLinkedList[int].node.GetType());
+  }
+}
+
+
+
+using Nemerle.Collections;
+
+    public class STree
+    {
+        internal transform_gotos_to_conditionals () : STree { null }
+    }
+
+
+public module Some {
+
+        internal divide_block_into_when_sections () : list [STree]
+        {
+            def walk (statements, acc1 : list[STree], acc2 : list[STree]) : list [STree]
+            {
+                match(statements)
+                {
+                    | [] => []
+                    | head :: tail =>
+                         walk(tail , head :: acc1 , acc2)
+                }
+            }
+
+            def sts = [] : list[STree];
+            def transformed = NList.Map(sts, fun(x ) {x.transform_gotos_to_conditionals ();} );
+
+            walk ( transformed , [] , [])
+        }
+}
+
+
+class BugWithFieldInitializers {
+    mangling_exceptions : Hashtable [string, object] = [
+      "!="
+    ].FoldLeft (Hashtable (), fun (s, a) { a.Add (s, null); a });
+}
+
+
+namespace DelayedTyping {
+
+  class A {}
+
+  public class Test {
+     public static fooMain() : void {
+       def f (x) {
+         def (a,b) = x;
+         System.Console.WriteLine ($"aaa $a bbb $b");
+       }
+       def l = [] : list [int * A];
+       NList.Iter (l, f);
+
+       def e = System.Collections.Generic.KeyValuePair ();
+       _ = e.Key;
+       _ = e.Value;
+     }
+  }
+  
+  class Abc {
+    public x : int = 42 * 42;
+  }
+
+  class C {
+    mutable f : int;
+    static Run () : void
+    {
+      def q (x) { x.f = 3; }
+      q(C());
+
+      // bug #483
+      def qq(y) {
+        if (y == null) 42
+        else y.x
+      }
+
+      _ = qq(Abc());
+    }
+  }
+}
+
+
+using System.Text;
+
+ public class Cxyz
+{
+  class SomeBase { public foo : int; }
+  class DelayedTyping : SomeBase { }
+
+    public static Main42 () : void
+    {
+          mutable error_dt = null;
+
+          NList.Iter ([], fun (dt : DelayedTyping, _) {
+                error_dt = dt;
+          });
+
+          _ = error_dt.foo;
+
+          def sb = StringBuilder ();
+          _ = sb.Append (error_dt);
+    }
+}
+
+class xxxTest
+{
+        public static Check ['a, 'b] (f : 'a -> 'b) : void
+        {
+            def _count =
+               if (f.GetType().BaseType.IsGenericType)
+                 f.GetType ().BaseType.GetGenericTypeDefinition().GetGenericArguments().Length;
+               else 0;
+                
+        }
+}
+
+public class Bug734 {
+    public foo () : void {
+       def merge_dict(to, from)
+       {
+         foreach(kv in from) {
+           def inner(to, from) {
+             foreach(kv in from) {
+               to[kv.Key] = kv.Value;
+             }
+           }
+           inner(to[kv.Key], kv.Value);
+         }
+       }
+       
+       def dict1 : System.Collections.Generic.Dictionary[string,System.Collections.Generic.Dictionary[string,string*string]] = System.Collections.Generic.Dictionary();
+       def dict2 : System.Collections.Generic.Dictionary[string,System.Collections.Generic.Dictionary[string,string*string]] = System.Collections.Generic.Dictionary();
+       merge_dict(dict1, dict2);        
+    }
+}
+
+public class Bug552 {
+   public static Run () : void   {
+     def quick (xs )
+     {
+       def quicker (xs, ys)
+       {
+         | ([],_ )=> ys
+         | ([x],_) => x::ys
+         | (a::bs,_) => 
+           def part(left, right, x)
+           {
+             | (l,r, []) => quicker (l, a::quicker(r, ys))
+             | (l,r, x::xs) => if (x<a) part(x::l, r, xs) else part (l,x::r,xs)
+           }
+           part([],[],bs)
+       }
+       quicker (xs, [])
+     }
+     
+     def pr(xs)
+     {
+       | [] => Nemerle.IO.printf("\n");
+       | x::xs => Nemerle.IO.printf("%i",x); pr(xs);
+     }
+     
+     pr(quick([1,8,2,3,4,7]));
+   }
+}
+
+
+/*
+BEGIN-OUTPUT
+M+Set`1+A[System.Int32]
+Bug527+LinkedList`1+Node[System.Int32]
+Bug527+LinkedList`1+Node[Bug527+LinkedList`1[System.Int32]]
+123478
+END-OUTPUT
+*/

@@ -1,0 +1,60 @@
+using Nemerle.IO;
+module M {
+  f () : void
+  {
+    throw System.Exception ()
+    /*
+    match (3) {
+      | 1 =>
+        mutable x = array (3);
+        x [throw System.Exception ()] = 3; // w: this array indexer has been skipped in code emission, due to `throw' usage
+        x [3] = 12; // w: this expression has been skipped in code emission, due to `throw' usage
+      | 2 =>
+        mutable x = array (3);
+        x [throw System.Exception ()] = 13; // w: `throw' in assignment target
+      | 3 =>
+        System.Console.WriteLine ("foo", throw System.Exception ()); // w: this call has been skipped in code emission, due to `throw' usage
+        System.Console.WriteLine ("foobar"); // w: this expression has been skipped in code emission, due to `throw' usage
+      | 4 =>
+        throw (throw System.Exception ()) // w: `throw' in `throw'
+      | 5 =>
+        System.Console.WriteLine ("foo", throw System.Exception (), null); // w: this expression \(an argument of the call\) has been skipped in code emission, due to `throw' usage
+        
+      | _ => ()
+    } 
+    */
+  }
+  
+  Main () : void {
+    1;  // W: ignored computed value
+    def _ = 2;  // OK
+    printf ("hello "  "world\n");
+    try {
+      f ();
+    } catch {
+      | _ is System.Exception => 
+        printf ("cought\n");
+    }
+  }
+}
+
+class thistest
+{
+  public this()
+  {
+    foo ();
+  }
+  public a: list [int]; // W: field `a' is never assigned to, and will always have its default value
+
+  foo () : void {
+    _ = a;
+  }
+};
+
+
+/*
+BEGIN-OUTPUT
+hello world
+cought
+END-OUTPUT
+*/

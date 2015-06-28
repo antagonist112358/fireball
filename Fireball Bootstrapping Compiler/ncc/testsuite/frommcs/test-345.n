@@ -1,0 +1,13 @@
+#if (!TEST && !DUNNO && !DUNNO)
+
+public class EntryPoint {
+  public static Main () :  void {
+  }
+}
+
+#endif
+
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/

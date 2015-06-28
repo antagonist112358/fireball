@@ -1,0 +1,31 @@
+interface IComparable1[-T]
+{
+  CompareTo(t : T) : void;
+}
+
+class A : IComparable1[A]
+{
+  public CompareTo(_ : A) : void { }
+}
+
+class SomeContainer[T] where T : IComparable1[T]
+{
+  public Do(_ : T) : void { System.Console.WriteLine(typeof(T).Name); }
+}
+
+module Program
+{
+  Main() : void
+  {
+    def c = SomeContainer();
+    c.Do(A());
+  }
+}
+
+
+
+/*
+BEGIN-OUTPUT
+A
+END-OUTPUT
+*/

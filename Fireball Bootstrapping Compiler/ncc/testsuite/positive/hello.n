@@ -1,0 +1,15 @@
+using Nemerle.IO;
+
+class M
+{
+  static Main () : void
+  {
+    printf ("Hello world!\n")
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Hello world!
+END-OUTPUT
+*/

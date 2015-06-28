@@ -1,0 +1,1508 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * Pretty printing of the parse and typed trees
+ */
+
+using System.Text;
+using System.Diagnostics;
+
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Diagnostics.NDebug;
+using Nemerle.IO;
+using Nemerle.Utility;
+
+using TT = Nemerle.Compiler.Typedtree;
+
+//#define PRINT_COLOR
+
+namespace Nemerle.Compiler
+{
+  // this module is stateless
+  public module PrettyPrint
+  {
+    UpdateLocation(name : Nemerle.Compiler.Parsetree.Name, loc : Location) : void
+    {
+      when (loc != Location.Default)
+        name.Location = loc;
+    }
+
+    PrintName(name : Nemerle.Compiler.Parsetree.Name, writer : LocatableTextWriter) : void
+    {
+      def prevLocation = writer.Loc;
+      writer.Write(name.Id);
+      UpdateLocation(name, prevLocation + writer.Loc);
+    }
+
+    // ------------------------------------------------------------------------
+    // -- PARSE TREE ----------------------------------------------------------
+    // ------------------------------------------------------------------------
+
+    internal SprintExpr (ctx : option[Typer], expr : PExpr, indentation : string, acc : LocatableTextWriter) : void
+    {
+      def expr =
+        match (ctx)
+        {
+          | Some (c) => MacroRegistry.expand_macro (c, expr) [0]
+          | _ => expr
+        };
+
+      def print_tconstraints (cts : list [Constraint])
+      {
+        | [] => ()
+        | x :: xs =>
+          acc.Write ($"where $(x.tyvar) : ");
+          SprintExpr (ctx, x.ty, indentation, acc);
+          print_tconstraints (xs)
+      }
+
+      def print_funparm (p : PParameter)
+      {
+        | <[ parameter: params $(n : name) : $ty ]> =>
+          acc.Write("params ");
+          PrintName(n, acc);
+          acc.Write(" : ");
+          SprintExpr(ctx, ty, indentation, acc)
+
+        | PParameter where (name = Splicable.Name(n), Type = ty, DefaultValue = Some(expr)) 
+        | PParameter where (name = Splicable.Name(n), Type = ty, modifiers = AttributesAndModifiers where (custom_attrs = [expr]))
+        | <[ parameter: $(n : name) : _ ]> with (expr = null, ty=null)
+        | <[ parameter: $(n : name) : $ty ]> with expr = null =>
+          PrintName(n, acc);
+          when (ty != null) 
+           {
+           acc.Write(" : ");
+           SprintExpr(ctx, ty, indentation, acc);
+           }
+
+          when (expr != null)
+          {
+            acc.Write (" = ");
+            SprintExpr(ctx, expr, indentation, acc)
+          }
+
+        | _ => acc.Write(p.ToString())
+      }
+
+      def print_funparms(fps) { SeparatedCalls (", ", fps, print_funparm, acc) };
+
+      def print_match(cases)
+      {
+          def print_case (c : MatchCase)
+          {
+            def <[ case: | ..$guards => $expr ]> = c;
+            foreach (g in guards)
+            {
+              acc.Write (sprintf ("\n%s| ", indentation + "  "));
+              SprintExpr (ctx, g, indentation, acc);
+            }
+            acc.Write (sprintf (" => \n%s", indentation + "    "));
+            SprintExpr (ctx, expr, indentation + "    ", acc)
+          }
+
+          acc.Write ($"$indentation{");
+          NList.Iter (cases, print_case);
+          acc.Write ($"\n$indentation}")
+          
+      }
+      def sprint_ss (x)
+      {
+        if (x == null)
+          acc.Write ("(NULL-MEM)")
+        else match (x)
+        {
+          | Splicable.Name (n) => acc.Write (n.Id);
+#if PRINT_COLOR
+          acc.Write ("."); acc.Write (n.color.ToString ());
+#endif
+          | Splicable.Expression (e) =>
+            acc.Write ("$(");
+            SprintExpr (ctx, e, indentation, acc);
+            acc.Write (")");
+          | Splicable.HalfId (n) => acc.Write ($"<COMPLETE '$(n.Id)'>");
+        }
+      }
+
+      def begin_loc = acc.Loc;
+      mutable needUpdateLocation = true;
+
+      if (expr == null)
+        acc.Write ("(NULL)")
+      else match (expr)
+      {
+        | <[ def _ = $(str : string) ]>
+        | <[ _ = $(str : string) ]> 
+        | <[ _ = $(PExpr.Literal(lit)) ]> with str = lit.ToString() => acc.Write("/* " + str + " */");
+        | <[ $(n : name) ]> =>
+          PrintName(n, acc);
+          #if PRINT_COLOR
+          acc.Write ("."); acc.Write(n.color.ToString());
+          #endif
+
+        | <[ $obj . $mem ]> =>
+          SprintExpr (ctx, obj, indentation, acc); acc.Write ("."); sprint_ss (mem)
+
+        | <[ $x :: $xs ]> =>
+          SprintExpr (ctx, x, indentation, acc);
+          acc.Write (" :: "); SprintExpr (ctx, xs, indentation, acc)
+
+        | <[ $e1 with $e2 ]> => SprintExpr (ctx, e1, indentation, acc);
+                                acc.Write (" with ");   
+                                SprintExpr (ctx, e2, indentation, acc);
+        | <[ $e1 when $e2 ]> => SprintExpr (ctx, e1, indentation, acc);
+                                acc.Write (" when ");
+                                SprintExpr (ctx, e2, indentation, acc);
+        | <[ $e1 in $e2 ]> => SprintExpr (ctx, e1, indentation, acc);
+                              acc.Write (" in ");   
+                              SprintExpr (ctx, e2, indentation, acc);
+        | <[ Nemerle.IO.sprint($e) ]> => acc.Write ("$");SprintExpr (ctx, e, indentation, acc);                        
+        | <[ $func (.. $parms) ]> =>
+          def print_parm (p : PExpr)
+          {
+            match (p)
+            {
+              | <[ $(n : name) = $expr ]> =>
+                acc.Write (n.Id + " = ");
+                SprintExpr (ctx, expr, indentation + "  ", acc)
+              | _ =>
+                SprintExpr (ctx, p, indentation + "  ", acc)
+            }
+          }
+
+          match ((func, parms))
+          {                        
+            | (<[ $(x : name) ]>, [e]) when LexerBase.IsOperator (x.Id) =>
+              acc.Write (x.Id);
+              print_parm (e)
+
+            | (<[ $(x : name) ]>, [e1, e2]) when LexerBase.IsOperator (x.Id) =>
+              print_parm (e1);
+              acc.Write (" " + x.Id + " ");
+              print_parm (e2);
+            
+            | _ =>
+              SprintExpr (ctx, func, indentation, acc); acc.Write ("(");
+              SeparatedCalls (", ", parms, print_parm, acc);
+              acc.Write (")");
+          }
+
+        | <[ $target = $source ]> =>
+          SprintExpr (ctx, target, indentation, acc); acc.Write (" = ");
+          SprintExpr (ctx, source, indentation, acc);
+
+        | <[ def $n = $val ]> =>
+          acc.Write ("def ");          
+          match (n)
+          {
+              | <[ $(_ : name) ]>
+              | <[ (..$_) ]> => SprintExpr (ctx, n, indentation, acc);
+              | _ => acc.Write ("(");SprintExpr (ctx, n, indentation, acc);acc.Write (")");          
+          }          
+          acc.Write (" = "); SprintExpr (ctx, val, indentation, acc)
+
+        | <[ mutable $n = $val ]> =>
+          acc.Write ("mutable "); SprintExpr (ctx, n, indentation, acc);
+
+          when (val != null)
+          {
+            acc.Write (" = ");
+            SprintExpr (ctx, val, indentation, acc);
+          }
+
+        | <[ $expr :> $ty ]> =>
+          acc.Write ("("); SprintExpr (ctx, expr, indentation, acc); acc.Write (" :> ");
+          SprintExpr (ctx, ty, indentation, acc); acc.Write (")");
+
+        | <[ $expr is $ty ]> =>
+          acc.Write ("("); SprintExpr (ctx, expr, indentation, acc);
+          acc.Write (" is "); SprintExpr (ctx, ty, indentation, acc); acc.Write (")")
+
+        | <[ $e1 where $e2 ]> =>
+          SprintExpr (ctx, e1, indentation, acc);
+          acc.Write (" where "); SprintExpr (ctx, e2, indentation, acc)
+
+        | <[ ( $expr : $ty ) ]> =>
+          acc.Write ("("); SprintExpr (ctx, expr, indentation, acc);
+          acc.Write (" : "); SprintExpr (ctx, ty, indentation, acc); acc.Write (")")
+
+        | PExpr.TypedPattern => ()
+        | PExpr.TypedType(body) => acc.Write (body.ToString ())
+        | <[ $e as $n ]>  => SprintExpr (ctx, e, indentation, acc);
+                             acc.Write(" as ");
+                             sprint_ss(n);                             
+
+        | <[ [..$elems] ]> =>
+          acc.Write ("[");
+          SeparatedCalls (", ", elems, x => SprintExpr(ctx, x, indentation + " ", acc), acc);
+          acc.Write ("]");
+
+        | <[ match ($expr) {.. $cases } ]> =>
+
+          acc.Write ("match (");
+          SprintExpr (ctx, expr, indentation, acc); acc.Write ($")\n$indentation");
+          print_match(cases)
+          
+        | <[ throw $exc ]> => acc.Write ("throw "); SprintExpr (ctx, exc, indentation, acc);
+
+        | PExpr.TryFinally (body, handler) =>
+          acc.Write ($"try\n$indentation{\n");
+          SprintExpr (ctx, body, indentation + "  ", acc);
+          acc.Write ($"\n$indentation}\n$(indentation)finally\n$indentation{\n$indentation  ");
+          SprintExpr (ctx, handler, indentation + "  ", acc);
+          acc.Write ($"\n$indentation}");
+
+        | PExpr.Try (body, cases) =>
+          acc.Write ($"try\n$indentation{\n$indentation  ");
+          SprintExpr (ctx, body, indentation + "  ", acc);
+          acc.Write ($"\n$indentation}\n$(indentation)catch\n$indentation{\n$indentation");
+
+          def print_case (case)
+          {
+            | TryCase.Catch (exn, exn_ty, handler) =>
+                acc.Write($"\n$indentation  |");
+                sprint_ss (exn); acc.Write (" is "); SprintExpr (ctx, exn_ty, indentation, acc);
+                acc.Write ($"=>\n$indentation    ");
+                SprintExpr (ctx, handler, indentation + "    ", acc);
+            | TryCase.Filter (exn, exn_ty, filter, handler) =>
+              acc.Write($"\n$indentation  |");
+              sprint_ss (exn); acc.Write (" is "); SprintExpr (ctx, exn_ty, indentation, acc);
+              acc.Write (" when (");
+              SprintExpr (ctx, filter, indentation, acc);
+              acc.Write (") ");              
+              acc.Write ($"=>\n$indentation    ");
+              SprintExpr (ctx, handler, indentation + "    ", acc);
+            | TryCase.Ellipsis (e) =>
+              acc.Write($"\n$indentation  ");
+              SprintExpr (ctx, e, indentation + "  ", acc);
+          }
+
+          foreach (case in cases)
+            print_case (case);
+
+          acc.Write ($"\n$indentation}");
+
+        | PExpr.Literal (lit) => acc.Write(lit.ToString())
+        | <[ this ]> => acc.Write ("this")
+        | PExpr.Base(option.Some(ty)) => acc.Write ($"(base : $ty)")
+        | <[ base ]> => acc.Write ("base")
+        | <[ typeof ($t) ]> => acc.Write ("typeof ("); SprintExpr (ctx, t, indentation, acc); acc.Write (")")
+        | <[ {.. $seq } ]> =>
+          acc.Write ($"\n$indentation{");
+          SeparatedCalls (";", seq, fun (x)
+            {
+              acc.Write ($"\n$indentation  ");
+              SprintExpr (ctx, x, indentation + "  ", acc);
+            }, acc);
+          acc.Write ($"\n$indentation}")
+
+        | <[ (.. $args) ]> =>
+          acc.Write ("(");
+          SeparatedCalls (", ", args, fun (x) {
+            SprintExpr (ctx, x, indentation, acc)
+          }, acc);
+          acc.Write (")")
+
+        | <[ array (..$args) ]> =>
+          acc.Write ("array (");
+          SeparatedCalls (", ", args, fun (x) {
+            SprintExpr (ctx, x, indentation, acc)
+          }, acc);
+
+        | <[ ref $e ]> => acc.Write ("ref "); SprintExpr (ctx, e, indentation, acc)
+        | <[ out $e ]> => acc.Write ("out "); SprintExpr (ctx, e, indentation, acc)
+        | <[ array $args ]> => acc.Write ("array "); SprintExpr (ctx, args, indentation, acc);
+        | <[ array .[ $rank ] $args ]> =>
+          acc.Write ("array .[");
+          SprintExpr (ctx, rank, indentation, acc);
+          acc.Write ("] ");
+          SprintExpr (ctx, args, indentation, acc);
+
+        | <[ $obj .[..$args] ]> =>
+          SprintExpr (ctx, obj, indentation, acc);
+          acc.Write (".[");
+          SeparatedCalls (", ", args, x => SprintExpr (ctx, x, indentation, acc), acc);
+          acc.Write ("]")
+
+        | <[ $obj [.. $args] ]> =>
+          SprintExpr (ctx, obj, indentation, acc);
+          acc.Write ("[");
+          SeparatedCalls (", ", args, x => SprintExpr (ctx, x, indentation, acc), acc);
+          acc.Write ("]")
+
+        | PExpr.Lambda (fd) =>
+          acc.Write ("fun ");
+          unless (fd.header.TypeParameters.tyvars.IsEmpty ())
+            acc.Write (fd.header.TypeParameters.tyvars.ToString ());
+          acc.Write (" ("); print_funparms (fd.header.Parameters); acc.Write (") ");
+          acc.Write (": "); SprintExpr (ctx, fd.header.ReturnType, indentation, acc); acc.Write (" ");
+          print_tconstraints (fd.header.TypeParameters.constraints); acc.Write ("\n");
+          SprintExpr (ctx, fd.body, indentation, acc)
+
+        | <[ def ..$funs ]> =>
+          def print_fun (f : Function_decl)
+          {
+            try
+            {
+              if (f == null)
+                acc.Write("(null :> Function_decl)");
+              else if (f.header == null)
+              {
+                acc.Write("_()");
+
+                if (f.body == null)
+                  acc.Write(" _ ");
+                else
+                  SprintExpr(ctx, f.body, indentation, acc);
+              }
+              else match (f)
+              {
+                | <[ fundecl: $(n : name) [ ..$tparms] (..$args) : _ where .. $tconstrs $body ]> with retTy=null
+                | <[ fundecl: $(n : name) [ ..$tparms] (..$args) : $retTy where .. $tconstrs $body ]> =>
+                  acc.Write(n.Id); acc.Write(" ");
+
+                  when (tparms != null && !tparms.IsEmpty)
+                    acc.Write(tparms.ToString());
+
+                  acc.Write("("); print_funparms(args); acc.Write(") ");
+                  print_tconstraints(tconstrs); acc.Write(" ");
+                  when (retTy!=null) 
+                   {
+                       acc.Write(" : "); 
+                       SprintExpr(ctx, retTy, indentation, acc);
+                   }                             
+                 
+                  if (body is PExpr.Sequence) SprintExpr(ctx, body, indentation, acc); else
+                    SprintExpr(ctx, <[ {$body} ]>, indentation, acc);
+                | _ => acc.Write ("spliced fun name")
+              }
+            }
+            catch
+            { | e is System.NullReferenceException =>
+              Debug.WriteLine($"$e");
+              acc.Write(" NRE!!! ");
+              ()
+            }
+            //assert2(true);
+          }
+
+          acc.Write ("def ");
+          SeparatedCalls ("\nand ", funs, print_fun, acc)
+
+        | PExpr.Wildcard => acc.Write ("_ ");
+        | PExpr.Void => acc.Write ("void ");
+        | PExpr.MacroCall (_, namespc, parms) =>
+          needUpdateLocation = false;
+          match (namespc.Value)
+          {
+            | NamespaceTree.TypeInfoCache.MacroCall (m) =>
+              def (rules, _) = m.SyntaxExtension ();
+              mutable parms_left = parms;
+              acc.Write ($"$rules ");
+              def rules = rules.Next;
+
+              def print_gel (x)
+              {
+                match (x)
+                {
+                  | GrammarElement.Keyword(k)    => acc.Write (" "); acc.Write (k); acc.Write (" ")
+                  | GrammarElement.Operator(")") => acc.Write (") ")
+                  | GrammarElement.Operator("}") => acc.Write ("} ")
+                  | GrammarElement.Operator(o)   => acc.Write (o)
+                  | GrammarElement.Optional(g)   => print_gel (g)
+                  | GrammarElement.RawToken =>
+                    match (parms_left)
+                    {
+                      | SyntaxElement.RawToken (t) :: xs =>
+                        acc.Write (t.ToString ());
+                        parms_left = xs;
+                      | _ => ()
+                        // VladD2: PrettyPrint should not generate error messages!!!
+                        //Message.Error ("expected raw token as parameter of macro "
+                        //               + namespc.GetDisplayName ())
+                    }
+
+                  | GrammarElement.Expression =>
+                    match (parms_left)
+                    {
+                      | SyntaxElement.Expression (e) :: xs =>
+                        SprintExpr (ctx, e, indentation, acc);
+                        parms_left = xs;
+                      | _ => ()
+                        //Message.Error ("expected expression as parameter of macro "
+                        //               + namespc.GetDisplayName () + " got " +
+                        //               parms_left.ToString ())
+                    }
+
+                  | GrammarElement.Parameter =>
+                    match (parms_left)
+                    {
+                      | SyntaxElement.Parameter (p) :: xs =>
+                        print_funparm (p);
+                        parms_left = xs;
+
+                      | _ => ()
+                        //Message.Error ("expected function parameter as parameter of macro "
+                        //               + namespc.GetDisplayName ())
+                    }
+
+                  | GrammarElement.ExpressionList =>
+                    SeparatedCalls (", ", parms_left, fun (_ : SyntaxElement)
+                      {
+                        | SyntaxElement.Expression (e) => SprintExpr (ctx, e, indentation, acc)
+                        | _ => ()
+                          //Message.Error ("expected expression in macro parameters: "
+                          //               + namespc.GetDisplayName ())
+                      }, acc);
+
+                  | GrammarElement.Branch | GrammarElement.End => Util.ice ("invalid node");
+                }
+
+                when (x.Next != null)
+                  print_gel (x.Next)
+              }
+
+              when (rules != null)
+                print_gel (rules);
+
+            | _ => acc.Write ("macro_call")
+          }
+
+        | PExpr.ToComplete (n) => acc.Write ($"<COMPLETE '$(n.Id)'>");
+        | PExpr.Spliced (e)    => acc.Write ("$("); SprintExpr (ctx, e, indentation, acc); acc.Write (")");
+        | PExpr.Ellipsis (e)   => acc.Write (".."); SprintExpr (ctx, e, indentation, acc);
+        | PExpr.Quoted (quot)  => acc.Write ("<[ "); acc.Write (quot.ToString ()); acc.Write (" ]>");
+        | PExpr.Typed (e) =>
+          def pos = acc.Sbuilder.Length;
+          SprintTyExpr (ctx, e, None (), false, indentation, acc.Sbuilder);
+          acc.MoveLocation (pos);
+
+        | PExpr.Error(msg)     => acc.Write ($"<# Error: $msg #>");
+      }
+
+      when (needUpdateLocation)
+        acc.FetchUpdatedLocation (expr, begin_loc);
+    }
+
+    [Nemerle.Assertions.Ensures (value != null)]
+    public SprintExpr (ctx : option[Typer], expr : PExpr) : string
+    {
+      def result = LocatableTextWriter (StringBuilder());
+      SprintExpr (ctx, expr, "", result);
+      result.ToString ()
+    }
+
+    public PrintExpr (ctx : option[Typer], expr : PExpr) : void
+    {
+      printf ("%s\n", SprintExpr (ctx, expr))
+    }
+
+    SeparatedCalls[T](sep : string, l : list [T], f : T -> void, acc : LocatableTextWriter) : void
+    {
+      def loop (l)
+      {
+        | [x] => f (x)
+        | x :: xs => f (x); acc.Write (sep); loop (xs)
+        | [] => ()
+      }
+      loop (l)
+    }
+
+    /* ------------------------------------------------------------------------ */
+    /* -- TYPED TREE ---------------------------------------------------------- */
+    /* ------------------------------------------------------------------------ */
+
+
+    /* -- MATCHING ---------------------------------------------------------- */
+
+    /**
+     * Pretty prints a match ('expr') { 'match_cases' } instruction.
+     * This is a string generating wrapper for SprintTyMatch/6.
+     */
+    public SprintTyMatch (ctx : option [Typer], expr : TT.TExpr, match_cases : list [TT.Match_case]) : string
+    {
+      def result = StringBuilder ();
+      ignore (result.Append ("\n"));
+      SprintTyMatch (ctx, expr, None (), match_cases, "", result);
+      ignore (result.Append ("\n"));
+      result.ToString ()
+    }
+
+    public SprintPattern (pattern : TT.Pattern) : string
+    {
+      def result = StringBuilder ();
+
+      def append (x : string) { ignore (result.Append (x)) }
+
+      def print_pattern (pattern : TT.Pattern)
+      {
+        | TT.Pattern.Error => append ("(ERROR)")
+        | TT.Pattern.Wildcard => append ("_")
+        | TT.Pattern.As (TT.Pattern.HasType (tycon), decl) => append (decl.Name + " : " + tycon.ToString ())
+        | TT.Pattern.As (pat /* Pattern */, decl /* LocalValue */) =>
+          append ("(");
+          print_pattern (pat);
+          append (") as " + decl.Name)
+
+        | TT.Pattern.HasType (tc) => append ($ "_ is $tc");
+        | TT.Pattern.Tuple (args /* list [Pattern] */) =>
+          append ("(");
+          def loop (args)
+          {
+            | [] => ()
+            | [arg] =>
+              print_pattern (arg)
+            | arg :: args =>
+              print_pattern (arg);
+              append (", ");
+              loop (args)
+          }
+
+          loop (args);
+          append (")")
+
+        // records
+        | TT.Pattern.Record (args /* list <IField * TT.Pattern> */) =>
+          def print_record_field (fld, pat)
+          {
+            append (fld.Name + " = ");
+            print_pattern (pat)
+          }
+
+          def loop (args)
+          {
+            | [] => ()
+            | [(fld, pat)] => print_record_field (fld, pat)
+            | (fld, pat) :: rest =>
+              print_record_field (fld, pat);
+              append ("; ");
+              loop (rest)
+          }
+
+          append ("{");
+          loop (args);
+          append ("}")
+
+        // variant constructors
+        | TT.Pattern.Application (name /* TypeInfo */, TT.Pattern.Wildcard /* Pattern */) =>
+          append (name.FullName)
+        | TT.Pattern.Application (name /* TypeInfo */, (TT.Pattern.Record) as arg /* Pattern */) =>
+          append (name.FullName + " ");
+          print_pattern (arg);
+        | TT.Pattern.Application (name /* TypeInfo */, arg /* Pattern */) =>
+          append (name.FullName + " (");
+          print_pattern (arg);
+          append (")")
+
+        // literals
+        | TT.Pattern.Literal (lit /* Literal */) => append (lit.ToString ())
+        | TT.Pattern.Enum (fld, _)               => append (fld.Name)
+      }
+
+      print_pattern (pattern);
+      result.ToString ()
+    }
+
+
+    /**
+     * Pretty prints a match ('expr') { 'match_cases' } instruction.
+     */
+    public SprintTyMatch (ctx : option [Typer],
+                          expr : TT.TExpr,
+                          current_fun_name : option [string],
+                          match_cases : list [TT.Match_case],
+                          indentation : string,
+                          result : StringBuilder) : void
+    {
+      def append (x : string) { ignore (result.Append (x)) }
+      def indent () { append (indentation) }
+
+      def recurse (expr : TT.TExpr) { SprintTyExpr (ctx, expr, current_fun_name, false, indentation, result) }
+      def recurse_and_indent (expr : TT.TExpr)
+      {
+        SprintTyExpr (ctx, expr, current_fun_name, true, indentation + "    ", result)
+      }
+      def recurse_and_short_indent (expr : TT.TExpr)
+      {
+        SprintTyExpr (ctx, expr, current_fun_name, true, indentation + "  ", result)
+      }
+      def print_pattern (pattern : TT.Pattern) { append (SprintPattern (pattern)) }
+      def print_patterns (patterns)
+      {
+        def do_print (pattern, guard, assigns : list [_], terminator)
+        {
+          indent ();
+          append ("  | ");
+          print_pattern (pattern);
+
+          match (guard)
+          {
+            | TT.TExpr.Literal (Literal.Bool (true)) => ()
+            | _ =>
+              append (" when ");
+              recurse (guard);
+          }
+
+          unless (assigns.IsEmpty)
+          {
+            append (" with (");
+
+            foreach ((name, value) in assigns)
+            {
+              append (name.Name);
+              append (" = ");
+              recurse (value);
+              append (", ");
+            }
+          }
+
+          append (terminator)
+        }
+
+        match (patterns)
+        {
+          | [(pattern, guard, assigns)]       => do_print(pattern, guard, assigns, " =>\n")
+          | (pattern, guard, assigns) :: rest => do_print(pattern, guard, assigns, "\n"); print_patterns(rest)
+          | _ => ()
+        }
+      }
+
+      def print_match_cases (cases : list [TT.Match_case])
+      {
+        | TT.Match_case where (patterns, body, _) :: rest =>
+          print_patterns (patterns);
+          recurse_and_indent (body);
+          append ("\n");
+          print_match_cases (rest)
+
+        | _ => ()
+      }
+
+      def collapse_match_like_constructions () : bool
+      {
+        def expr_is_bool (expr : TT.TExpr)
+        {
+          expr.Type.IsFixed &&
+          match (expr.Type.FixedValue) {
+            | FixedType.Class (tycon, []) =>
+              tycon.FullName == "System.Boolean" ||
+              tycon.FullName == "Nemerle.Core.bool"
+            | _ =>
+              false
+          }
+        }
+
+        def case_is_true (case : TT.Match_case)
+        {
+          (case.patterns is [(Literal (Bool (true)), Literal (Bool (true)), [])])
+        }
+        def case_is_false (case : TT.Match_case)
+        {
+          (case.patterns is [(Literal (Bool (false)), Literal (Bool (true)), [])])
+        }
+        def case_is_wildcard (case : TT.Match_case)
+        {
+          (case.patterns is [(Wildcard, Literal (Bool (true)), [])])
+        }
+        def case_is_ty_check (case : TT.Match_case)
+        {
+          (case.patterns is [(As (HasType, _), Literal (Bool (true)), [])])
+        }
+        def expr_is_true (expr : TT.TExpr)
+        {
+          (expr is TT.TExpr.Literal (Literal.Bool (true)))
+        }
+        def expr_is_false (expr : TT.TExpr)
+        {
+          (expr is TT.TExpr.Literal (Literal.Bool (false)))
+        }
+        def expr_is_unit (expr : TT.TExpr)
+        {
+          (expr is TT.TExpr.Literal (Literal.Void))
+        }
+
+        def matching_over_bool = expr_is_bool (expr);
+
+        match (match_cases)
+        {
+          | [then_case, else_case] =>
+            def then_is_true = case_is_true (then_case);
+            def then_is_false = case_is_false (then_case);
+            def then_is_ty_check = case_is_ty_check (then_case);
+            def else_is_wildcard = case_is_wildcard (else_case);
+
+            def then_body_is_true = expr_is_true (then_case.body);
+            def then_body_is_false = expr_is_false (then_case.body);
+            def else_body_is_unit = expr_is_unit (else_case.body);
+            def else_body_is_true = expr_is_true (else_case.body);
+            def else_body_is_false = expr_is_false (else_case.body);
+            def else_body_is_bool = expr_is_bool (else_case.body);
+
+            def then_pattern_count = then_case.patterns.Length;
+            def else_pattern_count = then_case.patterns.Length;
+
+            def is_if      = matching_over_bool && then_is_true && else_is_wildcard;
+            def is_when    = matching_over_bool && then_is_true && else_is_wildcard && else_body_is_unit;
+            def is_unless  = matching_over_bool && then_is_false && else_is_wildcard && else_body_is_unit;
+            def is_and_and = matching_over_bool && then_is_false && then_body_is_false && else_is_wildcard && else_body_is_bool;
+            def is_or_or   = matching_over_bool && then_is_true && then_body_is_true && else_is_wildcard && else_body_is_bool;
+            def is_is      = then_body_is_true && then_is_ty_check && else_is_wildcard && else_body_is_false;
+            def is_matches = then_body_is_true && else_is_wildcard && else_body_is_false && then_pattern_count == 1
+                          && else_pattern_count == 1;
+            def is_redundant = matching_over_bool && then_is_true && then_body_is_true && else_is_wildcard && else_body_is_false
+                            || then_is_false && then_body_is_false && else_is_wildcard && else_body_is_true;
+
+            if (is_redundant)
+            {
+              append ("(");
+              recurse (expr);
+              append (")");
+              true
+            }
+            else if (is_or_or || is_and_and)
+            {
+              append ("(");
+              recurse (expr);
+              append (if (is_or_or) " || " else " && ");
+              recurse (else_case.body);
+              append (")");
+              true
+            }
+            else if (is_when || is_unless)
+            {
+              append ((if (is_when) "when" else "unless") + " (");
+              recurse (expr);
+              append (") {\n");
+              recurse_and_short_indent (then_case.body);
+              append ("\n" + indentation + "}");
+              true
+            }
+            else if (is_if)
+            {
+              append ("if (");
+              recurse (expr);
+              append (") {\n");
+              recurse_and_short_indent (then_case.body);
+              append ("\n" + indentation + "}\n" + indentation + "else {\n");
+              recurse_and_short_indent (else_case.body);
+              append ("\n" + indentation + "}");
+              true
+            }
+            else if (is_is)
+            {
+              append ("(");
+              recurse (expr);
+              append (" is ");
+              match (then_case.patterns)
+              {
+                | [(As (HasType (ty), _), _, [])] =>
+                  append (strip_nemerle_core_dot_prefix (ty.ToString ()));
+                | _ =>
+                  Util.ice ("SprintTyMatch: is_is")
+              }
+              append (")");
+              true
+            }
+            else if (is_matches)
+            {
+              append ("(");
+              recurse (expr);
+              append (" matches ");
+              match (then_case.patterns)
+              {
+                | [(then_pat, _, [])] =>
+                  print_pattern (then_pat)
+                | _ =>
+                  Util.ice ("SprintTyMatch: is_matches")
+              }
+              append (")");
+              true
+            }
+            else
+              false
+
+          | _ =>
+            false
+        }
+      }
+
+      unless (collapse_match_like_constructions ())
+      {
+        append ("match (");
+        recurse (expr);
+        append (") {\n");
+
+        print_match_cases (match_cases);
+
+        indent ();
+        append ("}")
+      }
+    }
+
+
+    /* -- EXPRESSIONS ------------------------------------------------------- */
+
+    /**
+     * Pretty prints a typed tree expression.
+     */
+    public SprintTyExpr (ctx : option [Typer], expr : TT.TExpr) : string
+    {
+      def result = StringBuilder ();
+      ignore (result.Append ("\n"));
+      SprintTyExpr (ctx, expr, None (), false, "", result);
+      ignore (result.Append ("\n"));
+      result.ToString ()
+    }
+
+    /**
+     * Pretty prints a typed tree expression.
+     */
+    public SprintTyExpr (expr : TT.TExpr) : string
+    {
+      def result = StringBuilder ();
+      SprintTyExpr (None (), expr, None (), false, "", result);
+      result.ToString ()
+    }
+
+
+    /**
+     * Pretty prints a typed tree expression.
+     */
+    public SprintTyExpr (ctx              : option [Typer],
+                         expr             : TT.TExpr,
+                         current_fun_name : option [string],
+                         is_top_level     : bool,
+                         indentation      : string,
+                         result           : StringBuilder
+    )
+      : void
+    {
+      def append (x : string) { ignore (result.Append (x)) }
+      def indent () { append (indentation) }
+      //append($"{$(expr.GetHashCode())}");
+      def recurse (expr : TT.TExpr)
+      {
+        SprintTyExpr (ctx, expr, current_fun_name, false, indentation, result)
+      }
+      def recurse_no_indent (expr : TT.TExpr)
+      {
+        SprintTyExpr (ctx, expr, current_fun_name, true, indentation, result)
+      }
+      def recurse_and_indent (expr : TT.TExpr)
+      {
+        SprintTyExpr (ctx, expr, current_fun_name, true, indentation + "  ", result)
+      }
+      def print_type (ty : TypeVar) { append (ty.ToString ()) }
+      def print_expr_list (begin : string, args : list [TT.TExpr], separator : string, end : string)
+      {
+        append (begin);
+        NString.SeparatedCalls (separator, args, recurse, result);
+        append (end)
+      }
+      def print_fun_call_parms (parms : list [TT.Parm])
+      {
+        NString.SeparatedCalls (", ", parms, fun (parm : TT.Parm) { recurse (parm.expr) }, result)
+      }
+      def is_list_cons (mem : IMember)
+      {
+        mem.DeclaringType.FullName == "Nemerle.Core.list.Cons" && mem.Name == ".ctor"
+      }
+      def is_list_nil (mem : IMember)
+      {
+        mem.DeclaringType.FullName == "Nemerle.Core.list.Nil" && mem.Name == "_N_constant_object"
+      }
+
+      // checks if an expression needs to be put in curly braces
+      def need_curly_braces (expr : TT.TExpr)
+      {
+        | TT.TExpr.FieldMember (obj, _)
+        | TT.TExpr.PropertyMember (obj, _)
+        | TT.TExpr.MethodRef (obj, _, _, _)
+        | TT.TExpr.ArrayIndexer (obj, _)     => need_curly_braces (obj)
+        | TT.TExpr.PointerIndexer(obj, _)    => need_curly_braces (obj)
+        | TT.TExpr.Assign (target, source)   => need_curly_braces (target) || need_curly_braces (source)
+        | TT.TExpr.Throw (exn)               => need_curly_braces (exn)
+        | TT.TExpr.DefValIn                  => true
+        | TT.TExpr.DefFunctionsIn            => true
+        | TT.TExpr.Sequence                  => true
+        | _                                  => false
+      }
+
+      // prints a list, using the [,] and :: shortcuts for Cons where appropriate
+      def print_list_constructors (cons : TT.TExpr)
+      {
+        def walk_tree (cons : TT.TExpr, acc : list [TT.TExpr]) : list [TT.TExpr] * bool
+        {
+          match (cons)
+          {
+            | TT.TExpr.Call (TT.TExpr.StaticRef (_, mem, _), parms, _) when is_list_cons (mem) =>
+              match (parms)
+              {
+                | [head, tail] => walk_tree (tail.expr, head.expr :: acc)
+                | _            => Util.ice ("SprintTyExpr/flatten_list/walk_list_tree")
+              }
+
+            | TT.TExpr.StaticRef (_, mem, _) when is_list_nil (mem) => (NList.Rev (acc), true)
+            | _ => (NList.Rev (cons :: acc), false)
+          }
+        }
+
+        def (flattened_list, ended_with_nil) = walk_tree (cons, []);
+
+        if (ended_with_nil)
+          print_expr_list ("[", flattened_list, ", ", "]")
+        else
+          print_expr_list ("", flattened_list, " :: ", "")
+      }
+
+
+      // prints a local function declaration
+      def print_local_fun_decl (prefix : string, fun_decl : TT.TFunHeader)
+      {
+        def printParam(parm)
+        {
+          def defVal =
+            match (parm.default_value)
+            {
+              | Some(val) => " = " + SprintTyExpr(ctx, val)
+              | _         => ""
+            };
+
+          $"$(parm.name) : $(parm.ty)$defVal"
+        }
+
+        def typarms = print_fun_typarms(fun_decl.TypeParameters);
+        def name    = fun_decl.Name;
+        def retType = fun_decl.ReturnType;
+
+        append($<#$prefix $name$typarms(..$(fun_decl.Parameters; ", "; printParam)) : $retType#>);
+        append("\n");
+        append("{\n");
+
+        // change the current function's name when recursing
+        match (fun_decl.body)
+        {
+          | FunBody.Typed (body) =>
+            SprintTyExpr(ctx, body, Some(fun_decl.Name), true, indentation + "  ", result);
+          | _ => ()
+        }
+
+        append ("\n" + indentation + "}\n")
+      }
+
+      // indent the top level expressions
+      when (is_top_level)
+        indent ();
+
+      if (expr == null) append ("")
+      else match (expr)
+      {
+        // reference building
+        | TT.TExpr.LocalFunRef (decl /* LocalValue */, tp) =>
+          append (decl.Name);
+          unless (tp.IsEmpty)
+            append ($".$tp");
+
+        | TT.TExpr.LocalRef (decl /* LocalValue */) =>
+          append (decl.Name)
+
+        | TT.TExpr.StaticRef (from, mem /* IMember */, tp) =>
+          def ty_name =
+            strip_nemerle_core_dot_prefix (from.ToString ());
+          def co_name = mem.Name;
+
+          if (is_list_nil (mem)) {
+            append ("[]")
+          }
+          else {
+            append (ty_name);
+
+            unless (co_name == ".ctor") {
+              append ("." + co_name)
+            }
+          }
+
+          unless (tp.IsEmpty)
+            append ($".$tp");
+
+        | TT.TExpr.FieldMember (obj /* PExpr */, fld /* IField */) =>
+          recurse (obj);
+          append ("." + fld.Name)
+
+        | TT.TExpr.ConstantObjectRef (_, mem /* IField */) =>
+          append (mem.DeclaringType.FullName + "." + mem.Name);
+
+        | TT.TExpr.ImplicitValueTypeCtor =>
+          append (expr.Type.ToString () + " ()");
+
+        | TT.TExpr.DefaultValue =>
+          append ("DEFAULT")
+
+        | TT.TExpr.Switch (indexing, defl, cases) =>
+          append ($ "switch ($indexing) $defl $cases")
+
+        | TT.TExpr.If(cond, e1, e2, _, _) =>
+          append ("if.real (");
+          recurse (cond);
+          append (") {\n");
+          recurse_and_indent (e1);
+          append ("\n" + indentation + "}\n" + indentation + "else {\n");
+          recurse_and_indent (e2);
+          append ("\n" + indentation + "}");
+
+        | TT.TExpr.HasType(e, t) =>
+          append ($ "($e is $t)")
+
+        | TT.TExpr.PropertyMember (obj /* PExpr */, prop /* IProperty */) =>
+          recurse (obj);
+          append ("." + prop.Name)
+
+        | TT.TExpr.StaticPropertyRef (_, prop /* IProperty */) =>
+          append (prop.DeclaringType.FullName + "." + prop.Name)
+
+        | TT.TExpr.EventMember (obj /* PExpr */, ev /* IEvent */) =>
+          recurse (obj);
+          append ("." + ev.Name)
+
+        | TT.TExpr.StaticEventRef (_, ev /* IEvent */) =>
+          append (ev.DeclaringType.FullName + "." + ev.Name)
+
+        // FIXME: handle the 'notvirtual' flag
+        | TT.TExpr.MethodRef (obj /* PExpr */, meth /* IMethod */, vars, _ /* notvirtual : bool */) =>
+          recurse (obj);
+          append ("." + meth.Name);
+
+          unless (vars.IsEmpty)
+            append ($".$vars");
+
+        // the special case for unary operators
+        | TT.TExpr.Call (TT.TExpr.OpCode (name), [parm], _) =>
+          append (name);
+          append ("(");
+          recurse (parm.expr);
+          append (")");
+
+        // the special case for infix binary operators
+        | TT.TExpr.Call (TT.TExpr.OpCode (name), [parm1, parm2], _) =>
+          append ("(");
+          recurse (parm1.expr);
+          append (" " + name + " ");
+          recurse (parm2.expr);
+          append (")")
+
+        // pretty print the list constructors
+        | TT.TExpr.Call (TT.TExpr.StaticRef (_, mem, _), _, _) when is_list_cons (mem) =>
+          print_list_constructors (expr)
+
+        // write all the other calls in prefix form
+        | TT.TExpr.Call (func /* PExpr */, parms /* list [Parm] */, _) =>
+          recurse (func);
+          append (" (");
+          print_fun_call_parms (parms);
+          append (")")
+
+        | TT.TExpr.SelfTailCall (_ /* TExpr */, parms /* list [Parm] */) =>
+          match (current_fun_name)
+          {
+            | Some (fun_name) => append (fun_name)
+            | _ =>
+              match (ctx)
+              {
+                | Some (ctx) => append (ctx.CurrentFunction.Name)
+                | _ => append ("SELF");
+              }
+          }
+          append (" (");
+          print_fun_call_parms (parms);
+          append (")")
+
+
+        // assignment
+        | TT.TExpr.Assign (target /* PExpr */, source /* PExpr */) =>
+          recurse (target);
+          append (" = ");
+          recurse (source);
+
+
+        | TT.TExpr.MultipleAssign (assigns) =>
+          append ($ "ASSIGNS $assigns");
+
+
+        | TT.TExpr.Label(id, body) =>
+          def name = GetIdName(expr, id);
+          
+          if (name == null)
+            append($"Label_$id:" + "\n");
+          else
+            append($"$name /* id: $id */:" + "\n");
+
+          recurse_and_indent(body);
+
+        | TT.TExpr.MacroEnvelope(_orig, mac, body, _) =>
+          append ($ "macro_$mac:\n"); // skip _orig, as it gives too much clutter
+          recurse_and_indent (body);
+
+
+        | TT.TExpr.Block (jump, body) =>
+          append ($ "block ($(jump.Name)) :\n");
+          recurse_and_indent (body);
+
+
+        | TT.TExpr.Goto(id, t) =>
+          def name = GetIdName(expr, id);
+          
+          if (name == null)
+            append($"goto Label_$id /* try id: $t */");
+          else
+            append($"goto $name /* id: $id try id: $t */");
+
+        // local definitions
+        | TT.TExpr.DefValIn (name /* LocalValue */, val /* PExpr */, body /* PExpr */) =>
+          if (need_curly_braces (val))
+          {
+            append ("def " + name.Name + " = {\n");
+            recurse_and_indent (val);
+            append ("\n" + indentation + "};\n");
+            recurse_no_indent (body)
+          }
+          else
+          {
+            append ("def " + name.Name + " = ");
+            recurse (val);
+            append (";\n");
+            recurse_no_indent (body)
+          }
+
+        | TT.TExpr.CacheRef (c) =>
+          append ($"[[CacheRef:$(c.PExpr)]]")
+
+        | TT.TExpr.Cache (c, body) =>
+          append ($"[[Cache:$(c.PExpr)]]\n");
+          recurse_no_indent (body);
+
+        // local function definitions can be grouped using the 'and' keyword
+        | TT.TExpr.DefFunctionsIn (funs /* list [Function_decl] */, body /* PExpr */) =>
+          match (funs)
+          {
+            | fun_decl :: rest =>
+              print_local_fun_decl("def", fun_decl);
+
+              foreach (and_fun_decl in rest)
+                print_local_fun_decl("and", and_fun_decl)
+
+            | _ => Util.ice ("TT.TExpr.DefFunctionsIn with no function declarations")
+          }
+
+          recurse_no_indent (body)
+
+
+        // the 'match' instruction is handled separately
+        | TT.TExpr.Match (expr /* PExpr */, cases /* list [Match_case] */) =>
+          SprintTyMatch (ctx, expr, current_fun_name, cases, indentation, result)
+
+
+        // exception handling
+        | TT.TExpr.Throw (exn /* PExpr */) =>
+          append ("throw ");
+          recurse (exn)
+
+        | TT.TExpr.TryFinally (body /* PExpr */, handler /* PExpr */) =>
+          append ("try {\n");
+          recurse_and_indent (body);
+          append ("\n" + indentation +"} finally {\n");
+          recurse_and_indent (handler);
+          append ("\n" + indentation + "}")
+
+        | TT.TExpr.Try (body, cases) =>
+          append ("try {\n");
+          recurse_and_indent (body);
+          append ("\n" + indentation + "} catch {");
+          def print_case (case) {
+            | TT.Try_case.Fault (handler) =>
+              recurse_and_indent (handler);
+            | TT.Try_case.Catch (exn, handler) =>
+              append ("\n  " + indentation + "| " + exn.Name + " is ");
+              print_type (exn.Type);
+              append (" =>\n");
+              recurse_and_indent (handler);
+            | TT.Try_case.Filter (exn, filter, handler) =>
+              append ("\n  " + indentation + "| " + exn.Name + " is ");
+              print_type (exn.Type);
+              append (" when (");
+              recurse (filter);
+              append (") =>\n");
+              recurse_and_indent (handler);
+          }
+          foreach (case in cases)
+            print_case (case);
+          append ("\n" + indentation + "}");
+
+        // 'this' and 'base' objects
+        | TT.TExpr.This =>
+          append ("this");
+
+        | TT.TExpr.Base /* (base_ctor : IMethod) */ =>
+          append ("base")
+
+
+        // type related nodes
+        // FIXME: checked/unchecked
+        | TT.TExpr.TypeConversion (expr /* TExpr */, target_type /* TType */, kind, _) =>
+          append ("(");
+          recurse (expr);
+          match (kind) {
+            | TT.ConversionKind.Nop
+            | TT.ConversionKind.UpCast =>
+              append (" : ");
+            | _ =>
+              append (" :> ");
+          }
+          print_type (target_type);
+          append (")")
+
+        | TT.TExpr.TypeOf (target_type /* TType */) =>
+          append ("typeof (");
+          print_type (target_type);
+          append (")")
+
+        | TT.TExpr.MethodOf (ty, method, typars) =>
+          append ($"methodof ($ty.$method[$typars])");
+
+        | TT.TExpr.CtorOf(ty, method /* IMethod */) =>
+          append ($"ctorof ($ty.$method)")
+
+        | TT.TExpr.FieldOf(ty, field /* IField */) =>
+          append ($"fieldof ($ty.$(field.Name))")
+
+        | TT.TExpr.ClosureObjectOf(expr) =>
+          append("ClosureObjectOf(");
+          recurse(expr);
+          append(")");
+
+        | TT.TExpr.ClosureFieldOf(expr) =>
+          append("ClosureFieldOf(");
+          recurse(expr);
+          append(")");
+
+        // array related nodes
+        | TT.TExpr.Array (args : list [TT.TExpr], _ /* dimensions : list [int] */) =>
+          append ("array ");
+          print_expr_list ("[", args, ", ", "]")
+
+        | TT.TExpr.ArrayIndexer (obj /* TExpr */, args /* list [TExpr] */) =>
+          recurse (obj);
+          print_expr_list ("[", args, ", ", "]")
+
+      | TT.TExpr.PointerIndexer(obj /* TExpr */, index /* TExpr */) =>
+        recurse(obj);
+        append("[");
+        recurse(index);
+        append("]");
+
+      | TT.TExpr.TupleIndexer (obj, k, _) =>
+          recurse (obj);
+          append($"[$k]");
+
+
+        // loading of a literal
+        | TT.TExpr.Literal (val /* Literal */) =>
+          append (val.ToString ())
+
+
+        // other nodes
+        | TT.TExpr.Sequence (e1 /* PExpr */, e2 /* PExpr */) =>
+          recurse (e1);
+          append (";\n");
+          recurse_no_indent (e2);
+
+        | TT.TExpr.Tuple (args /* list [PExpr] */) =>
+          print_expr_list ("(", args, ", ", ")")
+
+        | TT.TExpr.OpCode (name /* string */) =>
+          append (name)
+
+        | TT.TExpr.Error =>
+          append ("(ERROR)")
+
+        | TT.TExpr.DebugInfo (null, _) => ()
+        | TT.TExpr.DebugInfo (e, _) =>
+          append ("DEBUG_INFO(");
+          recurse(e);
+          append(")");
+
+        | TT.TExpr.MethodAddress (_, meth, is_virt, _) =>
+          append ($ "ADDR($meth, $is_virt)")
+
+        | TT.TExpr.Delayed (dt) =>
+          try
+          {
+            if (dt.IsResolved)
+              SprintTyExpr (ctx, dt.ResolutionResult, current_fun_name, is_top_level, indentation, result)
+            else
+              append ($"TExpr.Delayed($dt)");
+          }
+          catch { e => append ($"TExpr.Delayed(<<exception $(e.GetType().Name): $(e.Message)>>)"); }
+
+        | TT.TExpr.Def(expr, into) =>
+          append ("#");
+          recurse (expr);
+          append ("-->");
+          recurse (into);
+          append ("#");
+
+        | TT.TExpr.Use(expr, _) =>
+          append ("U");
+          recurse (expr);
+      }
+
+      match (ctx) {
+        | Some (ty) =>
+          when (ty.Manager.Options.PrintExpressionsType)
+            append ($"{$(expr.Type)}");
+        | None => ()
+      }
+    }
+    
+    public static GetIdName(expr : TT.TExpr, id : int) : string
+    {
+      def manager = expr.Type?.Manager ?? ManagerClass.Instance;
+      assert2(manager != null);
+          
+      def name = manager.GetIdName(id);
+      name
+    }
+
+    public TyVarToParseTree (ty : TypeVar) : PExpr
+    {
+      if (ty.IsFixed)
+        MTypeToParseTree (ty.FixedValue)
+      else
+        MTypeToParseTree (ty.Fix ())
+    }
+
+    public MTypeToParseTree (ty : FixedType) : PExpr
+    {
+      | FixedType.Class (tycon, [])   => Util.ExprOfQid (tycon.FullName)
+      | FixedType.Class (tycon, args) => PExpr.Indexer (Util.ExprOfQid (tycon.FullName), NList.Map (args, TyVarToParseTree))
+      | FixedType.StaticTypeVarRef (t)        => PExpr.Ref (Name (t.Name))
+      | FixedType.Fun (from, to)      => <[ $(TyVarToParseTree (from)) -> $(TyVarToParseTree (to)) ]>
+      | FixedType.Void                => PExpr.Void ()
+      | FixedType.Tuple (all)         => <[ @* (..$( NList.Map (all, TyVarToParseTree))) ]>
+      | FixedType.Array (ty, rank)    => <[ array [ $(rank : int), $(TyVarToParseTree (ty)) ] ]>
+      | FixedType.Ref (ty)            => <[ ref $(TyVarToParseTree (ty)) ]>
+      | FixedType.Out (ty)            => <[ out $(TyVarToParseTree (ty)) ]>
+      | FixedType.Intersection        => assert(false)
+    }
+
+    /* -- PRIVATE METHODS --------------------------------------------------- */
+
+    /// Strips the 'Nemerle.Core.' prefix from type names
+    private strip_nemerle_core_dot_prefix (tyname : string) : string
+    {
+      if (tyname.StartsWith ("Nemerle.Core."))
+        tyname.Substring (13)
+      else
+        tyname
+    }
+
+
+    /// Prints a type parameters of a function declaration
+    private print_fun_typarms (typarms : list [StaticTypeVar]) : string
+    {
+      if (typarms.IsEmpty) "" else typarms.ToString()
+    }
+  }
+
+  [Record]
+  public class LocatableTextWriter
+  {
+    [Nemerle.Utility.Accessor]
+    protected sbuilder : StringBuilder;
+
+    public virtual Loc : Location { get { Location.Default } }
+    public virtual Write (txt : string) : void { _ = sbuilder.Append (txt); }
+    public virtual FetchUpdatedLocation (_entity : Located, _begin_loc : Location) : void { }
+    public virtual MoveLocation (_from_position : int) : void { }
+
+    public override ToString () : string { sbuilder.ToString() }
+  }
+
+  [Record]
+ class LocatingTextWriter : LocatableTextWriter
+  {
+    [Nemerle.Utility.Accessor (flags = Override)]
+    mutable loc : Location;
+
+    public override Write (txt : string) : void
+    {
+      def txt = txt.Replace("\r\n", "\n");
+      moveLoc (txt);
+      base.Write (txt);
+    }
+
+    private moveLoc (txt : string) : void
+    {
+      mutable line = loc.Line;
+      mutable col = loc.Column;
+
+      for (mutable i = 0; i < txt.Length; i++)
+      {
+        match (txt[i])
+        {
+          | '\n'                                               => line++; col = 1;
+          | '\r' when i + 1 < txt.Length && txt[i + 1] != '\n' => line++; col = 1;
+          | '\u2028'                                           => line++; col = 1;
+          | '\u2029'                                           => line++; col = 1;
+          | '\u0085'                                           => line++; col = 1;
+          | _                                                  => col++;
+        }
+      }
+
+      loc = Location (loc, line, col);
+    }
+
+    public override MoveLocation (from_position : int) : void
+    {
+      when (from_position != sbuilder.Length)
+        moveLoc (sbuilder.ToString (from_position, sbuilder.Length - from_position));
+    }
+
+    public override FetchUpdatedLocation (entity : Located, begin_loc : Location) : void
+    {
+      when (entity != null)
+      {
+        def entityLocation = begin_loc + loc;
+        entity.Location = entityLocation;
+        assert2(entityLocation.IsSourceAvailable);
+      }
+    }
+  }
+}
+
+/*** END OF FILE ***/

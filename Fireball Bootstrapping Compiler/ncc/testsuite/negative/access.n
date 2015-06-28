@@ -1,0 +1,153 @@
+class M {
+  public f_public : int;
+  protected f_protected : int;
+  private f_private : int;
+  
+  public m_public () : void {}
+  protected m_protected () : void {}
+  private m_private () : void {}
+  
+  static public s_public : int;
+  static protected s_protected : int;
+  static private s_private : int;
+
+  m2 : M2;
+
+  m () : void {
+    def _ = m2.f_private;       // E: is not accessible
+    def _ = m2.f_protected;     // E: is not accessible
+    def _ = m2.f_public;        // OK
+    m2.m_public ();             // OK
+    m2.m_private ();            // E: is not accessible
+    m2.m_protected ();          // E: is not accessible
+    ()
+  }
+
+  internal class M2 {
+    public f_public : int;
+    protected f_protected : int;
+    private f_private : int;
+    
+    public m_public () : void {}
+    protected m_protected () : void {}
+    private m_private () : void {}
+
+    par : M;
+    m3 : M3;
+
+    m () : void {
+      def _ = par.f_private;      // OK
+      def _ = par.f_protected;    // OK
+      def _ = par.f_public;       // OK
+      par.m_public ();            // OK
+      par.m_private ();           // OK
+      par.m_protected ();         // OK
+      def _ = m3.f_private;       // E: is not accessible
+      def _ = m3.f_protected;     // E: is not accessible
+      def _ = m3.f_public;        // OK
+      m3.m_public ();             // OK
+      m3.m_private ();            // E: is not accessible
+      m3.m_protected ();          // E: is not accessible
+      ()
+    }
+  }
+
+  public class M3 {
+    public f_public : int;
+    protected f_protected : int;
+    private f_private : int;
+    
+    public m_public () : void {}
+    protected m_protected () : void {}
+    private m_private () : void {}
+
+    static public f_static_public () : void { f_static_private() }
+    static private f_static_private () : void { () }
+  }
+
+  private class M4 {
+    static public foo () : void {}
+  }
+}
+
+class T {
+  mx : M;
+  m2 : M.M2;
+  m3 : M.M3;
+
+  ma () : void {
+    def _ = mx.f_private;       // E: is not accessible
+    def _ = mx.f_protected;     // E: is not accessible
+    def _ = mx.f_public;        // OK
+    mx.m_public ();             // OK
+    mx.m_private ();            // E: is not accessible
+    mx.m_protected ();          // E: is not accessible
+    ()
+  }
+  
+  mb () : void {
+    def _ = m3.f_private;       // E: is not accessible
+    def _ = m3.f_protected;     // E: is not accessible
+    def _ = m3.f_public;        // OK
+    m3.m_public ();             // OK
+    m3.m_private ();            // E: is not accessible
+    m3.m_protected ();          // E: is not accessible
+    ()
+  }
+}
+
+variant foo {
+  | A
+  | B
+}
+
+class T2 : M {
+  mx : M;
+  new m2 : M.M2;
+  m3 : M.M3;
+
+  ma () : void {
+    def _ = mx.f_private;       // E: is not accessible
+    def _ = mx.f_protected;     // OK
+    def _ = mx.f_public;        // OK
+    mx.m_public ();             // OK
+    mx.m_private ();            // E: is not accessible
+    mx.m_protected ();          // OK
+    ()
+  }
+  
+  mb () : void {
+    def _ = m3.f_private;       // E: is not accessible
+    def _ = m3.f_protected;     // E: is not accessible
+    def _ = m3.f_public;        // OK
+    m3.m_public ();             // OK
+    m3.m_private ();            // E: is not accessible
+    m3.m_protected ();          // E: is not accessible
+    M.M4.foo ();                // FIXME: cannot access `M.M4'
+
+    def _ = list ();    // E: type `Nemerle.Core.list.*' is abstract and cannot be constructed
+    def _ = foo ();     // E: type `foo' is abstract and cannot be constructed
+    def _ = foo.A ();       // OK
+    ()
+  }
+}
+
+
+namespace DelayedTyping {
+  using System;
+  using System.IO;
+
+  public class Test {
+     public static Main() : void {
+        mutable obj = null;
+        mutable stream = File.Open("data.xml", FileMode.Create);
+        mutable formatter = null;
+
+        formatter.Serialize(stream, obj); // E: typing fails on accessing member Serialize in the 'reference or nullable type' type
+
+        stream = File.Open("data.xml", FileMode.Open);
+     }
+  }
+}
+
+

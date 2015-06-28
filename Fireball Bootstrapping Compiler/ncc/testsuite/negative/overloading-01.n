@@ -1,0 +1,123 @@
+﻿using Nemerle.IO;
+
+class A {}
+class B : A {}
+class C : B { public this () {} }
+
+module M {
+  f (_ : A, _ : B) : void {} // H: overload definition
+  f (_ : B, _ : A) : void { printf ("OK\n") } // H: overload definition
+  public Main () : void
+  {
+    f (C (), C ());     // E: typing fails on ambiguity between overloads
+  }
+}
+
+using M1;
+using M2;
+
+interface I1 {}
+interface I2 {}
+interface I : I1, I2 {}
+
+class MM
+{
+  static f (_ : I1) : void {} // H: overload definition
+  static f (_ : I2) : void {} // H: overload definition
+  static m (a : I) : void { MM.f (a) }    // E: typing fails on ambiguity between overloads
+}
+
+class M1
+{
+  public static g (_ : I) : void { } // H: overload definition
+}
+
+class M2
+{
+  public static g (_ : I) : void { } // H: overload definition
+}
+
+class M3
+{
+  static h (a : I) : void { g(a) }    // E: typing fails on ambiguity between overloads
+}
+
+
+namespace ConstVariantAndType
+{
+  using X;
+
+  class TextView { } // H: overload definition
+
+  variant X
+  {
+    | TextView // H: overload definition
+  }
+
+  module M
+  {
+
+   Main () : void
+   {
+     def x = TextView (); // E: typing fails on ambiguity between overloads
+     ()
+   }
+  }
+}
+
+namespace NotExpectVoidInSequence
+{
+  namespace n1
+  {
+    class Attribute {} // H: overload definition
+  }
+
+  namespace n3
+  {
+    using n1;
+    class AA
+    {
+      Attribute () : n1.Attribute //H: overload definition
+      {
+        null
+      }
+      X () : void
+      {
+        Attribute();     // E: each overload has an error
+        ();
+      }
+
+      Y () : void
+      {
+        _ = Attribute(); // E: typing fails on ambiguity between overloads
+        ();
+      }
+
+      static Main () :  void
+      {
+        AA().X();
+        AA().Y();
+      }
+    }
+  }
+}
+
+public class Bug743
+{
+  public this (_ : string) { }          // H: overload definition
+  public this (_ : string, _ = "a") { } // H: overload definition
+  foo () : void
+  {
+    _ = Bug743 ("s"); // E: typing fails on amb
+  }
+}
+
+public class FunctionsOverl
+{
+  f (_ : int) : void { }
+
+  foo () : void
+  {
+    System.Console.WriteLine (f : double -> void); //E: expected double -> void, got int -> void in type-enforced expression: the types double and int are not compatible
+  }
+}

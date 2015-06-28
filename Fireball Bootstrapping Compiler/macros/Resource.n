@@ -1,0 +1,148 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Compiler;
+using Nemerle.Imperative;
+
+using System.IO;
+using System.IO.File;
+using System.IO.Path;
+using System.IO.Directory;
+using DictionaryEntry = System.Collections.DictionaryEntry;
+using ResXReader = System.Resources.ResXResourceReader;
+
+namespace Nemerle.Macro
+{
+  [MacroUsage(MacroPhase.BeforeInheritance, MacroTargets.Assembly)]
+  public macro Resource(path : string)
+  {
+    ResourceImpl.Build(path, Nemerle.Macros.ImplicitCTX());
+  }
+
+  internal module ResourceImpl
+  {
+    public Build(path : string, typer : Typer) : void
+    {
+      def types = Hashtable();
+      def getType(name)
+      {
+        when (!types.ContainsKey(name))
+          types.Add(name, typer.Manager.Lookup(name).GetMemType());
+
+        types[name];
+      }
+      def projDir = GetDirectoryName(typer.Manager.Options.ProjectPath);
+      def className = GetFileNameWithoutExtension(path);
+      def resPath =
+        if (IsPathRooted(path)) path
+        else Combine(projDir, path);
+
+      // Ignore if default resource file is lacking.
+      when (className == "Resources" && !File.Exists(resPath))
+        return;
+
+      when (!File.Exists(resPath))
+      {
+        Message.Error($<#The "$resPath" not exists.#>);
+        return;
+      }
+
+      def oldDir = GetCurrentDirectory();
+      def dir    = GetDirectoryName(resPath);
+
+      SetCurrentDirectory(dir); // The resourse reader use current dir to find referenced files.
+
+      def makeWrapperClass(resource : ISource, processingCount : int) : void
+      {
+        // request rebuilding type tree when xml changed
+        when (processingCount > 1 && typer.Manager.IsIntelliSenseMode)
+        {
+          typer.Manager.RequestOnBuildTypesTree();
+          return;
+        }
+
+        try
+        {
+          using (def reader = ResXReader(StringReader(resource.GetText())))
+          {
+            def rootNamespace = typer.Manager.Options.RootNamespace;
+            def resourceName =
+              if (string.IsNullOrEmpty(rootNamespace)) className
+              else SourceHelper.MakeNamespaceForFolder(rootNamespace, dir, projDir) + "." + className;
+
+            def builder = typer.Env.Define(
+            <[ decl:
+              internal module  $(className: usesite)
+              {
+                private mutable _resourceManager : System.Resources.ResourceManager;
+
+                public ResourceManager : System.Resources.ResourceManager
+                {
+                  get
+                  {
+                    when (object.ReferenceEquals(_resourceManager, null))
+                    {
+                        def temp : System.Resources.ResourceManager
+                          = System.Resources.ResourceManager($(resourceName : string), typeof($(className: usesite)).Assembly);
+
+                        _resourceManager = temp;
+                    }
+                    _resourceManager;
+                  }
+                }
+
+                private mutable _resourceCulture : System.Globalization.CultureInfo;
+
+                public ResourceCulture : System.Globalization.CultureInfo
+                {
+                  get { _resourceCulture; }
+                  set { _resourceCulture = value; }
+                }
+              }
+            ]>);
+
+            foreach(d :> DictionaryEntry in reader)
+            {
+              def typeName = d.Value.GetType().FullName;
+              def key = d.Key.ToString();
+              def typedDype = <[ $(getType(typeName) : typed) ]>;
+
+              match(d.Value)
+              {
+                | _ is string =>
+                    builder.Define(
+                    <[ decl:
+                      public $(key : usesite) : string
+                      {
+                        get
+                        {
+                          ResourceManager.GetString($(key : string), _resourceCulture);
+                        }
+                      }
+                    ]>);
+                    
+                | _ =>
+                    builder.Define(
+                    <[ decl:
+                      public $(key : usesite) : $typedDype
+                      {
+                        get
+                        {
+                          def temp = ResourceManager.GetObject($(key : string), _resourceCulture);
+                          temp :> $typedDype;
+                        }
+                      }
+                    ]>);
+              }
+            }
+
+            builder.Compile();
+          }
+        }
+        catch { | e => Message.Error(e.Message); }
+      }
+      
+      SourceHelper.SubscribeSourceChangedWithCounter(typer.Manager, Location.GetFileIndex(resPath), makeWrapperClass);
+      SetCurrentDirectory(oldDir);
+    }
+  }
+}

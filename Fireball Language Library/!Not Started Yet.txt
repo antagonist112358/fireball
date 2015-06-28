@@ -1,0 +1,3 @@
+Waiting until we get a more functional / complete version of the bootstrapping compiler done before we even bother writing any language library code.
+
+Reason being it will mostly need to be rewritten as the language changes / morphs and new features are added.

@@ -1,0 +1,170 @@
+// REFE RENCE: Microsoft.VisualBasic
+// We do not actually check VB, see comment below
+
+using Nemerle.IO;
+
+enum Foo {
+  | A = -7
+  | B = 42
+}
+
+module M {
+  public Foo (x : string, do_the_stuff : bool = false) : void
+  {
+    print ("$x $do_the_stuff\n");
+  }
+
+
+  public Bar (x : int, 
+              flag1 : bool = false,
+              flag2 : bool = true,
+              flag3 : bool = false
+              ) : void
+  {
+    print ("$x $flag1 $flag2 $flag3\n");
+  }
+
+  public Bar () : void
+  {
+    print ("()\n");
+  }
+
+  public Qux (f1 : Foo = Foo.A, f2 : Foo = Foo.B) : void
+  {
+    print ("$f1 $f2\n");
+  }
+
+  public Foobar (e : System.Exception = null) : void
+  {
+    print ("$(e != null)\n")
+  }
+
+  public Foobar2 (foo : string = "42") : void
+  {
+    print ("$foo\n")
+  }
+
+  public Foobar3 (foo = "42") : void
+  {
+    print ("$foo\n")
+  }
+
+  public Infer (foo = "42", flag = true) : void
+  {
+    print ("$foo $flag\n")
+  }
+
+  public Locals () : void
+  {
+    def loop (x, acc = []) {
+      if (x < 0) acc
+      else loop (x - 1, x :: acc)
+    }
+
+    System.Console.WriteLine (loop (3));
+    System.Console.WriteLine (loop (3));
+    System.Console.WriteLine (loop (3, [1, 2]));
+
+    def fact (x, acc = 1) {
+      if (x < 1) acc
+      else fact (x - 1, acc * x)
+    }
+
+    System.Console.WriteLine (fact (5) - fact (4, 3) - fact (2, 3));
+
+    mutable y = 41; // W: previously
+    def hack (x = y) {
+      System.Console.WriteLine (x);
+    }
+    hack ();
+    y++;
+    hack ();
+    mutable y = 123; // W: redefinition
+    hack ();
+    hack (y);
+  }
+
+  private Test(_ = 1us) : void 
+  {
+  }
+  private Test(_ = false : bool) : void 
+  {
+  }
+
+  public Main () : void
+  {
+    Foo ("bar");
+    Foo ("bar", false);
+    Foo ("bar", true);
+    Foo ("bar", do_the_stuff = false);
+    Foo ("bar", do_the_stuff = true);
+
+    Bar (42);
+    Bar (42, flag2 = false);
+    Bar (42, flag1 = true);
+    Bar (42, true);
+    Bar ();
+
+    Qux ();
+    Qux (Foo.A, Foo.A);
+    Qux (Foo.B, Foo.B);
+    Qux (f2 = Foo.A, f1 = Foo.B);
+
+    Foobar ();
+    Foobar (null);
+    Foobar (System.ArgumentException ("x"));
+
+    Foobar2 ();
+    Foobar2 ("Hello");
+    Foobar3 ();
+    Foobar3 ("Hello");
+
+    Infer ();
+    Infer ("a", false);
+
+    Locals ();
+	
+	Test (2us);
+	Test (true);
+
+    // test it for externals
+    // disabled, because this was broken before mono 1.1.7
+    // _ = Microsoft.VisualBasic.Information.LBound (array [1]);
+    // _ = Microsoft.VisualBasic.Information.LBound (array [1], 1);
+  }
+}
+/*
+BEGIN-OUTPUT
+bar False
+bar False
+bar True
+bar False
+bar True
+42 False True False
+42 False False False
+42 True True False
+42 True True False
+()
+A B
+A A
+B B
+B A
+False
+False
+True
+42
+Hello
+42
+Hello
+42 True
+a False
+[0, 1, 2, 3]
+[0, 1, 2, 3]
+[0, 1, 2, 3, 1, 2]
+42
+41
+42
+42
+123
+END-OUTPUT
+*/

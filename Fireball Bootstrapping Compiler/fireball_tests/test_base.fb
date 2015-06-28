@@ -1,0 +1,37 @@
+namespace Fireball.Tests {
+	using System;
+	using System.Collections.Generic;
+	
+	module Tests {
+		val tests = Hashtable();
+		
+		def AddTest(name: String, testMethod: Void -> object, expected: object) {
+			tests.Add( name, (testMethod, expected) );
+		}
+		
+		def RunAllTests() : void {
+			foreach(testKV in tests) {
+				val (name, test) = (testKV.Key, testKV.Value);
+				Console.WriteLine($"Running test:$name");				
+				try {
+					val (testMethod, expected) = test;
+					val actual = testMethod();
+					if (expected.Equals(actual))
+						Console.WriteLine($"Test $name passed.");
+					else
+						Console.WriteLine($"Test $name failed. Assertion: ${actual.ToString()} != ${expected.ToString()}");
+				} catch {
+					| e => Console.WriteLine($"Test $name failed due to exception:\n${e.Message}");					
+				}
+			}
+		}
+		
+		def Main(args: array[String]) : Void {
+			Console.WriteLine("Fireball Bootstrapper Compiler test suite...");
+			Console.WriteLine("Registering tests...");
+			// Register tests here...
+			
+			RunAllTests();
+		}
+	}
+}

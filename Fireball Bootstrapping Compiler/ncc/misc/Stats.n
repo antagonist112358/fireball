@@ -1,0 +1,75 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+namespace Nemerle.Compiler 
+{
+  class StatsClass
+  {
+    public mutable PrintTemps = false;
+
+    public mutable AllTypeBuilders : int;
+    public mutable FirstClassFunctions : int;
+    public mutable FunctionClosures : int;    
+    public mutable TimeStarted : int;
+
+    public mutable Temp1 : int;
+    public mutable Temp2 : int;
+    public mutable Temp3 : int;
+
+    public Reset () : void
+    {
+      AllTypeBuilders = 0;
+      FirstClassFunctions = 0;
+      FunctionClosures = 0;
+      Temp1 = 0;
+      Temp2 = 0;
+      Temp3 = 0;
+      TimeStarted = System.Environment.TickCount;
+    }
+
+    public Run (Manager : ManagerClass) : void {
+      def dump () {
+        IO.print ("------------- STATS ---------------\n");
+        IO.print ("  AllTypeBuilders:     $AllTypeBuilders\n");
+        IO.print ("  FirstClassFunctions: $FirstClassFunctions\n");
+        IO.print ("  FunctionClosures:    $FunctionClosures\n");        
+        IO.print ("  RealRunningTime:     $(System.Environment.TickCount - TimeStarted)ms\n");
+  
+        when (Temp1 != 0 || Temp2 != 0 || Temp3 != 0 || PrintTemps) {
+          IO.print ("\n");
+          IO.print ("  Temp1: $Temp1\n");
+          IO.print ("  Temp2: $Temp2\n");
+          IO.print ("  Temp3: $Temp3\n");
+        }
+        IO.print ("------------- END STATS ---------------\n");
+      }
+      when (Manager.Options.DoPrintStats)
+        dump ();
+    }
+  }
+}

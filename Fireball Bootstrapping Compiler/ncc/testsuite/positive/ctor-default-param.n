@@ -1,0 +1,32 @@
+class A{
+  public this (x : int = 3) {
+    System.Console.WriteLine (x);
+  }
+  public static Main () : void {
+    _ = A();
+    _ = A(1);
+    _ = B(5);
+  }
+}
+
+[Nemerle.InheritConstructors]
+class B : A {
+  mutable x : string;
+}
+
+class Base {
+  private this (_ : int) {}
+  public this () {}
+}
+[Record] 
+class Inh : Base {
+  x : int
+};
+
+/*
+BEGIN-OUTPUT
+3
+1
+5
+END-OUTPUT
+*/

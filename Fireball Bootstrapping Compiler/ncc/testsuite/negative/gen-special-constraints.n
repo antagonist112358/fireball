@@ -1,0 +1,16 @@
+public class C[A]
+{
+  f : A = default(A);
+  
+  public foo() : void
+  {
+    when (f != null) // E: comparing a value type A.* to .*null
+      {}
+  }
+
+  public foo[B](f : void -> B) : void
+  {
+    when (f () != null) // E: comparing a value type B.* to .*null
+      {}
+  }
+}

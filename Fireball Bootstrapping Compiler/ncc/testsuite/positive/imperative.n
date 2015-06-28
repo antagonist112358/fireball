@@ -1,0 +1,148 @@
+namespace R {
+  using Nemerle.Imperative;
+
+  module RR {
+    public to_void (x : bool) : void {
+      when (x)
+        return;
+
+      Nemerle.IO.printf ("to_void %s\n", x.ToString ());
+    }
+    public to_int (x : bool) : int {
+      when (x)
+        return 5;
+      6
+    }
+
+    public to_string (x : bool) : string {
+      when (x) return ("a");
+      Nemerle.IO.print ("$x\n");
+      "b"
+    }
+  }
+
+  module LL {
+    public xsum (l : list [int]) : int
+    {
+      mutable res = 0;
+      foreach (e in l) {
+        when (e % 2 == 0) continue;
+        when (e > 100) break;
+        res += e;
+      }
+      res
+    }
+    
+    public xsuma (l : array [int]) : int
+    {
+      mutable res = 0;
+      foreach (e in l) {
+        when (e % 2 == 0) continue;
+        when (e > 100) break;
+        res += e;
+      }
+      res
+    }
+    
+    public xsuma' (l : array [int]) : int
+    {
+      mutable res = 0;
+      for (mutable i = 0; i < l.Length; ++i) {
+        when (l[i] % 2 == 0) continue;
+        when (l[i] > 100) break;
+        res += l[i];
+      }
+      res
+    }
+    
+    public xsumw (l : array [int]) : int
+    {
+      mutable res = 0;
+      mutable i = 0;
+      while (i < l.Length) {
+        def e = l [i];
+        i++;
+        when (e % 2 == 0) continue;
+        when (e > 100) break;
+        res += e;
+      }
+      res
+    }
+    
+    public xsum3 (l : list [int]) : int
+    {
+      mutable res = 0;
+      repeat (3) {
+        foreach (e in l) {
+          when (e % 2 == 0) continue;
+          when (e > 100) break;
+          res += e;
+        }
+      }
+      res
+    }
+    
+    
+    public xsum4 (l : list [int]) : int
+    {
+      mutable res = 0;
+      repeat (3) {
+        foreach (e in l) {
+          when (e > 1000) return e;
+          when (e % 2 == 0) continue;
+          when (e > 100) break;
+          res += e;
+        }
+      }
+      res
+    }
+    
+  }
+}
+
+module M {
+  public foo (x : bool) : void {
+    when (x) {
+      Nemerle.Imperative.Return ();
+    }
+    Nemerle.IO.printf ("a\n");
+  }
+}
+
+M.foo (true);
+M.foo (false);
+R.RR.to_void (true);
+R.RR.to_void (false);
+assert(R.RR.to_int (true) == 5);
+assert(R.RR.to_int (false) == 6);
+assert(R.RR.to_string (true) == "a");
+assert(R.RR.to_string (false) == "b");
+
+assert(R.LL.xsum ([1,2,3,4,101,200]) == 4);
+assert(R.LL.xsuma (array [1,2,3,4,101,200]) == 4);
+assert(R.LL.xsuma' (array [1,2,3,4,101,200]) == 4);
+assert(R.LL.xsumw (array [1,2,3,4,101,200]) == 4);
+assert(R.LL.xsum3 ([1,2,3,4,101,200]) == 12);
+assert(R.LL.xsum4 ([1,2,3,4,101,200]) == 12);
+assert(R.LL.xsum4 ([1,2,3,4,1010,200]) == 1010);
+
+mutable x;
+mutable z, y = 3, i : double;
+mutable w : string;
+
+x = 3;
+z = "ss";
+i = 1.2;
+i = 1.0;
+w = "aa";
+Nemerle.IO.print ("x=$x, z=$z, i=$i, y=$y, w=$w\n");
+
+
+/*
+BEGIN-OUTPUT
+a
+to_void False
+False
+x=3, z=ss, i=1, y=3, w=aa
+END-OUTPUT
+*/

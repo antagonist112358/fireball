@@ -1,0 +1,69 @@
+
+using Nemerle.IO;
+using Nemerle.Collections;
+
+module M {
+  public Main () : void {
+
+    def mySL = System.Collections.SortedList();
+    mySL.Add("Second", "World");
+    mySL.Add("First", "Hello");
+    mySL.Add("Third", "!");
+    def e = mySL.GetEnumerator ();
+    while (e.MoveNext ()) {
+      printf ("%s\n", ((e.Current :> System.Collections.DictionaryEntry).Value 
+                       :> string))
+    };
+    foreach (e :> System.Collections.DictionaryEntry in mySL) {
+      printf ("%s", (e.Value :> string))
+    };
+    printf ("\n");
+
+    def x = Hashtable ();
+    x.Set ("aa", 1);
+    x.Add ("cc", 3);
+    x.Set ("bb", 2);
+    mutable l = [];
+
+    foreach (e : System.Collections.Generic.KeyValuePair [string, int] in x) { 
+      l = (e.Key, e.Value) :: l;
+    };
+    NList.Iter (NList.Sort (l, fun (x, y) {
+      def (_, x) = x;
+      def (_, y) = y;
+      (x : int) - y
+    }), fun (x) {
+      def (a,b) = x;
+      printf ("%s %d\n", a, b)
+    });
+
+        // test NList.Sort stability
+    printf ("%s\n", NList.Sort ([(2, 0), (1, 1), (1, 2)], fun (_) {
+      | (((x : int), _), (y, _)) => x - y
+    }).ToString ());
+
+
+        def a = array .[2][[1,2], [3,4], [4,5]];
+        foreach (b in a)
+            System.Console.WriteLine(b);
+    
+  }
+}
+/*
+BEGIN-OUTPUT
+Hello
+World
+!
+HelloWorld!
+aa 1
+bb 2
+cc 3
+[(1, 1), (1, 2), (2, 0)]
+1
+2
+3
+4
+4
+5
+END-OUTPUT
+*/

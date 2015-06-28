@@ -1,0 +1,911 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Assertions;
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Extensions;
+using Nemerle.Surround;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Specialized;
+using System.Linq;
+
+using SC    = System.Collections;
+using SCG   = System.Collections.Generic;
+using TExpr = Nemerle.Compiler.Typedtree.TExpr;
+using TT    = Nemerle.Compiler.Typedtree;
+
+// Use "surroundwith (related_messages) { ... }" for wrap related_messages sequence.
+[assembly: DefineSurround("related_messages", true, Manager.BeginRelatedMessageSequence(), Manager.EndRelatedMessageSequence())]
+
+namespace Nemerle.Compiler
+{
+  public delegate CompilerEventHandler(manager : ManagerClass) : void;
+
+  [System.Serializable, Record]
+  public sealed class CompilationAbortedException : System.Exception { }
+
+  public class ManagerClass : IEngine
+  {
+    public virtual IsStop             : bool { get { false } }
+    public virtual TypesTreeVersion   : int  { get { 0 } }
+
+    public mutable ExtPointOverloadingRes : TypeVar * TExpr * list[TT.Parm] -> void;
+    [System.ThreadStatic] public static mutable Instance : ManagerClass;
+
+    public   SystemTypeCache   : SystemTypeClass        { get; private set; }
+    public   InternalType      : InternalTypeClass      { get; private set; }
+    internal AttributeCompiler : AttributeCompilerClass { get; private set; }
+    internal Stats             : StatsClass             { get; private set; }
+
+    [Accessor] mutable _solver : Solver;
+    public SetSolver(solver : Solver) : void  { _solver = solver; }
+    public CheckSolver() : void
+    {
+      unless (this.Solver.IsTopLevel)
+        System.Diagnostics.Trace.WriteLine("this.Solver.IsTopLevel == false");
+    }
+    public mutable Hierarchy : TypesManager;
+    protected internal mutable LibrariesManager : LibraryReferenceManager;
+    public mutable NameTree : NamespaceTree;
+    public mutable CoreEnv : GlobalEnv;
+    public mutable MacrosRegistry : MacroRegistry;
+    public mutable Options : CompilationOptions;
+    public mutable MacroColors : MacroColorizator;
+    internal mutable emptyTEnv : TypeVarEnv;
+    [Accessor]
+    mutable componentsFactory : CompilerComponentsFactory;
+
+    [Accessor (flags = WantSetter)]
+    mutable doc_comments : Map [Location, string];
+
+    internal mutable tyinfo_counter : int;
+    mutable current_tyinfo_count : int;
+    mutable current_pb_stage : int;
+
+    mutable pb_killed : bool;
+    public DelayedTypingsInProgress : bool { get; internal set; }
+    public DelayedTypingsSecondPass : bool { get; internal set; }
+    public IsSpeculativeTyping      : bool { get; internal set; }
+    internal mutable NotResolvedNestedDelayedTypings : Hashtable[object, bool];
+    public MethodsStatistics : Hashtable[string, int * TimeSpan] { get; default Hashtable(); }
+
+    public delegate MessageEventHandler(loc : Location, msg : string) : void;
+
+    public delegate SourceChangedHandler(source : ISource) : void;
+
+    public event ErrorOccured   : MessageEventHandler;
+    public event WarningOccured : MessageEventHandler;
+    public event MessageOccured : MessageEventHandler;
+
+    public virtual BeginRelatedMessageSequence() : void { }
+    public virtual EndRelatedMessageSequence()   : void { }
+
+    public virtual RequestOnBuildTypesTree() : void { }
+
+    public event CompilationStart    : CompilerEventHandler;
+    public event TypeTreeBuildFinish : CompilerEventHandler;
+    
+    private mutable IdToNameMap : Hashtable[int, string];
+    
+    public ReferencedAssemblies : list[LibraryReference] { get { LibrariesManager.ReferencedAssemblies.NToList() } }
+    
+    protected OnTypeTreeBuildFinish() : void
+    {
+      TypeTreeBuildFinish?.Invoke(this);
+    }
+
+    internal UpdateMethodsStatistics(currentMethodKey : string, timeSpan : TimeSpan) : void
+    {
+      mutable value;
+      MethodsStatistics[currentMethodKey] =
+        if (MethodsStatistics.TryGetValue(currentMethodKey, out value))
+          (value[0] + 1, value[1] + timeSpan)
+        else
+          (1, timeSpan);
+    }
+
+    ShowStatistics() : void
+    {
+      when (Options.ShowCompilerStatistics && MethodsStatistics.Count > 1)
+        foreach ((key, (count, timeSpan)) in MethodsStatistics.KeyValuePairs.OrderBy((_, (_, timeSpan)) => timeSpan))
+        {
+          def msg = $"$key: $timeSpan  $count";
+          Message.Hint(msg);
+        }
+    }
+
+    private WrapWithCurrentContext(fn : void -> void) : void -> void
+    {
+      def location = LocationStack.Top();
+      def color    = MacroColors.Color;
+      def context  = MacroColors.UseContext;
+
+      fun ()
+      {
+        MacroColors.PushNewColor(color, context);
+        try
+          Util.locate(location, fn());
+        finally
+          MacroColors.PopColor();
+      }
+    }
+
+    private static CallAndResetList(fancs : ref list[void -> void]) : void
+    {
+      when (fancs != null)
+      {
+        foreach (f in fancs)
+          f();
+
+        fancs = null;
+      }
+    }
+
+    private mutable _beforeAddMembers : list[void -> void];
+
+    internal OnBeforeAddMembers() : void { CallAndResetList(ref _beforeAddMembers); }
+
+    public ExecBeforeAddMembers(fn : void -> void) : void
+    {
+      _beforeAddMembers ::= WrapWithCurrentContext(fn)
+    }
+
+    private mutable _beforeWithTypedMembers : list[void -> void];
+
+    internal OnBeforeWithTypedMembers() : void { CallAndResetList(ref _beforeWithTypedMembers); }
+
+    public ExecBeforeWithTypedMembers(fn : void -> void) : void
+    {
+      _beforeWithTypedMembers ::= WrapWithCurrentContext(fn)
+    }
+
+    mutable _userData : SC.IDictionary;
+
+    public UserData : SC.IDictionary
+    {
+      get
+      {
+        when (_userData == null)
+          _userData = ListDictionary();
+
+        _userData
+      }
+    }
+
+    #region Source change notifications
+
+    sourceChangedHandlers : Hashtable[int, SourceChangedHandler] = Hashtable(10);
+
+    public NotifySourceChanged(source : ISource) : void
+    {
+      match(sourceChangedHandlers.TryGetValue(source.FileIndex))
+      {
+        | (handler, true) => handler(source)
+        | _ => ();
+      }
+    }
+
+    public SubscribeSourceChanged(fileIndex : int, handler : SourceChangedHandler, invokeAfterSubscription : bool = true) : void
+    {
+      def newHandler = match(sourceChangedHandlers.TryGetValue(fileIndex))
+      {
+        | (currentHandler, true) =>
+          System.Delegate.Combine(currentHandler, handler) :> SourceChangedHandler
+        | _ => handler
+      };
+      sourceChangedHandlers[fileIndex] = newHandler;
+      when(invokeAfterSubscription)
+      {
+        def source = GetSource(fileIndex);
+        handler(source);
+      }
+    }
+
+    public UnsubscribeSourceChanged(fileIndex : int, handler : SourceChangedHandler) : void
+    {
+      match(sourceChangedHandlers.TryGetValue(fileIndex))
+      {
+        | (currentHandler, true) =>
+          match(System.Delegate.Remove(currentHandler, handler) :> SourceChangedHandler)
+          {
+            | null       => sourceChangedHandlers.Remove(fileIndex)
+            | newHandler => sourceChangedHandlers[fileIndex] = newHandler
+          }
+        | _ => ()
+      }
+    }
+
+    public HasSourceChangedSubscribers(fileIndex : int) : bool
+    {
+      sourceChangedHandlers.ContainsKey(fileIndex)
+    }
+
+    protected UnsubscribeSourceChangedHandler(fileIndex : int) : void
+    {
+      sourceChangedHandlers.Remove(fileIndex);
+    }
+
+    protected UnsubscribeSourceChangedHandlers() : void
+    {
+      sourceChangedHandlers.Clear();
+    }
+
+    public virtual GetSource(fileIndex : int) : ISource
+    {
+      FileSource.ReadFile(Location.GetFileName(fileIndex),
+        checkDuplicatedFiles  = false,
+        checkLastLineForLF    = false)
+    }
+
+    #endregion
+
+    internal RunErrorOccured (loc : Location, msg : string) : void
+    {
+      ErrorOccured?.Invoke(loc, msg);
+    }
+
+    internal RunWarningOccured (loc : Location, msg : string) : void
+    {
+      WarningOccured?.Invoke(loc, msg);
+    }
+
+    internal RunMessageOccured (loc : Location, msg : string) : void
+    {
+      MessageOccured?.Invoke(loc, msg);
+    }
+
+    public InitOutput (o : System.IO.TextWriter) : void
+    {
+      Message_output = o;
+    }
+
+    #region ,,static'' data from other modules
+    internal mutable StaticTyVarId : int;
+    internal mutable Typer_DT_Id : int;
+    internal mutable Typer_checked_macro : NamespaceTree.Node;
+    internal mutable Typer_unchecked_macro : NamespaceTree.Node;
+    internal mutable Typer_yield_macro : NamespaceTree.Node;
+    internal mutable TyVar_reuse_queue : TypeVar;
+    internal mutable TyVar_Id : int;
+    private  mutable Util_Id : int;
+    internal mutable AttributeMacroExpansion_global_nr : int;
+    internal mutable Macros_in_pattern : bool;
+
+    internal mutable Message_ErrorCount : int;
+    internal mutable Message_WarningCount : int;
+    internal Message_emitted_hints : Hashtable [string, int]               { get; private set; }
+    internal Typer_BetterTypeCache : Hashtable [TypeInfo * TypeInfo, bool] { get; private set; }
+
+    protected internal mutable Message_output : System.IO.TextWriter;
+
+    /** Called by parser when simple "using" directive parsed .
+     * name : list [string] - qualified identifier/
+     * prevEnv : GlobalEnv - GlobalEnv before adding current using directive.
+     * location : Location - location of qualified identifier.
+    */
+    protected mutable _afterUsingDirectiveParse
+      : Location * list [string] * list [Location] * string * Location
+        * GlobalEnv * GlobalEnv -> void;
+
+    internal OnAfterUsingDirectiveParse(
+      location      : Location,
+      name          : list [string],
+      nameLocations : list [Location],
+      alias         : string,
+      aliasLocation : Location,
+      beforeEnv     : GlobalEnv,
+      afterEnv      : GlobalEnv
+      ) : void
+    {
+      when (_afterUsingDirectiveParse != null)
+        _afterUsingDirectiveParse (location, name, nameLocations, alias, aliasLocation,
+          beforeEnv, afterEnv);
+    }
+
+    protected mutable _beforeNamespaceParse : void -> void;
+
+    internal OnBeforeNamespaceParse () : void
+    {
+      when (_beforeNamespaceParse != null)
+        _beforeNamespaceParse ();
+    }
+
+    protected mutable _afterNamespaceParse
+      : Location * list [string] * list [Location] * GlobalEnv * GlobalEnv * Location * Location * Location -> void;
+
+    internal OnAfterNamespaceParse (
+      location               : Location,
+      name                   : list [string],
+      nameLocations          : list [Location],
+      outsideEnv             : GlobalEnv,
+      insideEnv              : GlobalEnv,
+      headerLocation         : Location,
+      bodyOpenTokenLocation  : Location,
+      bodyCloseTokenLocation : Location,
+      ) : void
+    {
+      when (_afterNamespaceParse != null)
+        _afterNamespaceParse (location, name, nameLocations, outsideEnv,
+          insideEnv, headerLocation, bodyOpenTokenLocation, bodyCloseTokenLocation);
+    }
+
+    /// Clearing all variables used in typing process.
+    /// Use this method only if we destroy NamespaceTree
+    protected virtual FullResetNamespaceTree () : void
+    {
+      Hierarchy = null;
+      //when (NameTree != null)
+      //  NameTree.ResetAllTypes();
+      //when (Hierarchy != null)
+      //  Hierarchy.Init();
+
+      Typer_checked_macro = null;
+      Typer_unchecked_macro = null;
+      Typer_yield_macro = null;
+      Typer_BetterTypeCache.Clear ();
+      StaticTyVarId = 0;
+      Typer_DT_Id = 0;
+      TyVar_Id = 0;
+      TyVar_reuse_queue = null;
+      Util_Id = 0;
+      IdToNameMap = null;
+      AttributeMacroExpansion_global_nr = 0;
+    }
+
+    public GetNewId() : int
+    {
+      Util_Id++;
+      Util_Id
+    }
+
+    public GetNewId([NotNull] name : string) : int
+    {
+      Util_Id++;
+      
+      when (IdToNameMap == null)
+        IdToNameMap = Hashtable();
+      
+      IdToNameMap[Util_Id] = name;
+      Util_Id
+    }
+    
+    public GetIdName(id : int) : string
+    {
+      mutable name;
+      
+      when (IdToNameMap != null)
+        _ = IdToNameMap.TryGetValue(id, out name);
+        
+      name
+    }
+
+    public HasName(id : int) : bool
+    {
+      IdToNameMap?.ContainsKey(id)
+    }
+
+    #endregion
+
+    protected ResetCompilerState(options : CompilationOptions) : void
+    {
+      assert2 (options != null);
+      Nemerle.Imperative.ResetMutableFields(); // this code reset also all caches of Memoize macro
+
+      Instance              = this;
+      Typer_BetterTypeCache = Hashtable();
+      Message_emitted_hints = Hashtable();
+      componentsFactory     = CreateComponentsFactory();
+      Parser                = DispatchingFileParser(this);
+      ScanningPipeline      = ScanTypeHierarchy(this).ProcessDeclaration;
+      this.Options          = options;
+      InternalType          = InternalTypeClass (this);
+      SystemTypeCache       = SystemTypeClass (this);
+      AttributeCompiler     = AttributeCompilerClass (this);
+      Stats                 = StatsClass();
+      UnsubscribeSourceChangedHandlers();
+    }
+
+    /// initialize pipelines with default values
+    public this (options : CompilationOptions)
+    {
+      ResetCompilerState(options);
+    }
+
+    public MarkAsUsed (member : IMember) : void
+    {
+      MarkAsUsed (member, Location.Default, true);
+    }
+
+    public MarkAsUsed (member : IMember, trigger_obsolete_warn : bool) : void
+    {
+      MarkAsUsed (member, Location.Default, trigger_obsolete_warn);
+    }
+
+    public virtual MarkAsUsed (member : IMember, _location : Location, trigger_obsolete_warn : bool) : void
+    {
+      member.HasBeenUsed = trigger_obsolete_warn;
+    }
+
+    public virtual MarkAsAssigned (member : IField) : void
+    {
+      member.HasBeenAssigned = true;
+    }
+
+    public virtual MarkAsAssigned (member : IField, _location : Location, trigger_obsolete_warn : bool) : void
+    {
+      member.HasBeenAssigned = trigger_obsolete_warn;
+    }
+
+    protected virtual CreateComponentsFactory () : CompilerComponentsFactory
+    {
+      CompilerComponentsFactory ()
+    }
+
+    /** Pipeline for adding namespaces and types hierarchy from parsed
+        declarations.
+
+        The list of declarations denotes the scope of one file, including
+        using statements, etc. So the default pipeline passes enriched
+        environment through declarations on the list.
+     */
+    public mutable ScanningPipeline : TopDeclaration -> void;
+
+    public mutable Parser : DispatchingFileParser;
+
+    public delegate InitDelegate () : void;
+    public static event OnInit : InitDelegate;
+
+    public GeneratedAssembly : System.Reflection.Assembly
+    {
+      get { Hierarchy.GeneratedAssembly }
+    }
+
+
+    internal MarkTypeBuilderCompiled () : void
+    {
+      current_tyinfo_count = current_tyinfo_count + 1;
+      ProgressBar (10 + current_tyinfo_count * 90 / tyinfo_counter);
+    }
+
+    /// True if compiler runing in IntelliSense mode. This disable some
+    /// optimisations and anable lazy methods bodies compilation.
+    [Accessor] protected mutable _isIntelliSenseMode    : bool = false;
+    /// True if now completion word in progress. This enable additional checks
+    /// of completion tokens.
+    [Accessor] protected mutable _isCompletionInProgress : bool = false;
+    public CompletionMarkLine : int { get; set; }
+    public CompletionMarkChar : int { get; set; }
+    protected internal mutable _completionParameterNames : list[string] = [];
+    protected internal mutable _completionPattern : string;
+    protected internal mutable _completionLocation : Location;
+
+    public IsImportCompletion : bool { get; protected set; }
+
+    ProgressBar (stage : int) : void
+    {
+      when (Options.ProgressBar) {
+        def max = 60;
+        def act = stage * max / 100;
+        def act = if (act > max) max else act;
+        def diff = act - current_pb_stage;
+        when ((pb_killed && diff > 10) || (!pb_killed && diff > 0)) {
+          System.Console.Write ("\r" + System.String ('_', act) +
+                                       System.String ('.', max - act) + "\r");
+          current_pb_stage = act;
+          pb_killed = false;
+        }
+      }
+    }
+
+    public KillProgressBar () : void
+    {
+      when (Options.ProgressBar && !pb_killed) {
+        System.Console.Write ("\n");
+        pb_killed = true;
+      }
+    }
+
+    protected shouldCreate (obj : object) : bool
+    {
+      !Options.PersistentLibraries || obj == null
+    }
+
+    CleanUp () : void
+    {
+      when (Hierarchy != null) Hierarchy.Dispose ();
+    }
+
+    protected InitCompiler () : void
+    {
+      MethodsStatistics.Clear();
+      
+      when (Options.TryStartDebugger)
+      {
+        def project = IO.Path.GetFileName(Options?.OutputFileName ?? Options?.ProjectPath ?? "?");
+        Diagnostics.Debug.Assert(false, 
+          $"Press Retry to start debug session for '$project'. To suppress this message box please remove '-debugger' option from the ncc.exe command line.");
+      }
+
+      _userData = null;
+      Typer_BetterTypeCache.Clear();
+
+      when (CompilationStart != null)
+        CompilationStart(this);
+
+      Stats.Reset ();
+      Message_emitted_hints.Clear ();
+      Macros_in_pattern     = false;
+      Message_ErrorCount    = 0;
+      Message_WarningCount  = 0;
+      MacroColors           = MacroColorizator ();
+      if (shouldCreate (NameTree))
+        NameTree = NamespaceTree (this);
+      else
+        NameTree.Init ();
+      when (shouldCreate (MacrosRegistry))
+        MacrosRegistry = MacroRegistry (this);
+      when (shouldCreate(LibrariesManager))
+        LibrariesManager = ComponentsFactory.CreateLibraryReferenceManager (this, Options.LibraryPaths);
+
+      Options.Validate ();
+
+      this._solver   = Solver (this);
+      this.emptyTEnv = TypeVarEnv (this);
+
+      if (Options.LexerStoreComments)
+        DocComments = Map ();
+      else
+        DocComments = null;
+
+      when (Hierarchy != null)
+        Hierarchy.RemoveProgramTypes();
+
+      // if it was not initialized outside the Run
+      when (Parser == null)
+        Parser = DispatchingFileParser(this);
+
+      when (OnInit != null) OnInit (); // run externally registered functions - used for cleanup of macro_context_classes in used macros
+    }
+
+    protected internal LoadExternalLibraries() : void
+    {
+      MethodsStatistics.Clear();
+      
+      if (shouldCreate (InternalType.Void))
+      {
+        unless (Options.DoNotLoadStdlib)
+        {
+          LibrariesManager.AddLibrary("mscorlib", true);
+          LibrariesManager.AddLibrary("System", true);
+          LibrariesManager.AddLibrary("Nemerle", true);
+          LibrariesManager.AddLibrary("System.Xml", true);
+        }
+
+        mutable exception : System.Exception;
+
+        def tryEx(f)
+        {
+          try
+          {
+            f();
+          }
+          catch
+          {
+          | e when IsIntelliSenseMode => when (exception == null) exception = e
+          }
+        }
+
+        unless(Options.DisableExternalParsers)
+          tryEx(() =>
+          {
+            def parsersDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            foreach(file in IO.Directory.GetFiles(parsersDirectory, "ncc.parser.*.dll"))
+              tryEx(() => LibrariesManager.LoadPluginsFrom(file, loadMacros = false, loadParsers = true));
+          });
+
+        def referencedLibraries = Options.ReferencedLibraries.Reverse();
+          
+        foreach (lib in referencedLibraries)
+          tryEx(() => LibrariesManager.AddLibrary(lib, true));
+
+        tryEx(() => LibrariesManager.LoadLibrariesContents());
+
+        foreach (file in Options.MacrosToLoad.Reverse())
+          tryEx(() => LibrariesManager.LoadPluginsFrom(file, loadMacros = true, loadParsers = true));
+
+        tryEx(() =>
+        {
+          def isNemerleDll(path : string) : bool
+          {
+            def name = IO.Path.GetFileNameWithoutExtension(path);
+            def ext  = IO.Path.GetExtension(path);
+            (string.IsNullOrEmpty(ext) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase))
+            && name.Equals("Nemerle", StringComparison.OrdinalIgnoreCase)
+          }
+          
+          SystemTypeCache.Init();
+          InternalType.InitSystemTypes();
+          when (!Options.DoNotLoadStdlib || referencedLibraries.Exists(isNemerleDll))
+            InternalType.InitNemerleTypes ();
+
+          unless (Options.DoNotLoadMacros)
+            LoadNemerleMacros();
+        });
+
+        CoreEnv = GlobalEnv.CreateCore (NameTree);
+
+        tryEx(() => LibrariesManager.LoadExtensions());
+
+        when (exception != null) throw exception;
+      }
+      else // We use LibrariesManager repeatedly.
+        LibrariesManager.RemoveInternalExtensionMethods();
+    }
+
+    protected virtual LoadNemerleMacros() : void
+    {
+      def version = typeof(ManagerClass).Assembly.GetName().Version.ToString ();
+      LibrariesManager.LoadPluginsFrom(
+        "Fireball.Macros",
+        $", Version=$version, Culture=neutral, PublicKeyToken=beafc1ea2525185b",
+        loadMacros = true,
+        loadParsers = false);
+    }
+
+    /**
+     * Run passes of the compiler.
+     */
+    public Run () : void
+    {
+      Instance = this;
+
+      try
+      {
+        InitCompiler ();
+
+        try
+        {
+          ProgressBar (1);
+
+          LoadExternalLibraries ();
+
+          ProgressBar (2);
+
+          Hierarchy = TypesManager (this);
+
+          def parseResults = Options.Sources.Map(Parser.Parse);
+
+          Message.MaybeBailout();    // we have detected multiple files already
+
+          ProgressBar (5);
+
+          // create N.C.TypeBuilders for all parsed types and add them to namespace hierarchy
+          foreach (result in parseResults)
+            foreach (topDecl in result.TopDeclarations)
+              ScanningPipeline(topDecl);
+
+          when (Options.DoNotLoadStdlib) InternalType.InitNemerleTypes ();
+
+          ProgressBar (8);
+
+          Hierarchy.Run ();
+        }
+        finally { OnTypeTreeBuildFinish(); }
+
+        when (Message.SeenError)
+          NameTree.CheckReferencedNamespaces ();
+
+        //Message.MaybeBailout();
+
+        Hierarchy.CreateAssembly ();
+
+        ProgressBar (10);
+
+        Hierarchy.EmitAuxDecls ();
+
+        when (Message.SeenError)
+          NameTree.CheckReferencedNamespaces ();
+
+        //Message.MaybeBailout();
+
+        NameTree.CheckReferencedNamespaces ();
+
+        Hierarchy.EmitDecls ();
+        Message.MaybeBailout();
+
+        NameTree.FinishMacroContextClass ();
+
+        Hierarchy.CheckForUnusedGlobalSymbols ();
+        Hierarchy.CheckFinalization ();
+
+        when (Options.XmlDocOutputFileName != null)
+        {
+          def docs = XmlDoc(DocComments, Options.XmlDocOutputFileName);
+
+          foreach (x in Hierarchy.TopTypeBuilders())
+            Util.locate(x.Location, docs.DumpType(x));
+
+          docs.Save();
+        }
+
+        unless (Options.CompileToMemory)
+          Hierarchy.SaveAssembly ();
+        
+        ShowStatistics();
+
+        Message.MaybeBailout();
+
+        KillProgressBar ();
+        Stats.Run (this);
+      }
+      finally
+      {
+        CleanUp();
+
+        when (Options.PersistentLibraries)
+          Hierarchy.RemoveProgramTypes();
+      }
+    }
+    public Lookup (typeName : string) : TypeInfo
+    {
+      def res = LookupTypeInfo(typeName);
+      res
+    }
+
+    //[Nemerle.Memoize(Synchronized = true)]
+    public LookupTypeInfo (typeName : string) : TypeInfo
+    {
+      match (NameTree.LookupExactType(typeName))
+      {
+        | Some (ty) => ty
+        | None => Util.ice($"internal type $typeName not found")
+      }
+    }
+
+    public Lookup (typeName : string, argsCount : int) : TypeInfo
+    {
+      def res = LookupTypeInfo(typeName, argsCount);
+      res
+    }
+
+    //[Nemerle.Memoize]
+    public LookupTypeInfo (typeName : string, argsCount : int) : TypeInfo
+    {
+      match (NameTree.LookupExactType(typeName, argsCount))
+      {
+        | Some (ty) => ty
+        | None => Util.ice($"internal type $typeName with $argsCount type arguments not found")
+      }
+    }
+
+    //[Nemerle.Memoize]
+    public LookupSystemType (typeName : string) : System.Type
+    {
+      match (NameTree.LookupSystemType(typeName))
+      {
+        | Some (ty) => ty
+        | None => Util.ice($"internal type $typeName not found")
+      }
+    }
+
+    /// Return true if 'method' is extension method.
+    protected internal virtual IsExtensionMethod (method : IMethod, tyVar2 : TypeVar) : bool
+    {
+      _= tyVar2;
+      _ = method;
+      throw System.NotImplementedException ();
+    }
+
+    /// Process completion.
+    protected internal virtual Complete (expression : PExpr, expected : TypeVar, typer : Typer, env : GlobalEnv) : TExpr
+    {
+      ignore (expression); ignore (expected); ignore (typer); ignore (env);
+      throw System.NotImplementedException ();
+    }
+
+    /// Process completion in patterns.
+    protected internal virtual CompletePattern (
+      expression         : PExpr,
+      matched_value_type : TypeVar,
+      patternTyper       : Typer.PatternTyper,
+      env                : GlobalEnv
+    )
+      : void
+    {
+      ignore (expression); ignore (matched_value_type); ignore (patternTyper); ignore (env);
+      throw System.NotImplementedException ();
+    }
+
+    static TypeKeywords : array[string * string] = array[
+        ("void", "System.Void"), ("array", "System.Array")
+      ];
+
+    /// Process completion in type reference.
+    protected internal virtual CompleteTypeRef (
+      expression     : PExpr,
+      curTypeBuilder : TypeBuilder,
+      env            : GlobalEnv
+    )
+      : void
+    {
+      ignore (curTypeBuilder); ignore (env);
+
+      match (expression)
+      {
+        | PExpr.ToComplete (name) with obj = null
+        | PExpr.Member(obj, Parsetree.Splicable.HalfId (name)) =>
+          def obj   = obj;
+          def name  = name;
+          def elems = SCG.List();
+
+          def nss = this.CoreEnv.NameTree.NamespaceTree
+            :: name.GetEnv(this.CoreEnv).OpenNamespaces;
+          Completion.AddTypesAndNamespaces (elems, nss, obj, name, true, true);
+
+          foreach ((kwd, info) when Completion.MatchName(kwd, name.Id) in TypeKeywords)
+            elems.Add(Elem.Simple(kwd, info, 0));
+
+          when (curTypeBuilder != null)
+            foreach (tp when Completion.MatchName(tp.Name, name.Id) in curTypeBuilder.Typarms ?? [])
+              elems.Add(Elem.Simple(tp.Name, "Type parameter", 0));
+
+          throw CompletionResult(elems, name.Id, name.Location, obj != null) <- (Env = env);
+
+        | _ => ()
+      }
+    }
+
+    protected CleanUpTypes() : void
+    {
+      def resetChildren(children)
+      {
+        foreach (node in children.Values)
+        {
+          when (node.Children != null)
+            resetChildren(node.Children);
+
+          match (node.Value)
+          {
+            | Cached(typeInfo) => typeInfo.CleanUp();
+            | CachedAmbiguous(typeInfos) =>
+              foreach (ti in typeInfos)
+                ti.CleanUp();
+
+            | _                          => ()
+          }
+        }
+      }
+
+      when (NameTree.NamespaceTree.Children != null)
+        resetChildren(NameTree.NamespaceTree.Children);
+    }
+  }
+}

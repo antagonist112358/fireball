@@ -1,0 +1,300 @@
+using System;
+using Nemerle.IO;
+using Nemerle.Collections;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+
+[assembly: AssemblyTitle("Attributes Test")]
+[assembly: AssemblyKeyFile ("")]
+[assembly: AssemblyVersion ("4.2.*")]
+
+[assembly: TestAssembly]
+
+[assembly: TestTypeAssemblyAttribute (typeof (int))]
+
+[AttributeUsage(AttributeTargets.All)]
+public class TestAssemblyAttribute: Attribute
+{}    
+
+[AttributeUsage(AttributeTargets.All)]
+public class TestTypeAssemblyAttribute: Attribute
+{ public this (_x : System.Type) {} }    
+
+class SelfX : Attribute {
+  public this (_ : object) {}
+
+  [SelfX (null)]
+  foo () : void {}
+}
+
+
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Class,
+Inherited=true)]
+public class FooAttribute : Attribute
+{
+  public separator2 : array [char];
+
+  public this(_name : string)  {}
+
+  public Separator : array [char] {
+    get {
+      separator2;
+    }
+  }
+}
+
+[FooAttribute("shortcut",separator2= array ['A'])]
+public class Tests {
+  public static runtest () : void {
+    def foo = (typeof (Tests).GetCustomAttributes (typeof (FooAttribute), false) [0]) :> FooAttribute;
+    Console.WriteLine (foo.Separator);
+  }
+}
+
+
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class,
+                AllowMultiple = true)]
+class MyAttribute : Attribute
+{
+  f1 : string;
+  public mutable f2 : string = null;
+  public this () { f1 = "def"; }
+  public this (f : string) { f1 = f; }
+  public override ToString () : string
+  {
+    f1 + " " + f2
+  }
+}
+
+public class B : System.Attribute {
+  f : string;
+  public this (_name : string) { }
+
+  public this () { }
+}
+
+public class C : B {
+  public this (_x : string) {  }
+}
+  
+[type: B ("type: A class")]
+public class A {
+
+  [B ("delegate MyPrintDelegate()")]
+  [type: B ("type: MyPrintD delegate")]
+  public delegate MyPrintDelegate (s : string) : void;
+
+  [B ("method f()")]
+  f () : void { }
+
+  [method: B ("method: f1() method")]
+  f1 () : void { }
+  
+  g ([B ("param _x")] _x : int, [param: B ("param: _y parameter")] _y : int) : void { }
+
+  [B ("A constructor")]
+  [method: B ("method: A constructor")]
+  public this () { }
+
+  [B ("property gg")]
+  [property: B ("property: gg property")]
+  gg : int {
+    [method: B ("method: gg get method ")]
+    get {
+      0
+    }
+    [method: B ("method: gg set method ")]
+    [param: B ("param: gg set parameter ")]
+    set {
+      ignore (value);
+    }
+  }
+
+  [event: B("event: Foo event")]
+  [field: B("field: Foo event")]
+  [method: B("method: Foo event")]
+  [B("Foo event")]
+  event Foo : System.EventHandler;
+}
+
+[My, My ("foo", f2 = "bar")]
+public class Foo { public this () {} }
+
+  public class WithConstructorAttr {
+        [System.Obsolete("Don't use this Constructor")]
+        public this () {
+        }
+
+        [method: System.Obsolete("Don't use this Constructor")]
+        public this (_x : int) {
+        }
+  }     
+
+  public class WithEventAttr {
+       [System.Obsolete("Don't use this Constructor")]
+       public event Foo : System.EventHandler;
+  }     
+
+public class ConverterService
+{
+       public static Main1 () : void
+       {
+         #if RUNTIME_MS
+            Console.WriteLine ("Val: A");
+         #else
+           def ats = typeof(ConverterService).GetMethod("Login").GetCustomAttributes
+                            (typeof(MyEnumAttribute), true);
+           def at = (ats[0] :> MyEnumAttribute) ;
+           Console.WriteLine ("Val: " + at.Val.ToString ());
+         #endif
+       }
+
+     // MS.NET has bug here (FDBK16336)
+     #if ! RUNTIME_MS
+       [MyEnumAttribute(Val = AnEnum.A)]
+     #endif
+       public Login(_a : string) : void {}
+}
+
+public class MyEnumAttribute: Attribute
+{
+       public Val : AnEnum;
+}
+
+public enum AnEnum
+{
+    | A
+    | B
+    | C
+}
+
+namespace AttrVsNonAttr {
+
+  using System.Xml.Serialization;
+  using System.Xml;
+
+  class F {
+    [XmlElement("foo")]
+    mutable x : int;
+  }
+}
+
+public class SimpleAttribute : Attribute {
+
+  public  mutable  n : string;
+  
+  public this ( name : string)
+  {
+    n = name;
+  }
+}
+
+public class Blah {
+    variant JOO {
+      [Simple ("A")]
+      | A
+        
+      [Simple ("B")]        
+      | B { x : int }
+    }
+    
+  public enum FooEnum {
+           | A
+           [Simple ("second")]
+     | B
+           | C
+  }
+
+  public static Run () :  int
+  {
+                def x = typeof (FooEnum).GetField ("B").GetCustomAttributes (typeof (SimpleAttribute), false) [0];
+                Console.WriteLine ((x :> SimpleAttribute).n);
+                foreach (x in typeof (JOO.A).GetCustomAttributes (false))
+                  match (x) {
+                    | y is SimpleAttribute => Console.WriteLine (y.n)
+                    | _ => ()
+                  }
+                foreach (x in typeof (JOO.B).GetCustomAttributes (false))
+                  match (x) {
+                    | y is SimpleAttribute => Console.WriteLine (y.n)
+                    | _ => ()
+                  }
+     0;
+  }
+}
+
+[System.Obsolete("use class B")]
+class AObso
+{
+    public Method() : void { }
+}
+class BObso
+{
+    [System.Obsolete("use NewMethod", false)]
+    public OldMethod() : void { }
+    public NewMethod() : void { }
+    
+    static Run () : void { 
+      def x = AObso(); // W: AObso is obsolete.*use class B
+      x.Method ();
+      def b = BObso();
+      b.OldMethod (); // W: method BObso.OldMethod.*use NewMethod
+    } 
+    
+    [System.Obsolete]
+    boo () : void {
+      OldMethod ();
+    }
+}
+
+class BaseObso
+{
+  [System.Obsolete("use class B")]
+  public virtual Method1() : void { }
+    
+  [System.Obsolete("use class B")]
+  public virtual Method2() : void { }
+}
+
+class DerivObso : BaseObso
+{
+  [System.Obsolete("use class B")]
+  public override Method1() : void { } // OK
+
+  public override Method2() : void { } // W: method BaseObso.Method2.*void is obsolete.*use class B
+}
+
+
+
+module M {
+  Main () : void
+  {
+    def x = MyAttribute ();
+    def attrs = x.GetType ().GetCustomAttributes (typeof (AttributeUsageAttribute), false);
+    def attr = attrs[0] :> AttributeUsageAttribute;
+    printf ("attrs %d %d %s\n", attrs.Length, 
+        (attr.ValidOn :> int),
+        if (attr.AllowMultiple) "true" else "false");
+    def foo = Foo ();
+    def lst = NList.FromArray (foo.GetType ().GetCustomAttributes (false));
+    def attrs = NList.Sort (NList.Map (lst, fun (x : object) { x.ToString (); }), 
+                                fun (a,b) {String.CompareOrdinal(a,b)});
+    printf ("%s\n", attrs.ToString ());
+    Tests.runtest ();
+    ConverterService.Main1 ();
+    assert(Blah.Run () == 0);
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+attrs 1 5 true
+[def , foo bar]
+A
+Val: A
+second
+A
+B
+END-OUTPUT
+*/

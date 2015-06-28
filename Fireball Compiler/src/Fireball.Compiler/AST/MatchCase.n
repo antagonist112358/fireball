@@ -1,0 +1,57 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.AST
+{
+  /// <summary>
+  /// Description of MatchCase.
+  /// </summary>
+  public class MatchCase : AstNode
+  {
+    _patternsLocation : Location;
+    _arrowLocation : Location;
+    
+    public patterns : list [ParserExpression];
+    public body : ParserExpression;
+    public mutable disable_warnings : bool;
+    
+    public this(patterns: Seq[ParserExpression], body: ParserExpression)
+    {
+      base();
+      this.patterns = patterns.NToList();
+      this.body = body;
+    }
+    
+    public this(patterns: Seq[ParserExpression], body: ParserExpression, patternsLoc: Location, arrowLoc: Location)
+    {
+      this(patterns, body);
+      _patternsLocation = patternsLoc;
+      _arrowLocation = arrowLoc;
+    }
+    
+    public BodyLocation : Location { get { body.Location } }
+    
+    public override Location : Location 
+    {
+      get 
+      {
+        mutable loc = BodyLocation;        
+        patterns.Iter(p => loc = loc.Combine(p.Location));        
+        loc;
+      }
+    }
+    
+    public override ToString () : string
+    {
+      $"| $(patterns.ToString(\" | \")) => $body"
+    }
+    
+  }
+}

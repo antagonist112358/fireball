@@ -1,0 +1,43 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+
+namespace Fireball.Compiler.TypeSystem
+{
+  /// <summary>
+  /// Description of IMember.
+  /// </summary>
+  public interface IMember
+  {
+    /* Not implemented yet */// GetMemType () : FixedType;
+    // Might not implement Location : Location { get; }
+    GetHandle () : MemberInfo;
+    /* Not implemented yet *///CanAccess (source : TypeInfo) : bool;
+    /* Not implemented yet *///CanAccess(memberTypeInfo : TypeInfo, currentTypeInfo : TypeInfo, isThisAccess : bool) : bool;
+    IsObsolete : bool { get; }
+    IsPrivate : bool { get; }
+    IsProtected : bool { get; }
+
+    /* public properties */
+    /* Not implemented yet *///DeclaringType : TypeInfo { get; }
+    Name : string { get; }
+    /* Not implemented yet *///NameLocation : Location { get; }
+    MemberKind : MemberKinds { get; }
+    IsStatic : bool { get; } // types are always static
+    HasBeenUsed : bool { get; set; } // for the 'unused' warnings
+
+    IsConditional : bool { get; }
+    GetConditions() : list[string];
+
+    /* Wrong type */ //Attributes : NemerleModifiers { get; }
+
+    /* public methods */
+    GetModifiers () : FireballModifiers;
+    IsCustomAttributeDefined(attributeFullName : string) : bool;    
+  }
+}

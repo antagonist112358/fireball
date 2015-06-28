@@ -1,0 +1,37 @@
+interface I
+  {
+    get () : int;
+  }
+
+class C [T] where T : I {}
+
+class M {
+  x : C[int];    // E: typing constraint on.* not satisfied
+}
+
+
+class X [T] {
+  x : T;               // OK
+  static y : T;        // OK
+  m1 (_ : T) : void {}         // OK
+  static m2 (_ : T) : void {}   // OK
+  static m3[X] (_ : X) : void {}   // OK
+  static m4[T] (_ : T) : void {}   // E: already in the scope
+
+  class B {
+    foo (_ : T) : void {} // OK
+  }
+}
+
+interface IA {}
+class Base { }
+class B : IA, Base { } // E: base class `Base' must be specified as first
+
+
+[V.A()] variant V[T] : System.Attribute { // E: A generic type cannot derive from
+    | A // E: A generic type cannot derive from
+ 
+}
+
+[XX] class  XX[T] : System.Attribute { // E: A generic type cannot derive from
+}

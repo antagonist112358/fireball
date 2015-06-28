@@ -1,0 +1,42 @@
+module M {
+
+  f () : void {
+    match ((1, 2)) {
+      | (x, _) when x > 3
+      | (1, 1) => 
+        def _ = x;  // E: unbound name `x'
+        ()
+      | _ => ()
+    };
+
+    match ((1, "foo")) {
+      | (x, _) when x > 3
+      | (_, x) when x == "foo" => // E: x.* used to have type .*
+        ()
+      | _ => ()
+    };
+
+    match ((1, 2)) { // W: matching is not exhaustive
+      | (x, y) when x > y => ()
+    };
+
+    match ((1, 2)) {
+      | (x, y) when x > y
+      | _ =>
+        ()
+      | (1, 2) =>  // W: this match clause is unused
+        ()
+    };
+
+    match (3) {
+      | (x is string) => ()      // E: matched value has type int while the pattern enforces string
+      | _ => {} // W: unused
+    };
+
+    
+  }
+
+  guard_outside () : void {
+      true when ();  // E: unbound name `when'
+  }
+}

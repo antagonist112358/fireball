@@ -1,0 +1,278 @@
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Compiler;
+using Nemerle.Compiler.Parsetree;
+
+namespace Nemerle.DesignPatterns
+{
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers,
+                       Nemerle.MacroTargets.Field)]
+  macro ProxyPublicMembers (t : TypeBuilder, f : FieldBuilder, params options : list [PExpr])
+  {
+    def (inclusion_regexs,_) = MacrosHelper.AnalyseNameInclusionPatterns (options);
+    def ftype = f.GetMemType();
+    def fobj = <[ this.$(f.Name : dyn) ]>;
+    
+    def classty = match (ftype) {
+      | Class (typeinfo, _) => typeinfo
+      | _ => Message.FatalError ("expected simple class type")
+    }
+    foreach (mem in classty.GetMembers (BindingFlags.Instance |
+                                        BindingFlags.DeclaredOnly | BindingFlags.Public))
+    {
+      // create Name object for name of created object
+      def member_name = t.ParsedName.NewName (mem.Name);
+      
+      def subst = ftype.ConstructSubstForTypeInfo (mem.DeclaringType);
+       
+      when (!mem.Name.Equals (".ctor") && MacrosHelper.NameMatchesPatterns (mem.Name, inclusion_regexs))
+      match (mem) {
+        | meth is IMethod
+          // we must avoid property method here, a little bit hacking solution
+          when meth.Attributes & NemerleModifiers.SpecialName == 0 =>
+     
+          def mods = NemerleModifiers.Virtual %| NemerleModifiers.Public;
+          def parse_tr = meth.GetHeader ().CreateAliasMethod (mods, fobj, subst);
+          t.Define (parse_tr);
+          
+        | prop is IProperty when prop.GetGetter() != null && !prop.IsIndexer =>
+          t.Define (<[ decl:
+            public virtual $(member_name : name) : $(ftype.TypeOfMember (prop) : typed) {
+              get { 
+                this.$(f.Name : dyn).$(member_name : name)
+              }
+            }
+          ]>)
+
+        | _ => ()
+      }
+    }
+  }
+  
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeTypedMembers, Nemerle.MacroTargets.Class)]
+  macro AbstractFactory (tb : TypeBuilder, params classes : list [PExpr]) 
+  {
+    def interpret_generics (a, acc = ([], [])) {
+      match (a) {
+        | [] => (acc[0].Reverse (), acc[1].Reverse ())
+        | <[ _ ]> :: xs => 
+          def n = Macros.NewSymbol ();
+          def sym = <[ $(n : name) ]>;
+          interpret_generics (xs, (Splicable.Name (n) :: acc[0], sym :: acc [1]))
+        | x :: xs =>
+          interpret_generics (xs, (acc[0], x :: acc[1]))
+      }
+    }
+    def interpret_expr (e) {
+      | <[ $nm [..$generics] ]> =>
+          def (parms, args) = interpret_generics (generics);
+          (nm, parms, args, <[ $nm.[..$args] ]> )
+          
+      | <[ Override ($current, $overriden) ]> =>
+        def (nm,parms,args,_) = interpret_expr (current);
+        (nm, parms, args, overriden)
+        
+      | _ => (e, [], [], e)
+    }
+    def get_simple_name (e, nm) {
+      match (e) {
+        | <[ $e [..$_] ]> 
+        | <[ $e . [..$_] ]> 
+        | <[ $e ]> =>
+          match (Util.QidOfExpr (e)) {  
+            | Some ((li, _)) => (li.Last, nm : object == e) // nm == e iff we didn't have Override specified
+            | _ => Message.FatalError (e.Location, $"invalid overriden type specified: $e");
+          }
+      }
+    }
+    
+    foreach (expr in classes) {
+      def (nm, gparms, gargs, returned) = interpret_expr (expr);
+     
+      match (Util.QidOfExpr (nm)) {
+        | Some ((li, _)) =>
+          match (tb.GlobalEnv.LookupType (li, tb, gargs.Length)) {
+            | Some (tc) =>
+              def (returned_name, is_base) = get_simple_name (returned, nm);
+              foreach (head in CtorsHelper.GetConstructorParameterProviders (tc)) {
+                def attrs = AttributesAndModifiers(NemerleModifiers.Public, []);
+                if (is_base)
+                  attrs.mods |= NemerleModifiers.Virtual;
+                else
+                  attrs.mods |= NemerleModifiers.Override;
+                  
+                tb.Define (<[ decl: 
+                  ..$attrs $("Create" + returned_name : usesite) [..$gparms] (..$(head.ParametersDeclarations)) : $returned 
+                  { 
+                    $nm .[..$gargs] (..$(head.ParametersReferences))
+                  } 
+                ]>)            
+              }
+        
+            | _ => Message.Error (expr.Location, $"to generate factory methods, class names are required, which $nm is not");
+          }
+        
+        | None => 
+          Message.Error (expr.Location, $"to generate factory methods, simple names are required, which $expr is not");
+      }
+      
+    }
+  }  
+  
+  module CtorsHelper
+  {
+    public GetConstructorParameterProviders (tc : TypeInfo) : list [IParametersProvider]
+    {
+      | tc is TypeBuilder => 
+        mutable coll = [];
+        foreach (ClassMember.Function (head, _, _) as f in tc.GetParsedMembers (true))
+          when (f.Name == ".ctor" && (f.Attributes & NemerleModifiers.Public == NemerleModifiers.Public))
+            coll ::= (head : IParametersProvider);
+        if (coll.IsEmpty)
+          [PFunHeader (tc.Location, null, null, [])] // empty ctor
+        else coll
+          
+      | _ =>
+        tc.GetConstructors (BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly).Map (_.GetHeader ())
+    }   
+  }
+  
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeTypedMembers, Nemerle.MacroTargets.Class)]
+  macro Aggregate (tb : TypeBuilder, params classes : list [PExpr]) 
+  {
+    foreach (c in classes) {
+      match (Util.QidOfExpr (c)) {
+        | Some ((li, _)) =>
+          def name = li.Last;
+          match (tb.GlobalEnv.LookupType (li, tb, -1)) {
+            | Some (tc) =>
+              foreach (head in CtorsHelper.GetConstructorParameterProviders (tc)) {
+                tb.Define (<[ decl: 
+                  private $("_init" + name : usesite) (..$(head.ParametersDeclarations)) : void
+                  { 
+                    this.$("_" + name : usesite) = $c (..$(head.ParametersReferences))
+                  } 
+                ]>);
+              }
+        
+              tb.Define (<[ decl: 
+                [ProxyPublicMembers]
+                private mutable $("_" + name : usesite) : $c; 
+              ]>)
+              
+            | _ =>
+              Message.Error (c.Location, "expected class name, but got unbound name "+c.ToString ())
+          }
+        | _ => 
+          Message.Error (c.Location, "expected class name, which will be aggregated using field, got "+c.ToString ())
+      }
+    }
+  }
+  
+  /// Usage 
+  ///     [Singleton(Protected, Internal)]
+  ///     class Class1[T]:List[T]
+  ///     {
+  ///     }
+  /// Generates static threadsafe property Instance, in parameters we may set accesslevel
+  /// or [Singleton(Accessor = AccessorName)]
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers , Nemerle.MacroTargets.Class, Inherited = false, AllowMultiple = false)]
+  public macro Singleton(tb : TypeBuilder,  params args : list [PExpr])
+  {
+    //unless(tb.GlobalEnv.Manager.IsIntelliSenseMode)
+    //    _ = System.Diagnostics.Debugger.Launch(); 
+       
+    tb.DisableImplicitConstructor();
+    
+    def constructors = (tb.Ast :> Nemerle.Compiler.Parsetree.TopDeclaration.Class).decls.Filter(c => c is ClassMember.Function && c.Name == ".ctor" && (c.Attributes & NemerleModifiers.Static) == 0).Map(c => c:>ClassMember.Function);
+    when (match (constructors.Length)
+          {
+            | 1 =>
+              def cons =  constructors.Head;
+              if ((cons.Attributes & (~NemerleModifiers.Private)) != 0)
+              {
+                Message.Warning (cons.Location, $"Singleton: $tb's constructor must be private. Changing it to private.");
+                //def attrs = cons.Attributes;
+                cons.Attributes = NemerleModifiers.Private;
+                true
+              }
+              else if (!cons.header.Parameters.IsEmpty)
+              {
+                Message.Error (cons.Location, $"Singleton: only $tb's constructor must have no parameters");
+                false
+              }
+              else
+                true
+                
+            | 0 =>
+              def t_c = <[ decl: private this() { base (); };]>;
+              tb.Define (t_c);
+              true
+              
+            | _ =>
+              Message.Error (tb.Location, $"Singleton: Type $tb must declare one private constructor without parameters");
+              false
+          })      
+    {
+      mutable Mods = NemerleModifiers.Static;
+      mutable instName = Name ("Instance", tb.Location);
+      if(args.Length > 0)
+        foreach (a in args)
+        {
+          | <[ $("Internal"   : dyn) ]>    => Mods |= NemerleModifiers.Internal;
+          | <[ $("Public"     : dyn) ]>    => Mods |= NemerleModifiers.Public; 
+          | <[ $("Private"    : dyn) ]>    => Mods |= NemerleModifiers.Private; 
+          | <[ $("Protected"  : dyn) ]>    => Mods |= NemerleModifiers.Protected; 
+          | <[ Accessor = $n ]>            => instName =  Name (n.ToString(), n.Location);
+          | <[ $e ]> => Message.Error(e.Location,$"Singleton: Unknown parameter $e");
+        }
+      else Mods |= NemerleModifiers.Public;
+      
+      def mod = AttributesAndModifiers(Mods,[]);
+      def cached_instance = Macros.NewSymbol ("cached_instance");
+      
+      def instNameSpl = Splicable.Name (instName.Location, instName);
+      
+      tb.Define(<[ decl: private static volatile mutable $(cached_instance: name): $(tb.ParsedTypeName) = null;]>);
+
+      tb.Define(<[ decl: ..$(mod) $(instNameSpl) : $(tb.ParsedTypeName)
+                              {
+                                get
+                                {
+                                  when($(cached_instance: name) == null)
+                                    lock(typeof($(tb.ParsedTypeName)))
+                                      when($(cached_instance: name) == null) //other tread still not initialized it :)
+                                        $(cached_instance:name) = ($(tb.ParsedTypeName)());
+                                        
+                                  $(cached_instance: name)
+                                }
+                              }]>);
+    }
+  }
+}

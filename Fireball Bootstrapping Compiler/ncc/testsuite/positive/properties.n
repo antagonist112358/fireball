@@ -1,0 +1,237 @@
+class A {
+  public Item [ x : int ] : int
+  {
+    mutable f : int;
+    static mutable g : int;
+    get { g = 1; f + x }
+    set { f = value + x; }
+  }
+  public FooBar [ x : int ] : int
+  {
+    mutable f : int;
+    static mutable g : int;
+    get { f + x + 8 }
+    set {
+          g = -1;
+          f = value + x + 8 + g;
+          def f = 0;
+          def g = 0;
+          assert(f == 0 && g == 0);
+        }
+  }
+}
+
+class DelayedA {
+  public Foo : int { get 3; set { 
+    System.Console.WriteLine (value);
+  } }
+}
+
+class C {
+  public virtual X : int { get 0 }
+  public virtual Y : int { get { 0 } }
+  public this () {}
+}
+
+class D : C {
+  public override X : int { get { 1 } }
+  public new Y : int { get { 1 } }
+  public this () {}
+}
+
+class E { 
+  public Goo : string {
+    private mutable _goo : string;
+
+    get { _goo }
+    set _goo = value;
+  }
+  
+  public static Foo : int {
+    private mutable _foo : int;
+  
+    get { _foo }
+    set { _foo = value; }
+  }
+
+  public this () { Goo = "dd"; }
+}
+
+module F {
+  public Goo : string {
+    private mutable _goo : string;
+    protected mutable _goo1 : string = "ala";
+
+    get { _goo + _goo1 }
+    set { _goo = value; _goo1 = _goo }
+  }
+}
+
+//
+// Test for overloaded properties.
+//
+using System;
+
+public class basec {
+  public virtual Message : string {
+    get {
+       "base";
+    }
+  }
+}
+
+public class der : basec {
+  public override Message : string {
+    get {
+       "der";
+    }
+  }
+}
+
+class Base {
+  mutable  thingy : int = 0;
+  public virtual Thingy : int {
+    get {  thingy; }
+    set thingy = value;
+  }
+}
+
+class Derived : Base {
+  public BaseThingy : int {
+    get {  Thingy; }
+  }
+
+  public override Thingy : int {
+    // override the set constructor
+    set { _ = value }
+  }
+}
+
+class D1 {
+
+  public static  Mai () :  int
+  {
+    mutable  d =  der ();
+    if (d.Message != "der")
+       1;
+     else
+       {
+         mutable  b =  basec ();
+         if (b.Message != "base")
+           2;
+         else {
+           mutable  dd =  Derived ();
+           dd.Thingy = 10;
+           if (dd.BaseThingy != 0)
+             3;
+           else {
+             Console.WriteLine ("Test ok");
+             0;
+           }
+         }
+       }
+  }
+}
+
+
+public class TestPropertyArray
+{
+  public f () : void {
+    _ = (null : System.Net.IPHostEntry).AddressList [0];
+  } 
+}
+
+using System.Reflection;
+
+interface IB {
+
+        Prop : bool {get;}
+}
+
+class T : IB {
+        Prop : bool implements IB.Prop {
+                get { true; }
+        }
+        
+   public static Run () : int {
+        def p = typeof (T).GetProperties (BindingFlags.Public %|
+                                                  BindingFlags.NonPublic %| BindingFlags.Instance);
+        if (p == null || p.Length != 1) {
+                        Console.WriteLine ("Error");
+            1;
+                }
+                else 0;
+        }
+}
+
+public class X {
+    public Item [x : int] : string { get { x.ToString () } }
+    public Item [x : string] : string { get { x } }
+}
+
+namespace Bug906 {
+  public class VirtProp { 
+    public virtual Prop : int {
+     get { 1 }
+     private set { System.Console.WriteLine("1 - " +value.ToString ()) }
+   }
+   
+   public SProp (x : int) : void {
+     Prop = x;   
+   }
+  }
+  
+  public class OverProp : VirtProp {
+    public override Prop : int {
+     get { 2 }
+     private set { System.Console.WriteLine("2 - " + value.ToString ()) }
+   }
+   
+   public SOProp (x : int) : void {
+     Prop = x;   
+   }
+  }
+}
+
+using Nemerle.IO;
+
+module M {
+  Main () : void
+  {
+    def c = (D () : C);
+    printf ("%d %d %d %d\n", c.X, c.Y, D ().X, D ().Y);
+    printf ("%s\n", E().Goo);
+    printf ("%s\n", F.Goo);
+    F.Goo = "bla";
+    printf ("%s\n", F.Goo);
+    _ = D1.Mai ();
+    assert(T.Run () == 0);
+    // bug #482
+    [DelayedA ()].Iter (fun (x) { x.Foo = 42 });
+    
+    foreach (p in typeof(X).GetProperties())
+      assert(p.PropertyType.Equals (typeof (string)));
+      
+    def v = Bug906.VirtProp ();
+    def o = Bug906.OverProp () : Bug906.VirtProp;
+    assert(v.Prop == 1);
+    v.SProp  (1);
+    assert(o.Prop == 2);
+    o.SProp (2);
+    (o :> Bug906.OverProp).SOProp (2);      
+  }
+}
+
+/*
+BEGIN-OUTPUT
+1 0 1 1
+dd
+ala
+blabla
+Test ok
+42
+1 - 1
+1 - 2
+2 - 2
+END-OUTPUT
+*/

@@ -1,0 +1,43 @@
+struct A
+{
+  x : int;
+  public this (_ : string)
+  {
+    x = 1
+  }
+  public static Main () : void
+  {
+    def f = A;
+    System.Console.WriteLine (f ("").x);
+    def g = A;
+    System.Console.WriteLine (g ().x);
+    
+    Bug1119.Run();
+  }
+}
+
+public module Bug1119
+{
+    private f = S() : S;
+
+    private struct S
+    {
+        public override ToString() : string
+        {
+            "S"
+        }
+    }
+
+    public Run() : void
+    {
+        System.Console.WriteLine(f.ToString());
+    }
+} 
+
+/*
+BEGIN-OUTPUT
+1
+0
+S
+END-OUTPUT
+*/

@@ -1,0 +1,67 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+public interface I
+{
+  f ['a] (_ : 'a) : void;
+}
+
+public class C : I
+{
+  public f ['a] (_ : 'a) : void
+  implements I.f
+  {
+  }
+}
+
+
+public interface ISomething
+{
+  DoSomething() : void;
+}
+
+public class Something: ISomething
+{
+  ISomething_DoSomething() : void implements ISomething.DoSomething
+  {
+    Console.WriteLine("Something.DoSomething");
+  }
+}
+
+public class Something2:  Something, ISomething
+{
+  
+  ISomething_DoSomething() : void implements ISomething.DoSomething
+  {
+    Console.WriteLine("Something2.DoSomething");
+  }
+    
+}
+
+class MyEnumerable : IEnumerable[int] {
+    private data_ = array [0, 1, 2, 3] : array [int] ;
+    private data2_ = array [0, 1, 2, 3, 5] : array [int] ;
+
+    public GetEnumerator () : IEnumerator {
+        data_.GetEnumerator () ;
+    }
+    public GetEnumeratorOfInt32 () : IEnumerator [int] implements IEnumerable [int].GetEnumerator {
+        (data2_ : IEnumerable [int]).GetEnumerator () ;
+    }
+}
+
+((Something() : ISomething)).DoSomething();
+((Something2() : ISomething)).DoSomething();
+
+System.Console.WriteLine ($[ x | x in (MyEnumerable () : IEnumerable) ]);
+System.Console.WriteLine ($[ x | x in (MyEnumerable () : IEnumerable[int]) ]);
+
+/*
+BEGIN-OUTPUT
+Something.DoSomething
+Something2.DoSomething
+[0, 1, 2, 3]
+[0, 1, 2, 3, 5]
+END-OUTPUT
+*/

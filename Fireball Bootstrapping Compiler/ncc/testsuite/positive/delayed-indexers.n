@@ -1,0 +1,56 @@
+using Nemerle.Collections;
+
+module M { public set42 (x : ref int) : void { x = 42; } }
+
+[Record]
+class Element {
+  public Value : object;
+  public Foo : int;
+}
+
+
+def f (s) { s [0] == 's' }
+_ = f ("foo");
+
+def g (a) { a [0] = 12; }
+def a = array [1, 2];
+g (a);
+System.Console.WriteLine (a [0]);
+
+def g (a) { M.set42 (ref a [1]) }
+g (a);
+System.Console.WriteLine (a [1]);
+
+def g (a) { a ["foo"] = "bar"; }
+def ht = Hashtable ();
+g (ht);
+System.Console.WriteLine (ht ["foo"]);
+
+def g (a) { a [0][0] = 12; }
+def a = array [array [1]];
+g (a);
+System.Console.WriteLine (a [0][0]);
+
+def operations = Nemerle.Collections.Hashtable ();
+operations.Add ("+", fun (arr) { assert(arr.Length == 2); arr[0] + arr[1] });
+System.Console.WriteLine ( operations ["+"] (array [1,2]));
+
+// bug #571
+def f (node) {
+  _ = node.Foo + 1;
+  _ = node.Value :> array[int];
+}
+
+f (Element (array[1,2], 1));
+
+_ = [].Sort (string.CompareOrdinal);
+
+/*
+BEGIN-OUTPUT
+12
+42
+bar
+12
+3
+END-OUTPUT
+*/

@@ -1,0 +1,119 @@
+using System;
+using System.IO;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
+
+public class Test {
+   public static Main() :  void  {
+
+      //Creates a new TestSimpleObject object.
+      mutable  obj =  TestSimpleObject();
+
+      Console.WriteLine("Before serialization the object contains: ");
+      obj.Print();
+
+      //Opens a file and serializes the object into it in binary format.
+      def stream = File.Open("data.dat", FileMode.Create);
+      def formatter =  BinaryFormatter();
+
+      formatter.Serialize(stream, obj);
+      stream.Close();
+   
+      //Empties obj.
+      obj = null;
+   
+      //Opens file "data.dat" and deserializes the object from it.
+      def stream = File.Open("data.dat", FileMode.Open);
+      def formatter =  BinaryFormatter();
+
+      obj = (formatter.Deserialize(stream) :> TestSimpleObject);
+      stream.Close();
+
+      Console.WriteLine("");
+      Console.WriteLine("After deserialization the object contains: ");
+      obj.Print();
+   }
+}
+
+
+// A test object that needs to be serialized.
+[Serializable()]        
+public class TestSimpleObject  {
+
+    public mutable member1 : int;
+    public mutable member2 : string;
+    public  mutable  member3 : string;
+    public  mutable  member4 : double;
+    
+    // A field that is not serialized.
+    [NonSerialized()] public  mutable  member5 : string; 
+
+    public  mutable  member6 : string * int;    
+    public  mutable  member7 : list [int] * int * (int * int);
+    public  mutable  member8 : array [MyVariant];
+  
+    public this() {
+
+        member1 = 11;
+        member2 = "hello";
+        member3 = "hello";
+        member4 = 3.14159265;
+        member5 = "hello world!";
+        member6 = ("a", 1);
+        member7 = ([1,2,3], 1, (2,3));
+        member8 = array [MyVariant.A(1), MyVariant.B ()];      
+    }
+
+
+    public Print() :  void {
+
+        Console.WriteLine("member1 = '{0}'", member1);
+        Console.WriteLine("member2 = '{0}'", member2);
+        Console.WriteLine("member3 = '{0}'", member3);
+        Nemerle.IO.printf ("member4 = '%lf'\n", member4);
+        Console.WriteLine("member5 = '{0}'", member5);
+        Console.WriteLine("member6 = '{0}'", member6);
+        Console.WriteLine("member7 = '{0}'", member7);
+        Console.WriteLine("member8 = '{0}'", member8[0]);
+        assert(member8 [1] : object == MyVariant.B());
+    }
+}
+
+[Serializable]
+public variant MyVariant {
+  [Serializable]
+  | A { x: int }
+  [Serializable]
+  | B
+}
+
+[Nemerle.Xml.Serialization.XmlSerializable]
+public variant Form {
+      | Cstr { name : string; label : string }
+      | Atom { basis : string }
+      | Empt
+}
+
+/*
+BEGIN-OUTPUT
+Before serialization the object contains:
+member1 = '11'
+member2 = 'hello'
+member3 = 'hello'
+member4 = '3.14159265'
+member5 = 'hello world!'
+member6 = '(a, 1)'
+member7 = '([1, 2, 3], 1, (2, 3))'
+member8 = 'MyVariant+A' 
+
+After deserialization the object contains:
+member1 = '11'
+member2 = 'hello'
+member3 = 'hello'
+member4 = '3.14159265'
+member5 = ''
+member6 = '(a, 1)'
+member7 = '([1, 2, 3], 1, (2, 3))'
+member8 = 'MyVariant+A'
+END-OUTPUT
+*/

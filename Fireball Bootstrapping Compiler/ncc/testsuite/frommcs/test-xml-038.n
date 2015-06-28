@@ -1,0 +1,25 @@
+// Compiler options: -doc:xml-038.xml
+using System;
+using System.Reflection;
+using System.Xml;
+
+/// <summary>
+/// <see cref="AppDomain.AssemblyResolve" />
+/// </summary>
+public class Whatever {
+  /// <summary>
+  /// </summary>
+  public static Main() :  void {
+  foreach ( mi : MemberInfo in typeof (XmlDocument).FindMembers (
+    MemberTypes.All,
+    BindingFlags.Public %| BindingFlags.NonPublic %| BindingFlags.Static %| BindingFlags.Instance,
+    Type.FilterName,
+    "NodeInserted"))
+          _ = mi.GetType ();
+     
+  }
+}
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/

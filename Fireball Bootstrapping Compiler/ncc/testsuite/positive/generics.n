@@ -1,0 +1,200 @@
+// THIS CODE WORKS! :-)
+
+class A [T] {
+  public mutable f : T;
+  
+  public take () : T {
+    f
+  }
+
+  public takeobj () : object {
+    f
+  }
+  
+
+  public putobj (x : object) : void {
+    f = x :> T; // unboxing
+  }
+  
+  public put (x : T) : void {
+    _ = A(1);
+    f = x;
+  }
+  
+  public this (a : T) {
+    f = a;
+  }
+
+  public foo () : void {
+    putobj (1);
+  }
+
+  public Default : T {
+    get { Nemerle.Extensions.DefaultValue (T) }
+  }
+  
+  public this () {
+  } 
+}
+
+module M {
+   obj : A [string];
+
+   this () {  
+     obj = A ();
+     obj.put ("Ala");
+     assert(obj.Default == null);     
+     def x = A(0);
+     x.foo ();
+     assert(x.f == 1);
+   }
+
+   collections_generic () : void
+   {
+      def x = typeof (System.Collections.Generic.List [int]);
+      System.Console.WriteLine (x.ToString ());
+      def x = System.Collections.Generic.List ();
+      x.Add (1);
+      assert(x[0] == 1);
+
+      def dict = System.Collections.Generic.Dictionary ();
+      dict.Add (1, "Nemerle"); 
+      assert(dict [1] == "Nemerle");
+   }
+   
+   Main () : void {
+      def x = A(1);
+      x.put (2);
+      assert(System.Convert.ToInt32 (x.takeobj ()) == 2);
+      assert(x.takeobj () :> int == 2);      
+      assert(x.f == 2);
+      assert(x.Default == 0);
+      x.f = 2;     
+      def y = x.take ();
+      assert(y == 2);
+      assert(obj.take () == "Ala");
+      _ = obj.take ();
+      collections_generic ();
+      _ = C();
+      def d = D("a");
+      assert(d.Val == "a");
+      assert(Ident.[int,object]().apply (1) :> int == 1);
+   }
+}
+
+class B [T] {
+  protected f : T;
+  my : B [T]; 
+
+  public me_init (_x : B [T]) : void {
+  }
+
+  protected mutable fld : T;
+  public static st_fld : T; 
+
+  protected this () {  }
+  protected this (x : T) {
+      f = x;
+  }
+}
+
+
+class C : B [int] {
+ 
+  public this () {
+    base (1);
+    base.fld = 2;
+    assert(fld == 2);    
+    fld = 3;
+    assert(fld == 3);
+  }
+}
+
+
+class D [W] : B [W] {
+  public this (x : W) { base (x) }
+
+  public Val : W
+  {
+    get { f }
+  }
+}
+
+  
+variant genlist [T] {
+    | ConsA { x : int; tl : string; }
+    | ConsB { x : T; tl : string; }
+    | ConsC { x : T; tl : genlist [int]; }            
+    | Cons { x : T; tl : genlist [T]; }  
+    | Nil
+}
+
+
+class Ident ['a, 'b] where 'a : 'b {
+  public apply (x : 'a) : 'b {
+    x
+  }
+}
+
+public class Bug531['a] {
+    public Nothing():void {}
+
+    public Fun():void {
+        try {
+        } finally {
+          Nothing ();
+        }
+    }
+}
+
+public module Bug574 {
+    m [T] (l : array [T]) : void where T : System.Type
+    {
+      foreach (e in l)
+        _ = e.HasElementType;
+    }
+}
+
+namespace Bug583 {
+    class Blobby: System.Collections.ObjectModel.KeyedCollection[System.Object, System.Object]
+    {
+        public
+        this()
+        {
+            base()
+        }
+        
+        private
+        this(_x: System.Int32)
+        {
+            this()
+        }
+        
+        protected override
+        GetKeyForItem(item: System.Object): System.Object
+        {
+            item
+        }
+    } 
+}
+
+
+module AA[T] {
+    Main() : void { // W: an entry point cannot be generic or in a generic type
+      System.Console.WriteLine(typeof(T));
+    }
+}
+
+module BB {
+     Main [T]() : void { // W: an entry point cannot be generic or in a generic type
+      System.Console.WriteLine(typeof(T));
+    }
+   
+}
+
+
+/*
+BEGIN-OUTPUT
+System.Collections.Generic.List`1[System.Int32]
+END-OUTPUT
+*/

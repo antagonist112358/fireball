@@ -1,0 +1,460 @@
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Utility;
+using Nemerle.Collections;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Imperative;
+
+namespace Nemerle.Compiler 
+{
+  /** Represents a single possibility in the overloading resulution process.
+      It is used in the TExpr.Overloaded node.  */
+  [ManagerAccess(solver.Manager)]
+  public class OverloadPossibility : TypedBase, System.IEquatable[OverloadPossibility]
+  {
+    expr : TExpr;
+    ty : TypeVar;
+    member : IMember;
+    solver : Solver;
+    is_static : bool;
+    from : FixedType.Class;
+    method_typarms : list [TypeVar];
+    local_context : LocalContext;
+    mutable generic_specifier : list [TypeVar];
+    public mutable IsBaseCall : bool;
+    public mutable VarArgs : bool;
+    public mutable ExtensionMethodObject : TExpr;
+    public mutable IsConstantObject : bool;
+    public mutable UsedDefaultParms : bool;
+    public mutable UsedLastTime : bool;
+
+    mutable permutation_array : array [int];
+    mutable formal_types : array [TypeVar];
+    mutable did_mambo_jumbo : bool;
+    public ResolvedCallParameters : list[Parm] { get; internal set; }
+    public IsAllNestedDelayedTypingResolved : bool { get; internal set; }    
+    public IsNeedTupleConvertion : bool { get; internal set; }    
+
+    public this (typer : Typer, ty : TypeVar, expr : TExpr, from : FixedType.Class, 
+                 member : IMember, method_typarms : list [TypeVar] = null)
+    {
+      is_static = member.IsStatic || member.MemberKind == MemberKinds.Constructor;
+
+      /*assert((expr == null) == is_static, 
+              $ "expr/IsStatic $member $(member.IsStatic) $is_static");
+
+      assert((from == null) != is_static, 
+              $ "from/IsStatic $member $(member.IsStatic) $is_static");*/
+
+      when (ty != null)
+        this.solver = ty.Manager.Solver;
+
+      this.expr = expr;
+      this.from = from;
+      this.member = member;
+      this.ty = ty;
+      this.local_context = typer.LocalContext;
+
+      if (method_typarms == null)
+        this.method_typarms = []
+      else
+        this.method_typarms = method_typarms;
+    }
+
+    public Type   : TypeVar         { get { ty } }
+    public Member : IMember         { get { member } }
+    public From   : FixedType.Class { get { from } }
+
+    /// Tell if this overload is still possible in the current solver.
+    public StillPossible : bool
+    {
+      get
+      {
+        def solver = Manager.Solver;
+        solver.PushState ();
+        def was_error = Compile () is TExpr.Error;
+        solver.PopState ();
+        !was_error
+      }
+    }
+
+    public SetGenericSpecifier (tyvars : list [TypeVar]) : void
+    {
+      assert(generic_specifier == null || generic_specifier : object == tyvars);
+      generic_specifier = tyvars;
+    }
+
+    CheckGenericSpecifier () : bool
+    {
+      if (generic_specifier == null) true
+      else
+      {
+        def (method_typarms, isCtor) =
+          match (member)
+          {
+            | _ is TypeInfo // implicit value type ctor
+            | meth when meth.MemberKind == MemberKinds.Constructor => (from.args, true)
+            | _ => (method_typarms, false)
+          };
+
+        def specifierCount = generic_specifier.Length;
+
+        def ctorChk = !isCtor || from.tycon.DeclaredTypeParametersCount == specifierCount;
+
+        ctorChk
+          && method_typarms.Length == specifierCount
+          && NList.ForAll2(method_typarms, generic_specifier, 
+                      (a, b) => a.Unify(b))
+      }
+    }    
+
+    /// Enforce this particular overloading possibility in the current solver.
+    public Compile() : TExpr
+    {
+      Util.locate (Location, {
+        def is_ok = 
+          CheckGenericSpecifier () &&
+          (is_static || {
+            def ti = member.DeclaringType;
+            def ft = ti.GetFreshType ();
+            expr.Type.Require (ft)
+          });
+
+        def expr =
+          match (member) 
+          {
+            | _ when !is_ok =>
+              // XXX see when this happens and invent some better
+              // error message
+              ReportError(Manager.Solver.CurrentMessenger, $"  $(member) is no longer present in $(ty) after constraining");
+              TExpr.Error()
+
+            | ti is TypeInfo =>
+              assert(ti.IsValueType);
+              TExpr.ImplicitValueTypeCtor ()
+              
+            | fld is IField =>
+              if (fld.IsStatic)
+                if (IsConstantObject)
+                  TExpr.ConstantObjectRef (from, fld)
+                else if (fld.IsLiteral && !Manager.IsIntelliSenseMode)
+                  match (ConstantFolder.FieldValueAsLiteral (fld, false))
+                  {
+                    | None => TExpr.StaticRef (from, from, fld, [])
+                    | Some (lit) => TExpr.Literal (fld.GetMemType (), lit)
+                  }
+                else
+                  TExpr.StaticRef (from, fld, [])
+              else
+                TExpr.FieldMember(expr, fld)
+                
+            | prop is IProperty =>
+              if (prop.IsStatic)
+                TExpr.StaticPropertyRef (from, prop)
+              else
+                TExpr.PropertyMember (expr, prop)
+
+            | meth is IMethod =>
+              if (IsBaseCall)
+                TExpr.Base (meth)
+              else if (is_static)
+                match (meth.BuiltinKind) {
+                  | OpCode (ch, unch) =>
+                    TExpr.OpCode (if (local_context.IsChecked) ch else unch)
+                  | _ =>
+                    TExpr.StaticRef (from, meth, method_typarms)
+                }
+              else
+                TExpr.MethodRef (expr, meth, method_typarms, notvirtual = expr is TExpr.This && !(meth.Attributes %&& NemerleModifiers.Virtual))
+
+            | ev is IEvent =>
+              if (ev.IsStatic)
+                TExpr.StaticEventRef (from, ev)
+              else
+                TExpr.EventMember (expr, ev)
+
+            | _ =>
+              Message.Warning ($ "evil member $(member)");
+              assert(false)
+          };
+          
+        assert2(ty != null);
+        expr.ty = ty;
+        expr
+      })
+    }
+
+    public override ToString () : string
+    {
+      member.ToString () + if (VarArgs) " #VarArg" else ""
+    }
+
+    [Nemerle.OverrideObjectEquals]
+    public Equals (o : OverloadPossibility) : bool
+      implements System.IEquatable[OverloadPossibility].Equals
+    {
+      member.Equals (o.member) &&
+      this.expr : object == o.expr : object &&
+      o.VarArgs == VarArgs
+    }
+
+    public override GetHashCode() : int
+    {
+      member.GetHashCode() ^ this.expr?.GetHashCode()
+    }
+
+    public ResetOverloadSelectionStuff () : void
+    {
+      permutation_array = null;
+      formal_types = null;
+      UsedDefaultParms = false;
+      did_mambo_jumbo = false;
+    }
+
+    public PermutationArray : array [int]
+    {
+      set { permutation_array = value; }
+    }
+
+    public DidMamboJumbo : bool
+    {
+      get
+      {
+        _ = FormalTypes;
+        did_mambo_jumbo
+      }
+    }
+
+    public IsGeneric : bool
+    {
+      get
+      {
+        if ((from == null || from.args.IsEmpty) && method_typarms.IsEmpty)
+          false
+        else
+          true
+      }
+    }
+
+    public FormalTypes : array [TypeVar]
+    {
+      get
+      {
+        when (formal_types == null && ty.IsFixed) 
+        {
+          did_mambo_jumbo = false;
+          match (ty.FixedValue) {
+            | FixedType.Fun (from, _) =>
+              mutable formals =
+                if (from.IsFixed)
+                  match (from.Fix ()) 
+                  {
+                    | FixedType.Tuple (lst) => lst
+                    | FixedType.Void => []
+                    | t => [t]
+                  }
+                else [from];
+                
+              when (permutation_array == null)
+              { // The permutation_array is null if func pass into other func.
+                permutation_array = array (formals.Length);
+                foreach (i in [0..permutation_array.Length - 1])
+                  permutation_array[i] = i;
+              }
+              
+              def res = array (permutation_array.Length);
+
+              if (VarArgs) 
+              {
+                def loop (acc, n, formals) 
+                {
+                  if (n == 0) acc.Rev ()
+                  else
+                    match (formals) {
+                      | [last : TypeVar] =>
+                        match (last.Fix ()) 
+                        {
+                          | FixedType.Array (t, 1) =>
+                            loop (t :: acc, n - 1, formals)
+                          | _ => Util.ice ()
+                        }
+                      | x :: xs =>
+                        loop (x :: acc, n - 1, xs)
+                      | [] => Util.ice ()
+                    }
+                }
+                formals = loop ([], res.Length, formals)
+              } else if (UsedDefaultParms) {
+                // don't do anything
+              } else {
+                when (res.Length != formals.Length) {
+                  did_mambo_jumbo = true;
+                  match (res.Length) {
+                    | 0 =>
+                      formals = []
+                    | 1 =>
+                      formals = [FixedType.Tuple (formals)]
+                    | n =>
+                      // I hope this can only happen for formals = [object]
+                      formals = NList.Repeat (InternalType.Object, n)
+                  }
+                }
+              }
+
+              mutable pos = 0;
+              foreach (t in formals) {
+                when (permutation_array [pos] != -1)
+                  res [permutation_array [pos]] = t;
+                pos++;
+              }
+
+              if (UsedDefaultParms && res.Exists (_ == null))
+                formal_types = res.ToArrayFiltered (_ != null);
+              else
+                formal_types = res;
+            | _ => formal_types = array(0)
+          }
+        }
+        formal_types
+      }
+
+      // used for fake delegate constructors
+      set { formal_types = value; }
+    }
+
+    static public Unique(overloads : list [OverloadPossibility]) : list [OverloadPossibility]
+    {
+      def ht = Hashtable ();
+      mutable res = [];
+      
+      foreach (overload in overloads) {
+        def id = (overload.Member, overload.VarArgs);
+        if (ht.Contains (id)) {
+          assert(overload.Equals (ht [id]))
+        } else {
+          ht [id] = overload;
+          res = overload :: res;
+        }
+      }
+
+      res
+    }
+
+    /// Filter out impossible overloads from the list.  If there are no 
+    /// possible overloads and we are in the error reporting mode, present
+    /// an appropriate error message.
+    public static OnlyPossible (overloads : list [OverloadPossibility], expected : TypeVar, typer : Typer) : list [OverloadPossibility]
+    {
+      when (overloads.IsEmpty)
+        return [];
+
+      def Manager = overloads.Head.Manager;
+
+      def solver = Manager.Solver;
+      def res = overloads.RevFilter( 
+        fun (o : OverloadPossibility)
+        {
+          def o = o;
+          solver.PushState ();
+          def was_error =
+            try 
+            { 
+              def expr = o.Compile ();
+              def expected = expected;
+              expr is TExpr.Error || (expected != null 
+                && 
+                {
+                  def ext = o.ExtensionMethodObject;
+                  if (ext == null)
+                    typer.TryAddCastTo(expr, expected, true) == null
+                  else match (expr.Type)
+                  {
+                    | FixedType.Fun(FixedType.Tuple([_]), _) 
+                    | FixedType.Fun(FixedType.Tuple([]), _)   => Util.ice("FixedType.Fun has inconsistent state!")
+                    | FixedType.Fun(FixedType.Tuple as from1,            to) when from1.TryUnify(ext.Type) with (cnt = 0, head = from1, from = FixedType.Void())
+                    | FixedType.Fun(FixedType.Tuple(head :: last :: []), to) with (from = last,                  cnt = 1)
+                    | FixedType.Fun(FixedType.Tuple(head :: tail),       to) with (from = FixedType.Tuple(tail), cnt = tail.Length)
+                    | FixedType.Fun(head,                                to) with (from = FixedType.Void(),      cnt = 0) =>
+                      def res1 = head.Provide(ext.Type);
+                      !(res1 && FixedType.Fun(from, cnt, to).Unify(expected))
+
+                    | _ => true // was error
+                  }
+                });
+            } finally { solver.PopState (); };
+          !was_error
+        });
+      
+      match (res) 
+      {
+        | [] | null =>
+          def hd = NList.Hd (overloads);
+          def solver = typer.Solver;
+          def messenger = solver.CurrentMessenger;
+          if (overloads.ForAll (o => !o.IsGeneric && o.generic_specifier != null))
+            ReportError (messenger,
+                         $"$(hd.member.DeclaringType).$(hd.member.Name) doesn't take generic parameters");
+          else 
+          {
+            ReportError (messenger,
+                         $"none of the overloads of $(hd.member.Name) is possible:");
+            when (expected != null && messenger.NeedMessage) 
+            {
+              //surroundwith (related_messages)
+              Manager.BeginRelatedMessageSequence();
+              try
+              { 
+                def expectedDesc = expected.ToString();
+                foreach (overload in overloads)
+                {
+                  solver.PushState();
+                    messenger.NeedMessage = true;
+                    def res = overload.Compile ();
+                    unless (res is TExpr.Error)
+                    {
+                      if (overload.ExtensionMethodObject == null)
+                        ReportError(messenger,
+                          $"$(overload.Member) was expected to have type $expectedDesc, while it has got $(res.Type)");
+                      else
+                        ReportError(messenger,
+                          $"the extension $(overload.Member) not compatible with type $(overload.ExtensionMethodObject.Type)");
+                    }
+                  solver.PopState();
+                }
+              } finally { Manager.EndRelatedMessageSequence(); }
+            }
+          }
+          []
+          
+        | _ => res
+      }
+    }
+  }
+}

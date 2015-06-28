@@ -1,0 +1,11 @@
+module M {
+  public x : void; // E: field.*has void type, which is not allowed
+
+  public Main () : void // OK
+  {
+  }
+}
+
+abstract class Abctro {
+    public abstract this(); // E: invalid attribute.* specified for constructor
+}    

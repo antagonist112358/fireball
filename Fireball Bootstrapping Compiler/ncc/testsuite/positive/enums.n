@@ -1,0 +1,144 @@
+
+// REFERENCE: enums-lib.dll
+
+using System;
+
+[FlagsAttribute ()]
+enum Foo {
+  | X = 0x01
+  | Y = 0x01 + X
+  | Z = (0x04 | Y)
+  | U = ((Z & Y) | 0x10)
+  | V = ~X
+
+  | W = V %| X
+  | ZERO = ~W
+  | XOR = Z %^ Y
+  | MINUS = Z - Y
+}
+
+[Flags]
+enum Foo1 {
+  | X1 = 0x01
+  | Y1 = 0x02
+}
+
+enum InitExpr {
+  | X = 0
+  | Y = int.MaxValue
+  | Z = int.MinValue + 1
+}
+
+
+enum FromUint : uint {
+    | A
+    | B
+    | Ma = uint.MaxValue
+}
+
+enum FromUShort : ushort {
+    | AA
+    | BB = 2334
+}
+
+enum FromULong : ulong {
+    | AA
+    | BB = 2334
+    | CC = ulong.MaxValue
+}
+
+
+module Bases {
+    public Run () : void { 
+        Console.WriteLine ("---- other bases ----");
+        def x = FromUint.A;
+        System.Console.WriteLine (x);
+        def x = x :> uint;
+        System.Console.WriteLine (x);
+        def x = x :> FromUint;
+        System.Console.WriteLine (x);
+        def y = 1 :> FromUShort;
+        System.Console.WriteLine (y);
+        def _y = y :> FromUint;
+        System.Console.WriteLine (_y);
+    }
+}
+
+class XEnumCasts
+{
+        enum Foo2 {
+                | A | B
+        }
+
+        enum Bar {
+                | C | D
+        }
+
+        public static Run () :  void
+        {
+                Console.WriteLine ("---- casts ----");
+                mutable  foo = Foo2.A;
+                mutable  se = ( foo : Enum);
+                mutable  _sc = ( Foo2.A : Enum);
+                mutable  obj1 = ( foo : object);
+                mutable  _obj2 = ( Foo2.A : object);
+
+                mutable  bar = ( se :> Bar);
+                mutable  blah = ( obj1 :> Foo2);
+
+                mutable  Ea = Foo2.A;
+
+                mutable  _iconv = Ea;
+                Console.WriteLine (bar);
+                Console.WriteLine (blah);
+        }
+}
+
+
+public class EnumsTest
+{
+  public static Main () : void 
+  {
+    Console.WriteLine ("Enums test.");
+
+    def x = Reflection.FieldAttributes.NotSerialized;
+    def y = Reflection.FieldAttributes.NotSerialized;
+    def z = ~(x | y);
+    when (z %&& x) Nemerle.IO.printf ("bad\n");
+    def x = Foo.X | Foo.Y;
+    when (x %&& Foo.X) Nemerle.IO.printf ("good\n");
+    def _ = Foo1.X1 | Foo1.Y1;
+    def x = ~Foo.X;
+    when (x %&& Foo.X) Nemerle.IO.printf ("bad\n");
+    when ((Foo.Z :> int) == 6 && (Foo.U :> int) == 18) Nemerle.IO.print ("good\n");
+    Nemerle.IO.printf ("%i %i %i %i %i\n", Foo.V :> int, Foo.W :> int,
+                       Foo.ZERO :> int, Foo.XOR :> int, Foo.MINUS :> int);
+    Bases.Run ();
+
+    XEnumCasts.Run ();
+
+    Nemerle.IO.print ("----- lib loading ----\n");    
+    Nemerle.IO.print (LibFromLong.B :> long);
+    Nemerle.IO.print ("\n");    
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Enums test.
+good
+good
+-2 -1 0 4 4
+---- other bases ----
+A
+0
+A
+1
+B
+---- casts ----
+C
+A
+----- lib loading ----
+-9223372036854775808
+END-OUTPUT
+*/

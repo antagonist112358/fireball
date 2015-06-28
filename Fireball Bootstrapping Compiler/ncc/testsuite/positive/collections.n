@@ -1,0 +1,346 @@
+
+using Nemerle.Collections;
+using Nemerle.IO;
+
+
+
+module TestCollections
+{
+  print_sorted (l : list [string]) : void {
+    def sorted = NList.Sort (l, fun (x, y) { string.CompareOrdinal (x, y) });
+    NList.Iter (sorted, fun (x) { printf ("%s", x) });
+  }
+  
+  test_hashtables (seed : int) : void
+  {
+    printf ("----------------\nTesting hashtables...\n");
+    
+    def ht = Hashtable (seed);
+
+    ht [10] = "Ala";
+    ht [20] = "ma";
+    ht [30] = "kota";
+
+    def cl = ht.Clone ();
+    ht.Clear ();
+
+    mutable output = [];
+    cl.Iter (fun (i : int, s : string) { output = sprintf ("[%i : %s] ", i, s) :: output; });
+    print_sorted (output);
+
+    printf ("total: %i elements\n", cl.Count);
+
+    output = cl.Fold ([], fun (_, s : string, a) { s + " " :: a });
+    printf ("folded: ");    
+    print_sorted (output);
+    printf ("\n");
+
+    def mapped = cl.Map (fun (i : int, s : string) { (i + s.Length, "`" + s + "'") });
+
+    output = [];
+    mapped.Iter (fun (i : int, s : string) { output = sprintf ("[%i : %s] ", i, s) :: output });
+    print_sorted (output);    
+
+    printf ("\nremoved 13: ");
+    
+    mapped.Remove (13);
+
+    output = [];    
+    mapped.Iter (fun (i : int, s : string) { output = sprintf ("[%i : %s] ", i, s) :: output });
+    print_sorted (output);    
+
+    mapped.Set (13, "Bumtarara");
+
+    printf ("\nset 13: ");
+    
+    match (mapped.Get (13)) {
+      | Some => printf ("Bumtarara!\n")
+      | _ => printf ("bad!\n")
+    }
+    
+    match (mapped.Get (14)) {
+      | Some => printf ("bad!\n")
+      | _ => printf ("LO XIV glosno spiewa...\n")
+    }
+
+    when (!mapped.ContainsKey (13))
+      printf ("bad!\n");
+
+    when (mapped.ContainsKey (14))
+      printf ("bad!\n");
+      
+    when (!mapped.ContainsValue ("`ma'"))
+      printf ("bad!\n");
+      
+    when (mapped.ContainsValue ("matryca"))
+      printf ("bad!\n");
+
+    mapped.Clear ();
+
+    printf ("After clearing: %i elements left\n", mapped.Count);
+
+    try {
+      mapped.Add (13, "lyzeczka!");
+      mapped.Add (13, "bach!");
+      mapped.Add (13, "dedelec!");
+      mapped.Add (13, "bach!");
+      printf ("bad!\n")
+    }
+    catch {
+      _  => printf ("Good, can't add more than once!\n")
+    }
+  }
+
+  
+  test_linked_lists (seed : int) : void
+  {
+    printf ("----------------\nTesting linked lists...\n");
+
+    def ll = LinkedList ();
+    assert(ll.IsEmpty && ll.Count == 0);
+
+    def ll = LinkedList ([1, 2, 3]);
+    assert(!ll.IsEmpty && ll.Count == 3);
+   
+    ll.Add (0);
+    ll.Remove (3);
+    ll.Add (seed);
+    ll.Remove (seed);
+
+    printf ("%s\n", ll.ToString ());
+
+    assert(ll.Contains (2));
+    assert(!ll.Contains (17));
+
+    ll.Reverse ();
+    
+    printf ("%i\n", Option.UnSome (ll.First ()));
+
+    ll.Clear ();
+
+    assert(!Option.IsSome (ll.First ()))
+  }
+
+  
+  test_stacks (seed : int) : void
+  {
+    printf ("----------------\nTesting stacks...\n");
+
+    def st = Stack ();
+    assert(st.IsEmpty && st.Count == 0);
+
+    st.Push (seed);
+    st.Push (2 * seed);
+    st.Push (3 * seed);
+    assert(!st.IsEmpty && st.Count == 3);
+
+    printf ("%i %i %i\n", st.Pop (), st.Pop (), st.Peek ());
+
+    assert(!st.IsEmpty && st.Count == 1);
+
+    ignore (st.Pop ());
+
+    try { ignore (st.Pop ()); printf ("bad\n") }
+    catch { _ is System.InvalidOperationException => printf ("Good, can't pop an empty stack...\n") }
+  }
+
+  
+  test_queues (seed : int) : void
+  {
+    printf ("----------------\nTesting queues...\n");
+
+    def qe = Queue ();
+    assert(qe.IsEmpty && qe.Count == 0);
+
+    qe.Push (seed);
+    qe.Push (2 * seed);
+    qe.Push (3 * seed);
+    assert(!qe.IsEmpty && qe.Count == 3);
+
+    printf ("%i %i %i\n", qe.Pop (), qe.Pop (), qe.Peek ());
+
+    assert(!qe.IsEmpty && qe.Count == 1);
+
+    ignore (qe.Pop ());
+
+    try { ignore (qe.Pop ()); printf ("bad\n") }
+    catch { _ is System.InvalidOperationException => printf ("Good, can't pop an empty queue...\n") }    
+  }
+
+  
+  test_red_black_trees (seed : int) : void
+  {
+    printf ("----------------\nTesting red-black trees...\n");
+
+    def sm = Map ();
+    assert(sm.IsEmpty && sm.Count == 0);
+
+    def sm = sm.Add ("raz", seed);
+    def sm = sm.Add ("dwa", 2 * seed);
+    def sm = sm.Add ("trzy", 3 * seed);
+    assert(!sm.IsEmpty && sm.Count == 3);
+
+    sm.Iter (fun (k, v) { printf ("No to %s: %i\n", k, v) });
+
+    // moved from testsuite/positive/map.n:
+    def map = Map ();
+    def map = map.Add (1,"1");
+    def map = map.Add (2,"2");
+    def map = map.Add (3, "2");
+    def map = map.Remove (3);
+    def map = map.Add (3, "4");
+    map.Iter (fun (elem, str) {printf ("%d %s\n", elem, str)});
+    printf ("size : %d\n", map.Count);
+    when (! map.Contains (3))
+      printf ("wrong member\n");
+    def map = map.Remove (3);
+    match (map.Find (3)) {
+    | Some => printf ("wrong get\n")
+    | None => printf ("ok\n")
+    };
+    printf ("size : %d\n", map.Count);
+    def map = map.Add (4, "3");
+    def map = map.Replace (4, "4");
+    printf ("size : %d\n", map.Count);
+    map.Iter (fun (elem, str) {printf ("%d %s\n", elem, str)});
+    match (map.Partition ( fun (x, _) { x>2 })) {
+      (ymap, nmap) =>
+        printf ("1st part :\n");
+        ymap.Iter (fun (elem, str) {printf ("%d %s\n", elem, str)});
+        printf ("2nd part :\n");
+        nmap.Iter (fun (elem, str) {printf ("%d %s\n", elem, str)})
+    }
+  }
+
+  
+  test_heaps (seed : int) : void
+  {
+    printf ("----------------\nTesting heaps...\n");
+    
+    def he = Heap (7);
+    assert(he.IsEmpty && he.Count == 0);
+
+    NList.Iter ([123, 342, 432, 541, 543, 843, seed], fun (e : int) { he.Insert (e) });
+
+    assert(!he.IsEmpty && he.Count == 7);
+    
+    def dump_heap (title)
+    {
+      printf ("%s:", title);
+      he.Iter (fun (e : int) { printf (" %i", e) });
+      printf ("\n")
+    }
+
+    dump_heap ("Init");
+
+    printf ("First: %i\n", he.ExtractFirst ());
+
+    dump_heap ("After extract first");
+
+    for (mutable i = 0; i < 5; ++i)
+      ignore (he.ExtractFirst ());
+      
+    assert(!he.IsEmpty && he.Count == 1);
+
+    printf ("Last: %i\n", he.ExtractFirst ());
+
+    assert(he.IsEmpty && he.Count == 0);
+
+    try { def heef = he.ExtractFirst (); printf ("Bad: %i\n", heef) }
+    catch { _ is EmptyHeap => printf ("Good, can't extract from an empty heap!\n") }
+  }
+
+  test_to_strings () : void {
+    printf ("----------------\nTesting ToString...\n");
+    
+    def els = array [(1, "a"), (2, "b"), (3, "c"), (4, "d")];
+
+    def h = Hashtable ();
+
+    printf ("%s\n", h.ToString ());
+
+    foreach ((key, val) in els)
+      h.Add (key, val);
+
+    printf ("%s\n", h.ToString ());
+
+    def hl = Hashtable ([("a", 'b'), ("c", 'd'), ("e", 'f')]);
+    def hlstr = hl.ToString ();
+    assert(hlstr.Contains ("\"a\": 'b'"));
+
+    def q = Queue ([1,2,3]);
+    printf ("%s\n", q.ToString ());
+  }
+  
+  
+  Main () : void
+  {
+    test_hashtables (10);
+    test_linked_lists (20);
+    test_stacks (30);
+    test_queues (50);
+    test_red_black_trees (80);
+    test_heaps (130);
+    test_to_strings ();
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+----------------
+Testing hashtables...
+[10 : Ala] [20 : ma] [30 : kota] total: 3 elements
+folded: Ala kota ma 
+[13 : `Ala'] [22 : `ma'] [34 : `kota'] 
+removed 13: [22 : `ma'] [34 : `kota'] 
+set 13: Bumtarara!
+LO XIV glosno spiewa...
+After clearing: 0 elements left
+Good, can't add more than once!
+----------------
+Testing linked lists...
+[0, 1, 2]
+2
+----------------
+Testing stacks...
+90 60 30
+Good, can't pop an empty stack...
+----------------
+Testing queues...
+50 100 150
+Good, can't pop an empty queue...
+----------------
+Testing red-black trees...
+No to dwa: 160
+No to raz: 80
+No to trzy: 240
+1 1
+2 2
+3 4
+size : 3
+ok
+size : 2
+size : 3
+1 1
+2 2
+4 4
+1st part :
+4 4
+2nd part :
+1 1
+2 2
+----------------
+Testing heaps...
+Init: 843 541 543 123 432 342 130
+First: 843
+After extract first: 543 541 342 123 432 130
+Last: 123
+Good, can't extract from an empty heap!
+----------------
+Testing ToString...
+{}
+{1: "a", 2: "b", 3: "c", 4: "d"}
+[1, 2, 3]
+END-OUTPUT
+*/

@@ -1,0 +1,187 @@
+public interface ICovariantEnumerator [+T] 
+{
+  MoveNext () : bool;
+  Current : T { get; }
+}
+
+public interface ICovariantEnumerable [+T] 
+{
+  GetEnumerator () : ICovariantEnumerator [T];
+}
+
+
+[Record]
+public class Enumerator [T] : ICovariantEnumerator [T]
+{
+  enu : System.Collections.Generic.IEnumerator [T];
+  
+  public MoveNext () : bool
+  {
+    enu.MoveNext ();
+  }
+  
+  public Current : T {
+    get { enu.Current }
+  }
+}
+
+[Record]
+public class Enumerable [T] : ICovariantEnumerable [T]
+{
+  enu : System.Collections.Generic.IEnumerable [T];
+  
+  public GetEnumerator () : ICovariantEnumerator [T]
+  {
+    Enumerator (enu.GetEnumerator ())
+  }
+}
+
+public module EnumerTest {
+  public processObjects (x : ICovariantEnumerator [object]) : void { 
+    _ = x.MoveNext ();
+    assert(x.Current == "bb");
+  }
+
+  public processStrings (x : ICovariantEnumerator [string]) : void { 
+    _ = x.MoveNext ();    
+    assert(x.Current == "aa");
+  }
+
+  public processEObjects (x : ICovariantEnumerable [object]) : void
+  {
+    foreach (a in x)
+      assert(a.ToString () == "aa" || a.ToString () == "bb");
+  }
+  
+  public processEStrings (x : ICovariantEnumerable [object]) : void
+  {
+    foreach (a in x)
+      assert(a == "aa" || a == "bb");
+  }
+  
+  public Run () : void 
+  {
+    def x = System.Collections.Generic.List ();
+    x.Add ("aa");
+    x.Add ("bb");
+    def y = Enumerator (x.GetEnumerator ());
+    processStrings (y);
+    processObjects (y);
+    
+    def z = Enumerable (x);
+    processEStrings (z);
+    processEObjects (z);
+  }
+}
+
+
+public delegate DFun [-I, +O] (x : I) : O;
+
+
+public interface IList [+T] {
+  Get (i : int) : T;
+  IsEmpty : bool { get; };
+}
+
+public interface IFun [-I, +O] {
+  Apply (x : I) : O;
+}
+
+public interface IGenee [-I, +O] {
+  Bar ['a] (x : I) : O where 'a : I;
+}
+
+public class ImmutableList [T] : IList[T]
+{
+  mystore : array [T];
+  
+  public this (size : int) {
+    mystore = array (size);
+  }
+  
+  public Get (i : int) : T {  mystore [i] }
+  
+  public IsEmpty : bool { get { mystore.Length > 0 } }
+}
+
+[Record]
+public class VariantFunction [I,O] : IFun [I, O]
+{
+  myo : O;
+  
+  public Apply (_x : I) : O
+  {
+    myo
+  }
+}
+
+public interface ICo [+T] { }
+
+public interface IN [T] : ICo [T] { 
+  GetMe (x :T) : void;
+}
+
+public interface IGenericParm [+T,W]
+  where W : System.Collections.Generic.IEnumerable [T] { }
+
+public module Tester {
+  public LiString (_ : IList [string]) : void { }
+  public LiObject (_ : IList [object]) : void { }  
+  public FuObjectString (x : IFun [object, string]) : void { 
+    _ = x.Apply ("")
+  }  
+  public FuStringString (x : IFun [string, string]) : void { 
+    _ = x.Apply ("")  
+  }  
+  public FuStringObject (x : IFun [string, object]) : void { 
+    _ = x.Apply ("")    
+  }  
+  public FuObjectObject (x : IFun [object, object]) : void { 
+    _ = x.Apply ("")  
+  }  
+  public DeObjectString (x : DFun [object, string]) : void { 
+    _ = x ("")
+  }  
+  public DeStringString (x : DFun [string, string]) : void { 
+    _ = x ("")  
+  }  
+  public DeStringObject (x : DFun [string, object]) : void { 
+    _ = x ("")    
+  }  
+  public DeObjectObject (x : DFun [object, object]) : void { 
+    _ = x ("")  
+  }  
+}
+
+();
+
+def x = ImmutableList.[string] (10);
+Tester.LiString (x);
+Tester.LiObject (x);
+
+def y = VariantFunction.[object, string] ("aaa");
+Tester.FuObjectString (y);
+Tester.FuObjectObject (y);
+Tester.FuStringString (y);
+Tester.FuStringObject (y);
+
+def z = DFun.[object, string] (o => o.ToString ());
+Tester.DeObjectString (z);
+Tester.DeObjectObject (z);
+Tester.DeStringString (z);
+Tester.DeStringObject (z);
+
+EnumerTest.Run ();
+
+def li : list [string] = ["a", "b", "c"];
+def enu = li.GetEnumerator () : Nemerle.Collections.ICovariantEnumerator [object];
+while (enu.MoveNext ()) 
+  System.Console.WriteLine (enu.Current);
+
+/*
+BEGIN-OUTPUT
+a
+b
+c
+END-OUTPUT
+*/

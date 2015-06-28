@@ -1,0 +1,188 @@
+/*
+ * Copyright (c) 2006-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+
+
+using Nemerle.Collections;
+using Nemerle.Compiler;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Compiler.NemerleModifiers;
+
+namespace Nemerle
+{
+  enum MemoizeScope
+  {
+    | Instance
+    | Class
+  }
+  /**
+   * This macro implements memoization (with the default option Scope = Instance
+   * for instance methods and Scope = Class for static methods),
+   * as well as something closer to aggressive sharing, when Scope = Class is used.
+   * A Synchronized = true | false option is also available, to set thread safety.
+   * InvalidValue = x option specifies non-cachable value.
+   */
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers, Nemerle.MacroTargets.Method)]
+  macro Memoize (tb : TypeBuilder, meth : MethodBuilder, params opts : list [PExpr])
+  {
+    mutable scope = if(meth.IsStatic) MemoizeScope.Class else MemoizeScope.Instance;
+    mutable synch = false;
+    mutable invalidValue = None();
+
+    foreach (o in opts)
+    {
+      | <[ Scope = Instance ]> => scope = MemoizeScope.Instance
+      | <[ Scope = Class    ]> => scope = MemoizeScope.Class
+      | <[ Scope = $other ]> =>
+        Message.Error (other.Location, $"Invalid parameter: Scope = $other. Valid options are Instance (default) and Class.")
+      | <[ Synchronized = $(opt : bool) ]> => synch = opt
+      | <[ Synchronized = $other ]> =>
+        Message.Error (other.Location, $"Invalid parameter: Synchronized = $other. Valid options are true and false (default).")
+      | <[ InvalidValue = $x ]> => invalidValue = Some(x)
+      | x =>
+        Message.Error ($"Invalid parameter: $x. Valid parameters are Scope, Synchronized and InvalidValue.")
+    }
+
+    def parms = meth.GetParameters ();
+    def lockVar = Macros.NewSymbol ("lockVar");
+    def immutableAttrs = if (scope == MemoizeScope.Class) Static else None;
+    def mutableAttrs   = immutableAttrs | Mutable;
+    def immutableMods  = AttributesAndModifiers(immutableAttrs, [
+      <[ System.Diagnostics.DebuggerBrowsable(System.Diagnostics.DebuggerBrowsableState.Never) ]>,
+      <[ Nemerle.Extensions.EqualsIgnore ]>
+    ]);
+    def mutableMods    = AttributesAndModifiers(mutableAttrs, [
+      <[ System.Diagnostics.DebuggerBrowsable(System.Diagnostics.DebuggerBrowsableState.Never) ]>,
+      <[ Nemerle.Extensions.EqualsIgnore ]>,
+      <[ Nemerle.Core.RecordIgnore ]>
+    ]);
+    def body           = Util.locate(meth.Body.Location, <[ $("_N_return" : global): { $(meth.Body) } ]>);
+    def newBody        = Util.locate(meth.Body.Location, match (parms)
+    {
+      | [] | null =>
+        def cached_value = Macros.NewSymbol ("cached_value");
+        def is_cached    = Macros.NewSymbol ("is_cached");
+
+        tb.Define (<[ decl: ..$mutableMods $(cached_value : name) : $(meth.ReturnType : typed); ]>);
+        tb.Define (<[ decl: ..$mutableMods $(is_cached : name) : bool; ]>);
+        when (synch)
+          tb.Define (<[ decl: ..$immutableMods $(lockVar : name) : object = object (); ]>);
+    
+        def doCachedCheck(expr)
+        {
+          <[
+            unless($(is_cached : name))
+            {
+              $expr
+            }
+            $(cached_value : name)
+          ]>
+        }
+          
+        def getValue = match(invalidValue)
+        {
+          | Some(invalidValue) =>
+            doCachedCheck(<[
+                $(cached_value : name) = $body;
+                unless($(cached_value : name) == $invalidValue)
+                  $(is_cached : name) = true;
+            ]>)
+          | _ =>
+            doCachedCheck(<[
+                $(cached_value : name) = $body;
+                $(is_cached : name) = true;
+            ]>)
+        }
+
+        if (synch)
+          doCachedCheck(<[
+            lock ($(lockVar : name))
+              _ = $getValue
+          ]>)
+        else
+          getValue
+
+      | (prm :: _) =>
+        def cache = Macros.NewSymbol ("cache");
+
+        match (FixedType.ConstructFunctionType (meth.GetHeader ()))
+        {
+          | Fun (t1, t2) =>
+            tb.Define (<[ decl: ..$mutableMods $(cache : name) : Hashtable [$(t1 : typed), $(t2 : typed)]; ]>);
+            when (synch)
+              tb.Define (<[ decl: ..$immutableMods $(lockVar : name) : object = object (); ]>);
+        }
+
+        def parm_values = if (parms.Length > 1)
+                            <[ (..$(parms.Map(p => <[ $(p.name : usesite) ]>)) )]>
+                          else
+                            <[ $(prm.name : usesite) ]>;
+        def res = match(invalidValue)
+        {
+          | Some(invalidValue) =>
+            <[
+              when ($(cache : name) == null)
+                $(cache : name) = Hashtable();
+
+              match ($(cache : name).TryGetValue ($parm_values))
+              {
+                | (ret, true) => ret
+                | _ =>
+                  def ret = $body;
+                  unless(ret == $invalidValue)
+                    $(cache : name)[$parm_values] = ret;
+                  ret
+              }
+            ]>
+          | _ =>
+            <[
+              when ($(cache : name) == null)
+                $(cache : name) = Hashtable();
+
+              match ($(cache : name).TryGetValue ($parm_values))
+              {
+                | (ret, true) => ret
+                | _ =>
+                  def ret = $body;
+                  $(cache : name)[$parm_values] = ret;
+                  ret
+              }
+            ]>
+        }
+
+        if (synch)
+          <[ lock ($(lockVar : name))
+              $res
+          ]>
+        else
+          res
+    });
+
+    meth.Body = newBody;
+  }
+}

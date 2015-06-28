@@ -1,0 +1,17 @@
+namespace Y
+{
+  class foo { } //H: Y\.foo
+}
+
+namespace X
+{
+  class foo { } //H: X\.foo
+}
+
+using X;
+using Y;
+
+class C
+{
+  x : foo;    // E: type name `foo' is ambiguous
+}

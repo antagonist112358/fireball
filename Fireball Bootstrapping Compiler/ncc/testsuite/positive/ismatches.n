@@ -1,0 +1,85 @@
+using Nemerle.IO;
+
+
+public interface IFoo[T]
+{ }
+
+public class Foo[T]
+{
+        public static Test (x : T) : bool
+        {
+                 x is IFoo[T];
+        }
+}
+
+class X : IFoo[X] { }
+class Y { }
+
+module TestIsAndMatches
+{
+  variant SomeTree {
+    | Node { left : SomeTree; val : int; right : SomeTree; }
+    | Leaf
+  }
+
+  [Record]
+  class SomeBaseClass
+  {
+    public m_some_base_int : int;
+  }
+  
+  [Record]
+  class SomeClass : SomeBaseClass
+  {
+    public m_some_int : int;
+  }
+
+  test_is (whatami : SomeBaseClass) : void
+  {
+    if ((whatami is SomeClass))
+      printf ("SomeClass\n")
+    else if ((whatami is SomeBaseClass)) // W: redundant
+      printf ("SomeBaseClass\n")
+    else if ((whatami is (System.Object))) // W: redundant
+      printf ("System.Object\n")
+    else
+      printf ("test_is: panic!\n") // W: match clause is unused
+  }
+
+  test_matches (whatami : SomeTree) : void
+  {
+    if ((whatami is SomeTree.Leaf))
+      printf ("Leaf\n")
+    else if ((whatami is SomeTree.Node ( val = 10 )))
+      printf ("Node with val = 10\n")
+    else if ((whatami is SomeTree.Node))
+      printf ("Some other node\n")
+    else
+      printf ("test_isp: panic!\n")      
+  }
+
+  Main () : void
+  {
+    test_is (SomeClass (10, 30));
+    test_is (SomeBaseClass (20));
+    test_matches (SomeTree.Leaf ());    
+    test_matches (SomeTree.Node (SomeTree.Leaf (), 10, SomeTree.Leaf ()));
+    test_matches (SomeTree.Node (SomeTree.Leaf (), 20, SomeTree.Leaf ()));
+
+    assert(Foo[X].Test(X ()));
+    assert(!Foo[Y].Test(Y ()));
+    assert(Foo.Test(X ()));
+    assert(!Foo.Test(Y ()));
+
+  }
+}
+
+/*
+BEGIN-OUTPUT
+SomeClass
+SomeBaseClass
+Leaf
+Node with val = 10
+Some other node
+END-OUTPUT
+*/

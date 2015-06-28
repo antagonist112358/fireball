@@ -1,0 +1,105 @@
+    public static class Main
+    {
+        public static Execute[T](b : B1[T]) : void  where T : A1
+        {
+            System.Console.WriteLine(b.D.A.LastModified);
+        }
+    }
+    public class C[T] where T : A
+    {
+        public A : T
+        {
+            get
+            {
+                null;
+            }
+        }
+    }
+    public class D[T] : C[T] where T : A
+    {
+    }
+
+    public class B[T] where T : A
+    {   
+        public  D : D[T]
+        {
+            get
+            {
+                null;
+            }
+        }
+    }
+
+    public class B1[T] : B[T] where T : A1
+    {
+    }
+
+    public class A
+    {
+    }
+    public class A1 : A
+    {   
+        public  LastModified : System.DateTime
+        {
+            get
+            {
+                System.DateTime.Now;
+            }
+        }
+    }
+
+    
+module Bug605 {
+  public ReadField ['a] (_index : int) : 'a {
+      def ty = typeof ('a);
+      if (ty.Equals (typeof (int)))
+        1 :> 'a
+      else if (ty.Equals (typeof (long)))
+        1L :> 'a
+      else if (ty.Equals (typeof (byte)))
+        1b :> 'a
+      else if (ty.Equals (typeof (string)))
+        "aa" :> 'a
+      else
+        throw System.NotImplementedException (ty.ToString ())
+  }
+}
+
+namespace Bug810
+{
+public class Editable[T] where T : Editable[T].IRequired
+{
+    public interface IRequired
+    {
+        Clone() : T;
+        Restore(previous : T) : void;
+    }
+}
+}
+
+        
+    
+class AunderB ['a, 'b] where 'a : 'b {
+  public static x : AunderB ['a, 'b] = AunderB();
+  
+  public foo (_x : 'a, _y : 'b) : void { 
+    System.Console.WriteLine ("{0} {1}", typeof ('a), typeof ('b));
+  }
+}
+
+AunderB.x.foo (1,1);
+AunderB.x.foo (A1(), A());
+    
+_ = Bug605.ReadField (1) : int;
+_ = Bug605.ReadField (1) : long;
+_ = Bug605.ReadField (1) : byte;
+_ = Bug605.ReadField (1) : string;
+
+    
+/*
+BEGIN-OUTPUT
+System.Int32 System.Int32
+A1 A
+END-OUTPUT
+*/  
+  

@@ -1,0 +1,268 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw,
+ *               2008-2011 Nemerle Project Team
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * This is the main compiler file. But all it does it setting options
+ * for compilation (CompilerOptions.n) and transferring control to
+ * Manager.Run function (from passes.n).
+ *
+ * Main file also catches some exceptions.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Utility;
+using Nemerle.IO;
+using Nemerle.Compiler;
+
+using System;
+using System.Diagnostics;
+using System.Reflection;
+using SCG = System.Collections.Generic;
+
+namespace Nemerle.CommandlineCompiler
+{
+  module MainClass
+  {
+    mutable stack_kilos : System.Int32 = 0;
+    mutable Manager : ManagerClass;
+    mutable Options : CompilationOptions;
+
+    Platform : int = Environment.OSVersion.Platform :> int;
+    IsUnix : System.Boolean = IO.Path.DirectorySeparatorChar == '/';
+    
+    public Main() : void
+    {
+      def is64bitProcess = IntPtr.Size == 8;      
+      def is64BitOperatingSystem()
+      {
+      #if NET_4_0
+        Environment.Is64BitOperatingSystem
+      #else
+        if (!IsUnix)
+        {          
+          Environment.GetEnvironmentVariable("PROCESSOR_ARCHITECTURE") == "AMD64" || 
+          Environment.GetEnvironmentVariable("PROCESSOR_ARCHITEW6432") == "AMD64"
+        }
+        else
+        {
+          def unameProcess = Process();
+          unameProcess.StartInfo.UseShellExecute = false;
+          unameProcess.StartInfo.CreateNoWindow = false;          
+          unameProcess.StartInfo.FileName = "/bin/uname";
+          unameProcess.StartInfo.Arguments = "-m";
+          unameProcess.StartInfo.RedirectStandardOutput = true;
+          
+          if (unameProcess.Start())
+          {
+            def output = unameProcess.StandardOutput.ReadToEnd();
+            unameProcess.WaitForExit();
+            
+	    unameProcess.ExitCode == 0 && output.Contains("x64")
+          }
+          else
+            false
+        }
+      #endif
+      }
+      
+      #if DEBUG
+
+      Console.WriteLine("Press any key to start compilation.");
+      _ = Console.ReadKey(true);
+      
+      #endif
+      
+      Options = CompilationOptions();
+      Manager = ManagerClass(Options);
+      Manager.InitOutput(Console.Out);
+      parse_command_line();
+
+      def runInAppropriateProcess(processName : string) : void
+      {
+        def dir = IO.Path.GetDirectoryName(Uri(Assembly.GetExecutingAssembly().CodeBase).LocalPath);
+        def path = IO.Path.Combine(dir, processName);
+        def argsList = Environment.GetCommandLineArgs().NToList();
+        def args = $<#..$(argsList.Tail; " ")#>;
+        def process = Process();
+        process.StartInfo.UseShellExecute = false;
+        process.StartInfo.CreateNoWindow = false;
+        if (!IsUnix)
+        {
+          process.StartInfo.FileName = path;
+          process.StartInfo.Arguments = args;
+        }
+        else
+        {
+         // Run mono directly
+         process.StartInfo.FileName = "mono";
+         process.StartInfo.Arguments = $<#"$path" $args#>;
+        }
+        if (process.Start())
+        {
+          process.WaitForExit();
+          when (process.ExitCode != 0)
+            Environment.Exit(process.ExitCode);
+        }
+        else
+          Environment.Exit(-1);
+      }
+      def eq(a, b) { string.Equals(a, b, StringComparison.InvariantCultureIgnoreCase) }
+
+      // Choose appropriate platform only on .NET
+      if (!IsUnix && eq(Options.Platform, "x86") && is64bitProcess)
+        runInAppropriateProcess("ncc32.exe")
+      else if (!IsUnix && eq(Options.Platform, "x64") && !is64bitProcess)
+        if (is64BitOperatingSystem())
+          runInAppropriateProcess("ncc64.exe")
+        else
+        {
+          Message.Error("Compiling for the x64 platorm is possible only under 64-bit OS (restriction of System.Reflection.Emit).");
+          Environment.Exit(-1);
+        }
+      else if (stack_kilos != 0 || needs_bigger_stack())
+      {
+        when (stack_kilos == 0)
+          stack_kilos = 20 * 1024 * if (is64bitProcess) 8 else 1;
+        def thread = Threading.Thread(main_with_catching, stack_kilos * 1024);
+        thread.Name = "Main compiler thread";
+        thread.Start();
+        thread.Join();
+      }
+      else
+        main_with_catching()
+    }
+    
+    needs_bigger_stack() : bool
+    {
+      typeof(object).Assembly.GetType("System.RuntimeType") != null ||
+      typeof(object).Assembly.GetType("System.MonoType") != null
+    }
+
+    main_with_catching() : void
+    {
+      try
+      {
+        Options.LibraryPaths ::= IO.Path.GetDirectoryName
+          (Uri(typeof(MainClass).Assembly.CodeBase).LocalPath);
+
+        // run compilation with already created options
+        Manager.Run ()
+      }
+      catch
+      {
+        | e is IO.FileNotFoundException =>
+          Message.Error (e.Message)
+        | e is Recovery =>
+          bomb (e, "got Recovery exception")
+        | e is BailOutException =>
+          bomb (e, "got bail out exception")
+        | e is ArgumentException =>
+          bomb (e, "got ArgumentException (" + e.Message + ")")
+        | e is MatchFailureException =>
+          bomb (e, "got MatchFailureException exception")
+        | e is ICE =>
+          bomb (e, e.Message)
+        | e is AssertionException =>
+          bomb (e, e.Message)
+        | _ is AssemblyFindException =>
+          Environment.Exit (3);
+        | e =>
+          bomb (e, $ "got some unknown exception of type $(e.GetType()): $(e.Message)")
+      }
+
+      Message.MaybeBailout();
+    }
+    
+    bomb (e : Exception, msg : string) : void
+    {
+      Manager.KillProgressBar ();
+      Message.MaybeBailout (true);
+      Message.Error (sprintf ("internal compiler error: %s\n%s\n", msg, e.StackTrace));
+      Environment.Exit(2);
+    }
+
+    parse_command_line() : void
+    {
+      def cOptions = Options;
+
+      def sources = SCG.List();
+
+      def print_version ()
+      {
+        def compilerAssembly = typeof(ManagerClass).Assembly;
+        def version = compilerAssembly.GetName().Version;
+        def copyright = (compilerAssembly.GetCustomAttributes(typeof(Reflection.AssemblyCopyrightAttribute), false)[0]
+            :> Reflection.AssemblyCopyrightAttribute).Copyright;
+        Console.Error.Write(
+          $ "Nemerle Compiler (ncc) version $version (git)\n"
+            "$copyright \n"
+            "All rights reserved.\n");
+        Environment.Exit (0);
+      }
+
+      mutable help_opts = [];
+      def print_help ()
+      {
+        Console.WriteLine (Getopt.Usage (help_opts));
+        Environment.Exit (0);
+      }
+
+      def opts = cOptions.GetCommonOptions()
+      + [
+        Getopt.CliOption.Int (name = "-stack-size",
+                     aliases = [],
+                     help = "Set stack size of the compiler to INT megabytes",
+                     handler = fun (k) { stack_kilos = k * 1024; }),
+        Getopt.CliOption.Int (name = "-stack-size-k",
+                     aliases = [],
+                     help = "NOHELP",
+                     handler = fun (k) { stack_kilos = k; }),
+        Getopt.CliOption.Flag (name = "-version",
+                     aliases = ["-V"],
+                     help = "Output version information and exit",
+                     handler = print_version),
+        Getopt.CliOption.Flag (name = "-help",
+                     aliases = ["-h", "-?"],
+                     help = "Display this usage message and exit",
+                     handler = print_help),
+        Getopt.CliOption.NonOption (name = "",
+                          help = "Specify file to compile",
+                          handler = fun (s) { sources.Add(FileSource(s, cOptions.Warnings)) })
+      ];
+      help_opts = opts;
+
+      Getopt.Parse(opts);
+
+      if (sources.Count > 0)
+        cOptions.Sources = sources.ToNList();
+      else
+        Getopt.Error("need at least one file to compile\n" + Getopt.Usage(opts))
+    }
+  }
+}

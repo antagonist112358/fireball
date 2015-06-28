@@ -1,0 +1,274 @@
+namespace N1
+{  
+  public enum A
+  {
+    | A_1 | A_2 | A_3
+  }
+
+  namespace N2
+  {  
+    public class B
+    {
+       mutable  member : A;
+
+       Method ( _a : ref A) : void
+      {
+      }
+    }
+
+  }
+}
+
+namespace N1.N3
+{  
+  public class B
+  {
+     mutable  member : A;
+
+     Method ( _a : ref A) : void
+    {
+    }
+  }
+}
+
+namespace B.C {
+ using Y = Lupa;
+ using Papa;
+
+ namespace LL {
+  
+   class AA : Mupa.K {
+   }
+
+ }
+
+ class A : Y.J {
+ }
+}
+
+
+namespace B.Lupa {
+  class J {}
+}
+
+namespace B.Papa.Mupa {
+  class K {}
+}
+
+namespace K1 {
+  using A = K2;
+
+  class X {
+    x : A.K3;
+  }
+}
+
+namespace K1.K2 {
+  class K3 { }
+}
+
+namespace K2 {
+  class K4 { }
+}
+
+
+
+namespace NestedNames {
+  using System;
+  using System.Collections;
+  
+  class X {
+    public static Main() :  void {
+      mutable  a =  X();
+      _ = a.x();
+                        _ = a.Y;
+      Composed3.Class2.Run ();
+      AliasesExpansion.X.M.Run ();
+    }
+
+    public Y : Y {
+      get {
+          Y();
+      }
+    }
+
+    public x() :  IPooledEnumerable {
+                  // note that Y must mean NestedNames.Y not X.Y, because
+                  // Y.NullEnumerable is only allowed as static reference to nested type
+                  // and not element of Y() instance
+      def a = Y.NullEnumerable.Instance;
+                        _ = a.GetEnumerator ();
+                        a
+    }
+  }
+
+  public interface IPooledEnumerable : IEnumerable {
+     Free() : void;
+  }
+
+  public sealed class Y {
+          public this () {
+            Console.WriteLine ("constructing Y()");
+          }
+          
+    public class NullEnumerable : IPooledEnumerable {
+      private  mutable  m_Enumerator : InternalEnumerator;
+
+      public static  Instance : NullEnumerable =  NullEnumerable();
+
+      private this() {
+                          m_Enumerator = null;
+                          Console.WriteLine ("constructing NullEnumerable()");
+      }
+
+      public GetEnumerator() :  IEnumerator {
+                          Console.WriteLine ("in NullEnumerable");
+         m_Enumerator;
+      }
+
+      public Free() :  void {
+      }
+
+      private class InternalEnumerator : IEnumerator
+      {
+        public Reset() :  void {
+        }
+
+        public Current : object
+        {
+          get {
+             null;
+          }
+        }
+
+        public MoveNext() :  bool {
+           false;
+        }
+      }
+    }
+  }
+}
+
+namespace NestedVisibilityFromDerived {
+  using System;
+
+  public abstract class cBase {
+
+    protected class AddColumnType {
+      public static Grid = 1;
+    }
+
+    protected abstract AddColumns(dt :int , sel : AddColumnType) : void;
+
+    static protected goo () : void {  }
+  }
+
+  public class cChild : cBase {
+
+    protected override AddColumns(dt : int, _sel : AddColumnType) : void {
+      when (dt == AddColumnType.Grid) Console.WriteLine("Hi");
+       goo ();
+    }
+
+  }
+}
+
+namespace NestedBaseTypeVisibilityFromDerived {
+   class X
+   {
+         public class Nested { }
+   }
+
+  class W : X {
+    class WE : Nested { }
+  }
+}
+
+namespace Composed3
+{
+
+  using Composed1;
+  using System.CodeDom;
+  
+  public class Class2 {
+    
+    this () {
+        def t = Composed2.Class1();
+        t.Hello ();
+    }
+    
+    public static Run () : void {
+        _ = Class2();
+    
+    }
+  }
+}
+
+namespace AliasesExpansion {
+  using System;
+  using SC = System.Collections;
+  using SC = System.Console;
+   
+  namespace X
+  {
+    using SC.Generic; 
+   
+    module M
+    {
+      public Run() : void
+      {
+        def x = List ();
+        x.Add (1);
+        SC.WriteLine(x[0]);
+      }
+    }
+  }
+}
+
+namespace Some.Library
+{
+  using Nemerle.Text;
+  using System.Text;
+}
+
+namespace Bug712a {
+public class A['a] {
+    class B : System.IComparable[B] {
+        public CompareTo (_ : B) : int {
+            0
+        }
+    }
+}
+}
+
+namespace Bug712b {
+    public class A['a] {
+        class B : System.IComparable[A['a].B] {
+            public CompareTo (_ : B) : int {
+                0
+            }
+        }
+    }
+}
+
+namespace Bug712c {
+    public class A [T]
+    {
+        public M () : void
+        {
+            _ = object.ReferenceEquals;
+        }
+    }
+}
+
+/*
+REFERENCE: names-lookup-lib.dll
+
+BEGIN-OUTPUT
+constructing NullEnumerable()
+in NullEnumerable
+constructing Y()
+NS1.NS2.Class1.Hello
+1
+END-OUTPUT
+*/

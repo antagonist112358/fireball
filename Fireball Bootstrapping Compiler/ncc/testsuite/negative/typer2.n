@@ -1,0 +1,41 @@
+class C {
+  OnlySet : int
+  {
+    set { _ = value; }
+  }
+
+  take_parm (_ : bool) : void {
+  }
+  
+  static g () : int { try { 1 } finally { "foo" } } // W: ignored computed value of type string
+
+  static t1 () : void
+  {
+
+    assert(!(true == null));  // E: comparing a value type
+    assert(!(false == null)); // E: comparing a value type
+
+    def val = 0;
+    assert(val != null);  // E: comparing a value type
+    assert(null != val);  // E: comparing a value type
+
+    assert(C () == null); // OK
+    assert(null == C ()); // OK
+    assert(C () == C ()); // W: comparing values of types C and C with reference equality
+
+    assert(1 == 0L);      // OK
+    assert(false == 0L);  // W: comparing values.* with reference equality
+    assert(false == 1);   // W: comparing values.* with reference equality
+    assert(0L == true);   // W: comparing values.* with reference equality
+    assert(1 == false);   // W: comparing values.* with reference equality
+  }
+  
+  static Main () : void {
+    def x = System.Text.StringBuilder ();
+    def _ = x.Chars;            // E: Property `Chars' was used as a first class value
+
+    3; // W: ignored computed value of type int
+
+    def _ = (null : C).OnlySet; // E: the get accessor is unavailable
+  }
+}

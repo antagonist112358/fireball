@@ -1,0 +1,17 @@
+module SupportEmbededFields
+{
+  this() 
+  {
+    _x = 0; // E: unbound name `_x'
+  }
+  public X : int 
+  {
+    _x : int = 1 + 2;
+    get { _x }
+    set
+    {
+      _x          // E: needed a writable location .*
+        = value; 
+    }
+  }
+}

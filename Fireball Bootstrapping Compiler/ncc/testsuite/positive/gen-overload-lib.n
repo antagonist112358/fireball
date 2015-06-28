@@ -1,0 +1,68 @@
+using Nemerle.Collections;
+using Nemerle.IO;
+
+namespace Ala
+{
+public module Kot
+{
+    public class Pies {
+        public ogon : list [int];
+
+        public this () {
+            ogon = [0];
+        }
+    }
+
+    public class Kura {
+        public pioro : list [string];
+
+        public this () {
+            pioro = ["1"];
+        }
+    }
+
+    public ShowIt (_i : int, _x : list [Pies]) : void
+    {
+        printf ("Pies.\n");
+    }
+
+    public ShowIt (_i : int, _y : list [Kura]) : void
+    {
+        printf ("Kura.\n");
+    }
+}
+
+public class G[T] {
+  public static foo1 [X] (n = 42) : int
+  {
+    n
+  }
+
+  public static foo2 (n = 42) : int
+  {
+    n
+  }
+}
+
+public class G2 {
+  public static foo1 [X] (n = 42) : int
+  {
+    n
+  }
+
+  public static foo2 (n = 42) : int
+  {
+    n
+  }
+}
+
+}
+
+public class GlobG[T] {}
+
+namespace Library
+{
+   public class BusinessBase[T] where T : BusinessBase[T]
+   {
+   }
+}

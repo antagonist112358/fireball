@@ -1,0 +1,40 @@
+class M {
+  static f () : int {
+    try {   // E: expected int.*, got string in catch body
+      1
+    } catch { _ =>
+      "foo" }; 
+  }
+}
+
+class E : System.Exception {
+  public this() {}
+}
+
+class M1 {
+  static g () : void { throw E () }        // OK
+  static f () : void { throw 3 }        // E: expected System.Exception, got int in thrown value
+}
+
+class Empty {
+   foo (): void {
+      throw;  // E: rethrow expression is only allowed in catch clause
+   }   
+    
+   bar () : void {
+      try {
+         throw;  // E: rethrow expression is only allowed in catch clause
+      }   
+       finally { }
+   }
+   
+   woo () : void {
+      try {
+          
+      }
+      finally {
+         throw; // E: rethrow expression is only allowed in catch clause
+      }   
+       
+   }
+}

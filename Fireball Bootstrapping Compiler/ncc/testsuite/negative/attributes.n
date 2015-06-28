@@ -1,0 +1,27 @@
+using System;
+using Nemerle.Utility;
+
+public class C
+{
+ [System.NonSerialized]  // E: custom attribute.* is not valid on type
+  public delegate CollectionClear() : void ;
+  
+   public static Main () : void
+   {
+   }
+}
+
+   [Record]
+    class MyAttr3Attribute : Attribute
+    {
+        [Accessor] mutable _s : string;
+        [Accessor] mutable _i : int;
+        [Accessor] mutable _c : char;
+        [Accessor] mutable _m : decimal;
+    }
+
+    [MyAttr3("Name3", 3, 'c', 33.33m)] // E: An attribute argument cannot be number of type decimal
+    class TestMacroTest {}
+
+    
+    

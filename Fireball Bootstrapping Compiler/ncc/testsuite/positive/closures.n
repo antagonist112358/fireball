@@ -1,0 +1,85 @@
+class Foo[T]
+{
+    public mutable Hello : T;
+
+    public this ()
+    { }
+}
+
+class A
+{
+  static apply (f : void -> void) : void { f () }
+
+  public static Bug606 () : void
+  {
+    def d = Nemerle.Collections.Queue ();
+    foreach (x in [1..3])
+      d.Push (fun () { System.Console.WriteLine (x) });
+    while (!d.IsEmpty)
+      d.Take () ()
+  }
+
+  public static Main () : void {
+    def f2 (allow_ref) {
+      when (allow_ref)
+        apply (fun () { f2 (! allow_ref) })
+    }
+    f2 (true);
+
+
+    def x = if (true) [ ([["foo"]], "foo") ] else [];
+
+    assert(x is [ ([["foo"]], "foo") ]);
+
+        def foo = Foo ();
+        foo.Hello = 42;
+        assert(foo.Hello == 42);
+        Nemerle.IO.printf("%d\n",foo.Hello);
+        
+        def foo () {
+          try { 4242 } finally { System.Console.WriteLine ("foo"); }
+        }
+
+        System.Console.WriteLine (None ().WithDefault (foo ()));
+
+        ble: {
+          def l = [1,2,3];
+          foreach (x in l) {
+            // This cannot work in general...
+            // _ = fun () { x }
+            when (x > 2) ble ();
+          }
+          System.Console.WriteLine ("oops");
+        }
+        System.Console.WriteLine ("qux");
+
+        Bug606 ();
+  }
+
+  public static Bug581 () : void
+  {
+    def inf = 0;
+
+    def intersect () {
+      def ray_sphere () { inf }
+      def aux () { ray_sphere () + ray_sphere () }
+      //_ = aux;
+      _ = aux ();
+      _ = aux ()
+    }
+
+    _ = intersect ()
+  }
+}
+
+/*
+BEGIN-OUTPUT
+42
+foo
+4242
+qux
+1
+2
+3
+END-OUTPUT
+*/

@@ -1,0 +1,550 @@
+﻿/*
+ * Copyright (c) 2004-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/* Macros used only inside the compiler.  */
+
+using Nemerle.Compiler;
+using Nemerle.Imperative;
+using System.Diagnostics;
+
+namespace Nemerle.Compiler.Util
+{
+  macro @locate(location, body)
+    syntax("locate", "(", location, ")", body)
+  {
+    <[
+      def loc = $location;
+      def hasLocation = loc.FileIndex != 0;
+      
+      when (hasLocation)
+        LocationStack.Push(loc);
+
+      try { $body } 
+      finally
+      {
+        when (hasLocation)
+          LocationStack.RemoveTop();
+      }
+    ]>
+  }
+
+  macro ice (msg = <[ "(see backtrace)" ]>)
+  {
+    <[
+      unless (Message.SeenError)
+      {
+        def msg = $msg.ToString();
+        System.Diagnostics.Debug.Assert(true, "ICE! (Internal Compiler Error)", msg);
+        Message.Debug ($"Internal compiler error '$msg', please report a bug to bugs.nemerle.org. "
+                       "You can try modifying program near this location.");
+      }
+      assert2(false, $msg);
+      assert(false, $msg);
+    ]>
+  }
+
+  macro cassert (cond, message = <[ "" ]>)
+  {
+    <[ unless ($cond) {
+         unless (Message.SeenError)
+           Message.Debug ("Internal compiler error, please report a bug to bugs.nemerle.org. "
+                          "You can try modifying program near this location.");
+         throw AssertionException ($(cond.Location.File : string), 
+                                   $(cond.Location.Line : int),
+                                   $cond.ToString (), $message)
+       }
+    ]>
+  }
+}
+
+namespace Nemerle.Compiler.Message 
+{
+  macro FatalError (a, b = null)
+  {
+    match (a, b)
+    {
+      | (m, null) =>
+        <[ {
+              Message.Error (Location.Default, $m);
+              throw Recovery ()
+        } ]>
+      | (loc, m) =>
+        <[ {
+              Message.Error ($loc, $m);
+              throw Recovery ()
+        } ]>
+    }
+  }
+}
+
+namespace Nemerle.Compiler
+{
+  using Nemerle.Collections;
+  using Nemerle.Utility;
+  using SCG = System.Collections.Generic;
+  using Attr = NemerleModifiers;
+  using Member = Parsetree.ClassMember;
+  
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Class)]
+  macro ManagerAccess (tb : TypeBuilder, params options : list [PExpr])
+  {
+    match (options)
+    {
+      | [] => {}
+        tb.Define (<[ decl: public Manager : ManagerClass; ]>);
+      | [expr] =>
+        tb.Define (<[ decl: 
+          public Manager : ManagerClass { get { $expr } } ]>);
+      | _ => Message.Error ("invalid option to ManagerAccess")
+    }
+
+    tb.Define (<[ decl: 
+      public InternalType : InternalTypeClass
+      {
+        get { Manager.InternalType }
+      }
+    ]>);
+    tb.Define (<[ decl: 
+      public SystemTypeCache : SystemTypeClass
+      {
+        get { Manager.SystemTypeCache }
+      }
+    ]>);
+    // prevent N10003 warning
+    tb.Define (<[ decl: 
+      private __fake () : void
+      {
+        __fake ();
+        _ = SystemTypeCache;
+        _ = InternalType;
+      }
+    ]>);
+  }
+
+  module Helpers
+  {
+    public IsRelocatedType (tb : TypeBuilder) : bool
+    {
+      //Debug.Assert(tb.Name != "MemberBase");
+      !(tb.Attributes %&& (Attr.Static | Attr.Struct) // | Attr.Sealed
+        || tb.IsValueType || tb.IsInterface || tb.IsDelegate || tb.IsAlias
+       )
+    }
+  }
+
+  /// Add Relocate() method to class and all class referenced dy it fields.
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Class)]
+  macro SupportRelocation (typeBuilder : TypeBuilder)
+  {
+    //def wl(x : object) { System.Console.WriteLine(x); }
+    //wl("vvvvvvv SupportRelocation (BeforeInheritance).");
+
+    def env            = typeBuilder.GlobalEnv;
+    def nameTree       = env.NameTree;
+    def nsRoot         = nameTree.NamespaceTree;
+    def typeBuilders   = nsRoot.GetTypeBuilders();
+
+    foreach (tb when Helpers.IsRelocatedType (tb) && !tb.IsVariantOption in typeBuilders)
+    {
+      ////wl($"$(tb.Name) tb.IsDelegate= $(tb.IsDelegate)");
+      //System.Diagnostics.Trace.Assert(tb.Name != "InitDelegate");
+      tb.AddImplementedInterface (<[ Nemerle.Compiler.ISupportRelocation ]>);
+    }
+    //wl("^^^^^^^ SupportRelocation (BeforeInheritance).");
+  }
+  
+  /// Add Relocate() method to class and all class referenced dy it fields.
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeTypedMembers,
+                       Nemerle.MacroTargets.Class)]
+  macro SupportRelocation (typeBuilder : TypeBuilder)
+  {
+    //def wl(x : object) { System.Console.WriteLine(x); }
+    //wl("vvvvvvv SupportRelocation (BeforeTypedMembers).");
+
+    /////////////////////////////////////////////////////////////////////////
+    // 0. Init variables.
+    //wl("vvvvvvv 0. Init variables for SupportRelocation macro.");
+
+    def error (loc, msg) { when (Nemerle.Macros.ImplicitCTX ().InErrorMode) Message.Error (loc, msg); }
+    def errorLocationFieldCanNotBeImmutable (field)
+    {
+      error (field.Location, $"Location field $(field.Name) can't be immutable!");
+    }
+    def env               = typeBuilder.GlobalEnv;
+    def manager           = env.Manager;
+    def nameTree          = env.NameTree;
+    def nsRoot            = nameTree.NamespaceTree;
+
+    /// TypeInfo variables:
+    def tyVarTyInfo        = manager.Lookup ("Nemerle.Compiler.TypeVar") :> TypeBuilder;
+    def locationTyInfo     = manager.Lookup ("Nemerle.Compiler.Location");
+    def iMacroTyInfo       = manager.Lookup ("Nemerle.Compiler.IMacro");
+    def scgListTyInfo        = manager.Lookup ("System.Collections.Generic.List");
+    //def stackTyInfo        = manager.Lookup ("Nemerle.Collections.Vector");
+    def nodeTyInfo         = manager.Lookup ("Nemerle.Compiler.NamespaceTree.Node");
+    def managerClassTyInfo = manager.Lookup ("Nemerle.Compiler.ManagerClass");
+    def globalEnvTyInfo    = manager.Lookup ("Nemerle.Compiler.GlobalEnv");
+    def optinTyInfo        = manager.InternalType.Nemerle_option_tc;
+    def listTyInfo         = manager.InternalType.Nemerle_list_tc;
+    /// The ignore list of some types.
+    def ignoreTypeList     = 
+      //  manager.Lookup ("Nemerle.Compiler.TypeBuilder")
+      //:: 
+         manager.Lookup ("Nemerle.Compiler.TypeInfo")
+      :: tyVarTyInfo :: nodeTyInfo
+      :: managerClassTyInfo :: globalEnvTyInfo
+      :: manager.Lookup ("Nemerle.Compiler.TypesManager")
+      :: tyVarTyInfo.GetAllSubTypes().Map(_ : TypeInfo);
+
+    //wl("ignoreTypeList:");
+    //wl(ignoreTypeList);
+
+    def isMutable (field) { field.modifiers.mods %&& Attr.Mutable }
+
+    /// True if we need visite property of this type 
+    /// (ignore: Alias, Delegate, ValueType and Static types).
+    def isStepInto (tb : TypeBuilder) : bool
+    {
+      !(tb.Attributes %&& (Attr.Static | Attr.Struct)
+        || tb.IsValueType || tb.IsDelegate || tb.IsAlias
+       )
+    }
+
+    def equalsAny(ty, types) { types.Exists(_.Equals(ty)) }
+
+    //wl("^^^^^^^ 0. Init variables for SupportRelocation macro.");
+    // End 0.
+    /////////////////////////////////////////////////////////////////////////
+    
+    /////////////////////////////////////////////////////////////////////////
+    // 1. Make relocation code.
+    //wl("vvvvvvv 1. Make relocation code.");
+
+    // Key   - type
+    // Value - code of relocation and recusion walk into fields.
+    def relocationCode = Hashtable() : Hashtable[TypeBuilder, list [Parsetree.PExpr]];
+    def isTypedInstanceField (field : Member.Field) { !(field.ty is <[ _ ]> || field.modifiers.mods %&& Attr.Static) }
+    def isAccepted           (field : Member.Field)
+    {
+      match (field.Name)
+      {
+        | "_declaringType" | "_definedIn" | "declaring_type" | "supertypes" | "_superTypeInfosMap" => false
+        | _ => isTypedInstanceField(field)
+      }
+    }
+    
+    // For each class defined in project...
+    foreach (tb when Helpers.IsRelocatedType (tb) in nsRoot.GetTypeBuilders())
+    {
+      def fields = tb.GetParsedMembers (true);
+      // The constructing expression.
+      mutable exprs = [] : list[Parsetree.PExpr];
+      
+      // For each instance field which type explicit assign...
+      foreach (field is Member.Field when isAccepted(field) in fields)
+      {
+        // Manually calculate type of field.
+        def ty = tb.BindFixedType (field.ty);
+        // Make field name
+        def n = Macros.UseSiteSymbol (field.Name);
+
+        //def s = field.Name;
+
+        match (ty.DeepFix ())
+        {
+          // Ignore property of some types. It prevent unproductive recursion.
+          | Class (t is TypeBuilder, []) when equalsAny(t, ignoreTypeList) && t.DeclaringType : object != tb  => ()
+          
+          // Skip IMacro members.
+          | Class (t, []) when t.Equals(iMacroTyInfo)
+          | Class (_, [TypeVar where (FixedValue = FixedType.Class(t, []))]) when t.Equals(iMacroTyInfo) => ()
+
+          // Process 'collection[Location]' fields (make relocation code for it).
+          | Class (tc, [TypeVar where (FixedValue = FixedType.Class(ti, []))]) when ti.Equals(locationTyInfo) => 
+            if (isMutable (field))
+              if (tc.Equals(listTyInfo)/* || tc.Equals(stackTyInfo)*/)
+                exprs ::= <[ 
+                  def x = this.$(n : name);
+                  when (x != null)
+                    this.$(n : name) = x.Map(Completion.Relocate(_, _info)) ]>;
+              else 
+              {
+                if(tc.Equals(scgListTyInfo))
+                exprs ::= <[ 
+                  def x = this.$(n : name);
+                  when (x != null)
+                    this.$(n : name) = System.Collections.Generic.List(x.MapLazy(Completion.Relocate(_, _info))) ]>;
+              else
+                error (field.Location, $"The 'unknown type'[Location] ($tc[$ti]) not suported! scgListTyInfo is: $scgListTyInfo");
+              }
+            else
+              errorLocationFieldCanNotBeImmutable (field);
+            
+          // Process 'Location' fields (make relocation code for it).
+          | Class (tc, []) when tc.Equals(locationTyInfo) => 
+            if (isMutable (field))
+              exprs ::= <[ this.$(n : name) = Completion.Relocate(this.$(n : name), _info); ]>;
+            else
+              errorLocationFieldCanNotBeImmutable (field);
+          
+          // Below reference fields processed...
+
+          // 1. Is optional field of reference type defined in this project. 
+          | Class (tc, [TypeVar where (FixedValue = FixedType.Class(t is TypeBuilder, _))]) when tc.Equals(optinTyInfo) =>
+            exprs ::= if (t.IsInterface)
+              <[
+                match (this.$(n : name))
+                {
+                  | Some(x is ISupportRelocation) => 
+                    //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
+                    x.RelocateImpl (_info/*, ident*/);
+                  | _ => ()
+                }
+              ]>
+            else
+              <[
+                match (this.$(n : name))
+                {
+                  | Some(x) => 
+                    //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
+                    (x : ISupportRelocation).RelocateImpl (_info/*, ident*/);
+                  | _ => ()
+                }
+              ]>;
+
+          // 2. Is collection of reference type defined in this project.
+          | Class (_, [TypeVar where (FixedValue = FixedType.Class(t is TypeBuilder, _))]) when isStepInto (t) =>
+            exprs ::= if (t.IsInterface)
+              <[
+                def x = this.$(n : name);
+                when (x != null)
+                {
+                  //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
+                  foreach (elem :> ISupportRelocation in x)
+                    elem.RelocateImpl (_info/*, ident*/);
+                }
+              ]>
+            else
+              <[
+                def x = this.$(n : name);
+                when (x != null)
+                  foreach (elem in x)
+                    (elem : ISupportRelocation).RelocateImpl (_info/*, ident*/);
+              ]>;
+
+          // 3. Is field of reference type defined in this project (represent as TypeBuilder).
+          | Class (t is TypeBuilder, _) when isStepInto (t) =>
+            if (ty.IsInterface)
+              exprs ::= <[
+                def x = this.$(n : name);
+                when (x != null)
+                {
+                  //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
+                  (x :> ISupportRelocation).RelocateImpl (_info/*, ident*/);
+                }
+              ]>;
+            else
+              exprs ::= <[
+                def x = this.$(n : name);
+                when (x != null)
+                {
+                  //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
+                  x.RelocateImplInternal (_info/*, ident*/);
+                }
+              ]>;
+
+          // 3. Process other fields.
+          | Class (t, tArgs) =>
+            // Check for Location type...
+            when (t.Equals(locationTyInfo) || tArgs.Exists (_.Equals(locationTyInfo)))
+              error (field.Location, $"The $t$tArgs not handled in relocation algorithm!");
+
+          | _ => ()
+        }  
+      }
+
+      relocationCode.Add (tb, exprs);
+    }
+
+    //wl("^^^^^^^ 1. Make relocation code.");
+    // End 1.
+    /////////////////////////////////////////////////////////////////////////
+
+    /////////////////////////////////////////////////////////////////////////
+    // 2. Generate "RelocateImpl (_info : RelocationInfo) : void" methods.
+    //wl("vvvvvvv 2. Generate RelocateImpl (_info : RelocationInfo) : void methods.");
+
+    foreach ((tb, code) in relocationCode.KeyValuePairs)
+    {
+      match (tb.BaseType)
+      {
+        | _ is TypeBuilder =>
+          unless (code.IsEmpty)
+          {
+            //tb.Define (<[ decl: internal override RelocateImpl (_info : RelocationInfo) : void {}]>);
+            _ = tb.DefineWithSource (
+              <[ decl: 
+                [System.Runtime.CompilerServices.CompilerGenerated]
+                internal override RelocateImplInternal (_info : RelocationInfo/*, ident : string*/) : void
+                {
+                  //_info.NodeCount++;
+                  when (_info.VisitedObjects.ContainsKey (this))
+                    return;
+                  //System.Diagnostics.Trace.WriteLine(ident + "obj:" + this.GetType().FullName + " (" + $(tb.FullName : string) + ")");
+                  //_info.VisitCount++;
+                  //System.Diagnostics.Trace.WriteLine(ident + "---> base");
+                  base.RelocateImplInternal (_info/*, ident*/);
+                  //System.Diagnostics.Trace.WriteLine(ident + "<--- base");
+                  //def ident = ident + " ";
+                  _info.VisitedObjects[this] = 0;
+                  { ..$code }
+                  //ignore(ident);
+                }
+              ]>);
+          }
+
+        | _ =>
+        def attrs = AttributesAndModifiers(if (tb.IsSealed) Attr.Internal else Attr.Internal | Attr.Virtual, 
+          [ <[ System.Runtime.CompilerServices.CompilerGenerated ]> ]); 
+
+        def code2 = 
+          if (code.IsEmpty) code
+          else [<[
+                //_info.NodeCount++;
+                when (_info.VisitedObjects.ContainsKey (this))
+                  return;
+                //System.Diagnostics.Trace.WriteLine(ident + "obj:" + this.GetType().FullName + " (" + $(tb.FullName : string) + ")");
+                //def ident = ident + " ";
+                //_info.VisitCount++;
+                _info.VisitedObjects[this] = 0;
+                { ..$code }
+                //ignore(ident);
+          ]>];
+
+        _ = tb.DefineWithSource (
+          <[ decl:
+            ..$attrs RelocateImplInternal (_info : RelocationInfo) : void implements ISupportRelocation.RelocateImpl
+            {
+              ..$code2
+            }
+          ]>);
+      }
+    }
+
+    _ = typeBuilder.DefineWithSource(
+      <[ decl:
+      public Relocate(_info : RelocationInfo) : void
+      {
+        //def timer =  System.Diagnostics.Stopwatch.StartNew();
+        // The RelocateImpl() is autogenerated by SupportRelocation macro.
+        RelocateImplInternal(_info/*, ""*/);
+
+        //System.Diagnostics.Trace.WriteLine($"builder.Relocate() took: $(timer.Elapsed)");
+        //System.Diagnostics.Trace.WriteLine($"_info.VisitCount=$(_info.VisitCount) _info.NodeCount=$(_info.NodeCount)");
+      }
+      ]>);
+
+    //wl("^^^^^^^ 2. Generate RelocateImpl (_info : RelocationInfo) : void methods.");
+    // End 2.
+    /////////////////////////////////////////////////////////////////////////
+    //wl("^^^^^^^ SupportRelocation (BeforeTypedMembers).");
+  }
+}
+
+namespace Nemerle.Compiler.SolverMacros
+{
+  macro ReportError (messenger, msg)
+  {
+    <[
+      if ($messenger.NeedMessage)
+      {
+        //System.Diagnostics.Debug.Assert(false);
+        $messenger.Error ($msg)
+      }
+      else
+        $messenger.MarkError ()
+    ]>
+  }
+  
+  macro ReportLocatedError (loc, messenger, msg)
+  {
+    <[
+      if ($messenger.NeedMessage)
+      {
+        //System.Diagnostics.Debug.Assert(false);
+        Nemerle.Compiler.Util.locate($loc, $messenger.Error($msg))
+      }
+      else
+        $messenger.MarkError ()
+    ]>
+  }
+  
+  macro ReportFatal (messenger, msg)
+  {
+    <[
+      if ($messenger.NeedMessage) {
+        $messenger.Error ($msg);
+        when (IsTopLevel)
+          throw Recovery ();
+      } else
+        $messenger.MarkError ();
+
+      Typedtree.TExpr.Error ()
+    ]>
+  }
+  
+  macro SaveError (messenger, msg)
+  {
+    <[
+      if ($messenger.NeedMessage)
+        $messenger.SaveError ($msg);
+      else
+        $messenger.MarkError ();
+    ]>
+  }
+
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance, Nemerle.MacroTargets.Method)]
+  macro PossiblyLooping (_ : TypeBuilder, m : ParsedMethod, solver)
+  {
+    def newBody = Util.locate(m.Body.Location, <[
+      if ($solver.CanEnterPossiblyLooping ())
+      {
+        try
+        {
+          $(m.Body)
+        }
+        finally { $solver.LeavePossiblyLooping() }
+      }
+      else false
+    ]>);
+    
+    m.Body = newBody;
+  }
+} // Nemerle.Compiler.SolverMacros namespace

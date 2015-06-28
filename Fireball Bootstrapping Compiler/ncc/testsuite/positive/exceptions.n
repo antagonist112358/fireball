@@ -1,0 +1,130 @@
+
+class MyExc : System.Exception {
+}
+
+class MyExc1 : System.Exception {
+}
+
+class MyExc2 : System.Exception {
+}
+
+module NoCutoff {
+  public Run () : void {
+    try {
+      try {
+        throw MyExc ();
+      }
+      catch {
+        | _ is MyExc =>
+          System.Console.WriteLine ("catched first level");
+          throw MyExc1 ();
+      }
+    }
+    catch {
+      | _ is MyExc1 => System.Console.WriteLine ("catched second level");
+    }
+  }
+}
+
+class X {
+  static foo (x : int) : void
+  {
+    | 0 => throw MyExc ();
+    | 1 => throw MyExc1 ();
+    | _ => throw MyExc2 ();
+  }
+
+  static foo1 (x : int) : void {
+    try {
+      foo (x);
+    }
+    catch {
+      | e is MyExc => throw e;
+      | e is MyExc when e.Message == "a" && false => throw;
+    }
+  }
+
+  static cutoff_stuff () : void
+  {
+    try {
+      throw System.Exception ()
+    } catch {
+      | _ is System.Exception => throw;
+    }
+  }
+
+  
+  static Main () :  void
+  {
+    for (mutable i = 0; i < 3; i++) {
+      try {
+        System.Console.WriteLine (i);
+        foo1 (i);
+      }
+      catch {
+        | e =>
+          System.Console.WriteLine (e.GetType ());
+      }
+    }
+    NoCutoff.Run ();
+
+    try {
+      try {
+        throw System.Exception ();
+      } catch {
+        | e =>
+          [1,2].Iter (fun (_) { throw e; })
+      }
+    } catch {
+      | e =>
+        System.Console.WriteLine (e.GetType ());
+    }
+
+    try {
+      cutoff_stuff ()
+    } catch {
+      | e =>
+        System.Console.WriteLine (e.GetType ());
+    }
+
+    Bug535();
+    System.Console.WriteLine (try { true } finally { });
+  }
+
+  static Bug535 () : void {
+     def process_td (_t) {
+            try {
+                try {
+                    ();
+                    true
+                }
+                catch {
+                    | _ is System.Exception =>
+                        true
+                }
+            }
+            catch {
+                | _ is System.Exception => false
+            }
+        };
+
+    if (process_td (""))  () else ();
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+0
+MyExc
+1
+MyExc1
+2
+MyExc2
+catched first level
+catched second level
+System.Exception
+System.Exception
+True
+END-OUTPUT
+*/

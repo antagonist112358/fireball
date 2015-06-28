@@ -1,0 +1,25 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Reflection;
+
+namespace Fireball.Compiler.TypeSystem
+{
+  /// <summary>
+  /// Description of IMethod.
+  /// </summary>
+  public interface IMethod : IMember
+  {
+    GetMethodBase () : System.Reflection.MethodBase;
+    GetMethodInfo () : System.Reflection.MethodInfo;
+    GetConstructorInfo () : System.Reflection.ConstructorInfo;
+    IsConstructor : bool { get; }
+    IsVarArgs : bool { get; }
+    IsFinal : bool { get; }
+    IsAbstract : bool { get; }
+    IsExtension : bool { get; }
+  }
+}

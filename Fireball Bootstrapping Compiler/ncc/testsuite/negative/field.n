@@ -1,0 +1,12 @@
+class X ['a] {
+  public mutable x : 'a;
+  public this () {}
+}
+
+class M {
+  static Main () : void {
+    def x = X ();
+    x . x = "foo";   // OK
+    x . x = 3;       // E: expected .* got int in assigned value
+  }
+}

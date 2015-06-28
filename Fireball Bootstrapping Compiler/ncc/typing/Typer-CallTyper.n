@@ -1,0 +1,656 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using System.Diagnostics;
+
+using Nemerle.Collections;
+using Nemerle.Utility;
+using Nemerle.Logging;
+
+using Nemerle.Compiler;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Compiler.SolverMacros;
+
+using PT = Nemerle.Compiler.Parsetree;
+
+namespace Nemerle.Compiler
+{
+  public partial class Typer
+  {
+    [ManagerAccess (typer.Manager)]
+    class CallTyper
+    {
+      [Accessor] function_called : TExpr;
+      mutable call_parms : list [Parm];
+      mutable reordered_parms : list [Parm];
+      orig_parms : list [Parm];
+      imethod : IMethod;
+      mutable header : TFunHeader;
+      expected_type : TypeVar;
+      typer : Typer;
+      messenger : Messenger;
+      solver : Solver;
+
+      mutable result_type : TypeVar;
+      mutable formals_types : list [TypeVar];
+      mutable is_delegate_constructor : bool;
+      mutable argument_number : int;
+
+      public mutable used_default_parms : bool;
+      public mutable used_var_args : bool;
+      public mutable is_var_args : bool;
+      public mutable is_final : bool;
+      public mutable result : TExpr;
+      public mutable overload_possibility : OverloadPossibility;
+      public IsAllNestedDelayedTypingResolved : bool { get; private set; }
+      public IsTupleConvertionMade : bool { get; private set; }
+
+    public this (typer : Typer, fnc : TExpr, parms : list [Parm], expected : TypeVar)
+    {
+      IsAllNestedDelayedTypingResolved = true;
+      this.typer = typer;
+      solver = typer.solver;
+      messenger = typer.messenger;
+
+      function_called = match (fnc) { | DebugInfo (fnc, _) => fnc | _ => fnc }
+      call_parms = parms;
+      orig_parms = parms;
+      reordered_parms = parms;
+      expected_type = expected;
+      
+      imethod =
+        match (function_called) {
+          | TExpr.StaticRef (_, meth is IMethod, _)
+          | TExpr.MethodRef (_, meth, _, _)
+          | TExpr.Base (meth) => meth
+          | _ => null
+        };
+
+      header =
+        if (imethod == null)
+          match (fnc) {
+            | TExpr.LocalFunRef (decl, _) =>
+              match (decl.ValKind) {
+                | LocalValue.Kind.Function (hd, _) => hd
+                | _ => null
+              }
+            | _ => null
+          }
+        else
+          imethod.GetHeader ();
+    }
+
+
+      DeduceFunctionType () : void
+      {
+        // check if we are dealing with a delegate constructor
+        is_delegate_constructor =
+          imethod != null && 
+          imethod.DeclaringType.IsDelegate &&
+          imethod.MemberKind == MemberKinds.Constructor;
+
+        def fun_ty = typer.TypeOf (function_called);
+
+        assert(!messenger.LocalError);
+        
+        match (fun_ty.Hint) {
+          | Some (FixedType.Fun (from, res)) =>
+            result_type = res;
+            formals_types =
+              match (from.Hint) 
+              {
+                | Some (FixedType.Tuple (lst)) => lst
+                | Some (FixedType.Void) => []
+                | _ when NList.Length (call_parms) > 1 =>
+                  def formals_types =
+                    NList.RevMap (call_parms, fun (_) { typer.FreshTypeVar () });
+                  def fun_ty = ConstructFunctionType (formals_types, result_type);
+
+                  def err = !function_called.Type.TryRequire (fun_ty);
+                  
+                  if (err) {
+                    [from]
+                  } else {
+                    // Message.Debug ($ "fun_ty: $fun_ty REQ $(function_called.Type)");
+                    function_called.Type.ForceRequire (fun_ty);
+                    // Message.Debug ($ "fun_ty-->: $fun_ty");
+                    formals_types
+                  }
+
+                | _ => [from]
+              }
+            //Message.Debug ($"formals_types: $formals_types");
+          
+          | _ when Option.IsSome (fun_ty.Hint) =>
+            when (messenger.NeedMessage)
+              match (function_called) {
+                | TExpr.PropertyMember
+                | TExpr.StaticPropertyRef =>
+                  Message.Hint ("attempting to call a property, please use assignment to set it");
+                | _ => {}
+              }
+            ReportError (messenger, $"the value called ($function_called) has non-functional type $fun_ty")          
+          
+          | _ =>
+            formals_types =
+              NList.RevMap (call_parms, fun (_) { typer.FreshTypeVar () });
+            result_type = typer.FreshTypeVar ();
+            def fun_ty = ConstructFunctionType (formals_types, result_type);
+            def real_fun_ty = typer.TypeOf (function_called);
+            unless (real_fun_ty.Require (fun_ty))
+              ReportError (messenger, $"functional value ($function_called) was required to have type $fun_ty while it has $real_fun_ty");
+        }
+
+        when (is_delegate_constructor) {
+          // get the arguments for delegate constructor from the Invoke method
+          def from_type = (function_called :> TExpr.StaticRef).from;
+          match (imethod.DeclaringType.LookupMember ("Invoke")) {
+            | [invoke is IMethod] =>
+              formals_types = [from_type.TypeOfMember (invoke)];
+            | _ => assert(false)
+          }
+
+          when (overload_possibility != null)
+            overload_possibility.FormalTypes = formals_types.ToArray ();
+        }
+      }
+
+
+      RequireType(fparm : TParameter, ftype : TypeVar, parm : Parm) : void
+      {
+        //Message.Debug ($ "$(parm.expr.Type) <<< $ftype");
+
+        when (is_final)
+        {
+          if (parm.required_type == null)
+            parm.required_type = ftype;
+          else
+            _ = parm.required_type.Provide (ftype);
+        }
+
+        def msg = if (messenger.NeedMessage) $"needed a $ftype, got $(parm.expr.Type)" else null;
+
+        def is_ok =
+          if (fparm != null && fparm.kind != ParmKind.Normal)
+            parm.expr.Type.Unify(ftype)
+          else
+          {
+            mutable isAllNestedDelayedTypingResolved;
+            def expr = typer.TryAddCastTo(parm.expr, ftype, out isAllNestedDelayedTypingResolved, !is_final);
+            IsAllNestedDelayedTypingResolved &= isAllNestedDelayedTypingResolved;
+
+            if (expr == null) 
+            {
+              when (messenger.NeedMessage) // make sure a proper error message is stored
+                _ = parm.expr.Type.Require (ftype);
+              false
+            } 
+            else 
+            {
+              when (is_final)
+                parm.expr = expr;
+              true
+            }
+          };
+           
+        unless (is_ok) 
+        {
+          if (messenger.NeedMessage)
+          {
+            def name = if (fparm == null) "" else $" ($(fparm.name))";
+            ReportError (messenger, $"in argument #$argument_number$name, $msg"); //TODO: Add related msg which point on member def
+          }
+          else
+            messenger.MarkError();              
+        }
+      }
+      
+
+      TypeParmsArray (arrayty : TypeVar, aparms : list [Parm]) : void
+      {
+        used_var_args = true;
+
+        def regular_parms = call_parms.FirstN(argument_number - 1);
+
+        def tv = 
+          match (arrayty.Hint)
+          {
+            | Some (FixedType.Array(tv, 1)) => tv
+            | _ => assert(false)
+          };
+
+        mutable expr_list = [];
+              
+        foreach (aparm in aparms)
+        {
+          when (!messenger.LocalError)
+          {
+            when (aparm.kind != ParmKind.Normal)
+              ReportError(messenger, "ref/out parameters are not allowed with `parms'");
+            when (aparm.name != "")
+              ReportError(messenger, "named parameters are not allowed with `parms'");
+           
+            RequireType(null, tv, aparm);
+            expr_list = aparm.expr :: expr_list;
+            ++argument_number;
+          }
+        }
+
+        unless (messenger.LocalError)
+        {
+          def dimensions	= [TExpr.Literal(InternalType.Int32, Literal.FromInt(expr_list.Length))];
+          def mkarray			= TExpr.Array(function_called.Location, arrayty, NList.Rev(expr_list), dimensions);
+          call_parms			= regular_parms + [Parm(mkarray)];
+        }
+      }
+
+      
+      LoopWithHeader () : void
+      {
+        def loop (fparms, ftypes, aparms) {
+          | ([_], [arrayty], aparms) when is_var_args =>
+            TypeParmsArray (arrayty, aparms)
+
+          | ([], [], []) when !is_var_args => {}
+
+          | ((fparm : TParameter) :: fparms, ftype :: ftypes, (aparm : Parm) :: aparms) =>
+            log (TYPING, $"loop with header: $ftype $(aparm.expr.Type)");
+            Util.locate (aparm.expr?.Location,//)
+            {
+              if (fparm.kind == aparm.kind) 
+              {
+                def ftypeNoRef = StripRefOut(ftype);
+
+                RequireType(fparm, ftypeNoRef, aparm);
+
+                when (!messenger.LocalError && fparm != null)
+                  match (fparm.ty, ftypeNoRef.Hint)
+                  {
+                    | (FixedType.StaticTypeVarRef(tyvar), Some(mType)) => 
+                      unless (tyvar.TryCheckConstraints(mType, imethod, messenger.NeedMessage))
+                        ReportError (messenger, $"parameter '$fparm' has constraint violation");
+
+                    | _ => ()
+                  }
+              
+                ++argument_number;
+                unless (messenger.LocalError)
+                  loop (fparms, ftypes, aparms);
+              }
+              else
+              {
+                ReportError(messenger, $"in argument #$argument_number ($(fparm.name)), needed a $(fparm.kind) parameter, got $(aparm.kind) (argument expression: $(aparm.expr))");
+                ReportLocatedError(fparm.Location, messenger, "Related message: argument defenition.")
+              }
+            })
+
+          | x =>
+            unless (Manager.IsCompletionInProgress)
+              Util.ice(x.ToString())
+        }
+
+        loop (header.Parameters, formals_types, call_parms)
+      }
+
+
+      LoopWithoutHeader() : void
+      {
+        def loop(ftypes, aparms)
+        {
+          | ([], []) => {}
+
+          | (ftype :: ftypes, aparm :: aparms) =>
+            if (aparm.kind == ParmKind.Normal)
+            {
+              log(TYPING, $"loop without header: $ftype $(aparm.expr.Type)");
+              RequireType(null, ftype, aparm);
+              ++argument_number;
+
+              unless (messenger.LocalError)
+                loop(ftypes, aparms);
+            }
+            else 
+              ReportError(messenger, $"in argument #$argument_number, ref/out parameters are not supported here")
+            
+          | _ => 
+            unless (Manager.IsIntelliSenseMode)
+              assert(false);
+        }
+
+        assert(!is_var_args);
+        loop(formals_types, call_parms)
+      }
+
+
+      LoopOverArgs () : void
+      {
+        when (header != null &&
+              NList.Length (header.Parameters) != NList.Length (formals_types))
+          header = null;
+
+        argument_number = 1;
+        
+        log (TYPING, $"start parm loop $imethod");
+
+        if (header == null)
+          LoopWithoutHeader ()
+        else
+          LoopWithHeader ();
+
+        log (TYPING, $"end parm loop $imethod, res=$result_type localerr=$(messenger.LocalError)");
+
+        unless (messenger.LocalError)
+        {
+          _ = typer.Expect (expected_type, result_type, "call result");
+          unless (messenger.LocalError)
+          {
+            if (is_final)
+            {
+              ////Debug.WriteLine("#NO Speculative typing");
+              result = TExpr.Call (result_type, function_called, call_parms, false);
+            }
+            else
+            {
+              ////Debug.WriteLine("#begin Speculative typing");
+              ////Debug.Indent();
+              // Try to resolve nested delayed typing (TExpr.Delayed). It can fail and this call 
+              // typing action will be also failed.
+              //def ok = call_parms.IsEmpty 
+              //      || typer.TryResolveNestedDelayedTyping(call_parms.Map(_.expr), speculative = !is_final);
+
+              ////Debug.Unindent();
+              ////Debug.WriteLine($"#end Speculative typing (OK:$ok)");
+
+              //when (ok)
+              result = TExpr.Call (result_type, function_called, call_parms, false);
+            }
+          }
+        }
+      }
+
+      public Run () : void
+      {
+        when (Nemerle.Compiler.Typer.DebugOut)
+        {
+          System.Diagnostics.Debug.WriteLine($">>>> CallTyper.Ran(): '$function_called' expected=$expected_type");
+          foreach (p in call_parms)
+            System.Diagnostics.Debug.WriteLine($"  param: $(RemoveNL(p))");
+          System.Diagnostics.Debug.Indent();
+        }
+
+        IsAllNestedDelayedTypingResolved = true;
+        messenger.CleanLocalError ();
+
+        when (is_var_args)
+          assert(imethod != null && imethod.IsVarArgs);
+
+        def has_named = call_parms.Exists(parm => parm.name != "");
+        def need_default = 
+          !is_var_args 
+          && header != null
+          && header.Parameters.Length > call_parms.Length 
+          && header.Parameters.Exists(_.HasDefaultValue);
+        def need_complete_parameter_name = Manager.IsCompletionInProgress && call_parms.Exists(p => p.NameToComplete != null);
+
+        when (has_named || need_default || need_complete_parameter_name)
+          if (header == null)
+            ReportError(messenger, "named parameters given but formals' names cannot be inferred");
+          else
+            ReorderNamedParms(header.Parameters);
+
+        unless (messenger.LocalError)
+        {
+          DeduceFunctionType ();
+          unless (messenger.LocalError)
+          {
+            def formal_count = formals_types.Length;
+            def actual_count = call_parms.Length;
+
+            if (is_var_args)
+            {
+              if (formal_count > actual_count + 1)
+                ReportError (messenger, "not enough parameters")
+              else
+                LoopOverArgs ();
+            }
+            else if (formal_count == actual_count)
+              LoopOverArgs ();
+            else if (formal_count > 1 && actual_count == 1)
+            {
+              formals_types = [FixedType.Tuple (formals_types) : TypeVar];
+              IsTupleConvertionMade = true;
+              LoopOverArgs ();
+            }
+            else if (header == null && formal_count == 1 && actual_count == 0
+                  && formals_types.Head.TryUnify(InternalType.Void))
+            {
+              formals_types.Head.ForceUnify (InternalType.Void);
+              formals_types = [];
+              LoopOverArgs ();
+            }
+            else if (Manager.IsCompletionInProgress)
+              LoopOverArgs ();
+            else
+            {
+              // the case formal_count == 1 && actual_count > 1 has been handled already in DeduceFunctionType
+              //assert2(!messenger.NeedMessage);
+              ReportError (messenger, $"wrong number of parameters in call, needed $formal_count, got $actual_count");
+            }
+          }
+        }
+
+        when (overload_possibility != null)
+          overload_possibility.IsAllNestedDelayedTypingResolved = IsAllNestedDelayedTypingResolved;
+
+
+        when (Nemerle.Compiler.Typer.DebugOut)
+        {
+          System.Diagnostics.Debug.Unindent();
+          System.Diagnostics.Debug.WriteLine("<<<< CallTyper.Ran()");
+        }
+      }
+
+
+      /** [formal_types[n]] is type used for parameter [perm[n]]. */
+      public GetPermutationArray () : array [int]
+      {
+        Util.cassert (reordered_parms != null);
+        def perm = array (reordered_parms.Length);
+
+        if (reordered_parms : object == orig_parms) {
+          for (mutable i = 0; i < perm.Length; ++i)
+            perm [i] = i;
+            
+        } else {
+          def find (pos, lst, elem) {
+            match (lst) {
+              | x :: xs =>
+                if (x : object == elem) pos
+                else find (pos + 1, xs, elem)
+              | [] => -1
+            }
+          }
+
+          mutable pos = 0;
+          foreach (p in reordered_parms) {
+            perm [pos] = find (0, orig_parms, p);
+            pos++;
+          }
+        }
+
+        perm
+      }
+
+
+      // TODO: merge this into the other overload 
+      ReorderNamedParms (top_names : list [TParameter]) : void
+      {
+        call_parms = ReorderNamedParms (top_names, orig_parms);
+        reordered_parms = call_parms;
+      }
+      
+
+      /** Given list of formal parms names and actual parms names, reorder
+          actuals to match formals.
+          
+          The named parameters can be preceded by a series of unnamed
+          parameters:
+       
+            [bar (e_0, e_1, x_2 = e_2, x_3 = e_3, ..., x_k = e_k)]
+       
+          where x_i are the named parameter references and e_i are some
+          expressions.  */
+      ReorderNamedParms (top_names : list [TParameter],
+                         top_parms : list [Parm]) : list [Parm]
+      {
+        // lookup tables for names, named and unnamed parameters
+        def valid_names = Hashtable (16);
+        def seen_named_parms = Hashtable (16);
+        def seen_unnamed_parms = Hashtable (16);
+        def use_defaults_for = Hashtable (16);
+
+        // we will need a way to lookup the valid parameter names
+        foreach (fp in top_names) {
+          assert(fp != null && fp.name != null);
+          assert(!valid_names.ContainsKey (fp.name));
+          valid_names.Add (fp.name, fp)
+        }
+
+        // failure handler
+        def fail (msg)
+        {
+          ReportError (messenger, msg);
+          false
+        }
+
+        // the correctness verifier
+        def check_names_and_parms(names : list[TParameter], parms : list[Parm]) : bool
+        {
+          | ([], []) =>
+            true
+
+          | (_, []) =>
+            def unresolved_names =
+              NList.RevFilter (top_names, 
+                fun (fp)
+                {
+                  def seen =
+                    seen_named_parms.Contains (fp.name) 
+                    || seen_unnamed_parms.Contains (fp.name);
+
+                  if (seen) false
+                  else if (fp.HasDefaultValue)
+                  {
+                    used_default_parms = true;
+                    use_defaults_for [fp.name] = fp;
+                    false
+                  }
+                  else true
+                });
+
+            unresolved_names.IsEmpty || fail($<#parameters: ..$(unresolved_names; ", "; p => "`" + p.name + "'") must be specified#>)
+
+          | (fp :: rest_of_names, parm :: rest_of_parms) when parm.name == "" =>
+            // the case for an unnamed parameter
+
+            when (parm.NameToComplete != null)
+            { // try to complete named parameters
+              def pattern       = parm.NameToComplete;
+              def matchedParams = names.Filter(p => Completion.MatchName(p.Name, pattern));
+              def manager       = Manager;
+
+              foreach (p in matchedParams)
+                manager._completionParameterNames ::= p.Name;
+            }
+
+            if (seen_named_parms.Count > 0)
+            {
+              // seen a named parameter before, error...
+              fail("unnamed parameter found after a named parameter")
+            }
+            else
+            {
+              // otherwise, this is an element of the leading unnamed parameters
+              seen_unnamed_parms.Add (fp.name, parm);
+              check_names_and_parms (rest_of_names, rest_of_parms)
+            }
+
+          | (_ :: rest_of_names, parm :: rest_of_parms) =>
+            // a named parameter, check if no unnamed parameter has covered it before
+            if (seen_unnamed_parms.ContainsKey (parm.name)) {
+              // this parameter name was covered by an unnamed parameter
+              fail ("keyword parameter `" + parm.name + "' already specified as an unnamed parameter")
+            }
+            else if (seen_named_parms.ContainsKey (parm.name)) {
+              // the case for repeating parameters
+              fail ("keyword parameter `" + parm.name + "' already specified")
+            }
+            else if (!valid_names.ContainsKey (parm.name)) {
+              // whoops, no such parameter for this method :]
+              fail ("no such keyword parameter `" + parm.name + "' among valid parameter names")
+            }
+            else {
+              // OK, this has to be right...
+              seen_named_parms.Add (parm.name, parm);
+              check_names_and_parms (rest_of_names, rest_of_parms)
+            }
+
+          | ([], parm :: _) =>
+            fail ($ "too much parameters specified, first one causing "
+                    "the problem is `$(parm.name)'")
+        }
+
+        // reordering is a matter of simple names list walk now:
+        def reorder_parms (names : list [TParameter], acc : list [Parm]) : list [Parm]
+        {
+          | (fp :: rest_of_names, _) =>
+            def name = fp.name;
+            if (seen_unnamed_parms.Contains (name))
+              reorder_parms (rest_of_names,
+                             Option.UnSome (seen_unnamed_parms.Get (name)) :: acc)
+            else if (seen_named_parms.Contains (name))
+              reorder_parms (rest_of_names,
+                             Option.UnSome (seen_named_parms.Get (name)) :: acc)
+            else if (use_defaults_for.Contains (name)) {
+              def expr = fp.DefaultValueAsTExpr(solver);
+              reorder_parms (rest_of_names, Parm(expr, true) :: acc)
+            } else
+              Util.ice ("reorder_named_parms: reorder")
+
+          | ([], _) =>
+            NList.Rev (acc)
+        }
+
+        if (check_names_and_parms (top_names, top_parms))
+          reorder_parms (top_names, [])
+        else
+          null
+      }
+    }
+  }
+}

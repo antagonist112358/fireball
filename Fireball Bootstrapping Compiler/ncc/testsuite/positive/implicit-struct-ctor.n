@@ -1,0 +1,41 @@
+
+using System;
+
+struct X
+{  
+  public mutable x : int;
+  public mutable y : double;
+}
+
+struct Y {
+  x : int;
+
+  public this (_ : string) { x = 4 }
+}
+
+module M
+{
+  print (x : X) : void
+  {
+    Nemerle.IO.printf ("%d %lf\n", x.x, x.y)
+  }
+
+  public Main ()  : void
+  {
+    print (X ());
+    def x = X();
+    x.x = 7;
+    x.y = 1.0;
+    def _ = DateTime ();
+    def _ = TimeSpan ();
+    def _ = Y ("");
+    print (x);
+  }
+}
+
+/*
+BEGIN-OUTPUT
+0 0
+7 1
+END-OUTPUT
+*/

@@ -1,0 +1,324 @@
+//
+// CodeCompletionEngine.n
+//
+// Author:
+//  Alejandro Serrano (trupill@yahoo.es)
+//
+
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * Copyright (c) 2008-2011 RSDN Nemerle Team.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using System;
+using Nemerle.Assertions;
+using Nemerle.Compiler;
+using Nemerle.Imperative;
+using Nemerle.Utility;
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Compiler.Typedtree;
+using System.Diagnostics;
+
+using Typed = Nemerle.Compiler.Typedtree;
+using SR = System.Reflection;
+using SCG = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  // Relocation
+  public interface ISupportRelocation
+  {
+    RelocateImpl (info : RelocationInfo/*, ident : string*/) : void;
+  }
+
+  //[Record(Exclude = [VisitedObjects])]
+  public class RelocationInfo
+  {
+    public this
+      ( fileIndex : int
+      , begin     : TextPoint
+      , old       : TextPoint
+      , @new      : TextPoint
+      )
+    {
+      this.VisitedObjects = Hashtable();
+      this.FileIndex      = fileIndex;
+
+      this.Begin      = begin;
+      this.Old        = old;
+      this.New        = @new;
+    }
+
+    public VisitedObjects : Hashtable[object, byte];
+    public FileIndex      : int;
+
+    public Begin          : TextPoint;
+    public Old            : TextPoint;
+    public New            : TextPoint;
+
+    //public mutable VisitCount  : int;
+    //public mutable NodeCount  : int;
+    
+    override public ToString() : string
+    {
+      $"FileIndex=$FileIndex Begin=$Begin Old=$Old New=$New"
+    }
+  }
+  
+  public module Completion
+  {
+    public class RelocationFailedException : Exception
+    {
+    }
+
+    /// Shift Location.
+    public Relocate (mutable loc : Location, info : RelocationInfo) : Location
+    {
+      def relocatePoint (point, info)
+      {
+        if (point < info.Begin)
+        {
+          point
+        }
+        else
+        {
+          when (point < info.Old)
+          {
+            loc = Location.Default;
+            return TextPoint(0, 0);
+          }
+          if (info.Old.Line == point.Line)
+          {
+            TextPoint(point.Line - info.Old.Line + info.New.Line, point.Column - info.Old.Column + info.New.Column)
+          }
+          else
+          {
+            TextPoint(point.Line - info.Old.Line + info.New.Line, point.Column)
+          }
+        }
+      }
+
+      assert2(loc.Begin <= loc.End); // location is positive!
+
+      if (loc.FileIndex != info.FileIndex)
+        loc // file not match
+      else if (loc.End < info.Begin)
+        loc // location located before edit point (we not need modify it)
+      else if (loc.End == info.Begin)
+      {
+        if (loc.Begin == info.Begin)  // location is empty and edit point point on it
+        {
+          def begin = relocatePoint(loc.Begin, info);
+          def newLoc = Location (loc, begin, begin);
+          assert2(newLoc.Begin <= newLoc.End); // location is positive!
+          newLoc
+        }
+        else
+          loc // location located before edit point (we not need modify it)
+      }
+      else
+      {
+        def begin = relocatePoint(loc.Begin, info);
+        def end   = relocatePoint(loc.End,   info);
+        def newLoc = Location (loc, begin, end);
+        assert2(newLoc.Begin <= newLoc.End); // location is positive!
+        newLoc
+      }
+    }
+    
+    /// Shift Location.
+    public RelocateFile (loc : Location, info : RelocationInfo) : Location
+    {
+      if (loc.FileIndex == info.FileIndex)
+        Relocate (loc, info)
+      else
+        loc
+    }
+
+    CmpOptions = System.StringComparison.InvariantCultureIgnoreCase;
+
+    public MatchName(name : string, pattern : string) : bool
+    {
+      def matchCamelHumps(name : string, pattern : string)
+      {
+        def loop(name : string, nameIndex : int, pattern : string, patternIndex : int) : bool
+        {
+          if (pattern.Length == patternIndex)
+            true
+          else if (name.Length == nameIndex)
+            false
+          else
+          {
+            def ch = name[nameIndex];
+              
+            if (char.IsUpper(ch))
+            {
+              if (ch == pattern[patternIndex])
+              {
+                def matchTail(name : string, nameIndex : int, pattern : string, patternIndex : int)
+                {
+                  if (loop(name, nameIndex + 1, pattern, patternIndex + 1))
+                    true
+                  else if (name.Length == nameIndex + 1 || pattern.Length == patternIndex + 1)
+                    false
+                  else if (char.ToUpperInvariant(name[nameIndex + 1]) == pattern[patternIndex + 1])
+                    matchTail(name, nameIndex + 1, pattern, patternIndex + 1)
+                  else
+                    false
+                }
+                
+                matchTail(name, nameIndex, pattern, patternIndex)
+              }
+              else
+                false
+            }
+            else
+              loop(name, nameIndex + 1, pattern, patternIndex)
+          }
+        }
+        
+        loop(name, 0, pattern.ToUpperInvariant(), 0)
+      }
+      
+      if (name.Length < pattern.Length)
+        false
+      else
+        name.StartsWith(pattern, CmpOptions) || matchCamelHumps(name, pattern)
+    }
+
+    /// extract information about types/namespaces and add it to 'elems' list.
+    public AddTypesAndNamespaces (
+      [NotNull] elems     : SCG.List[Elem],
+      [NotNull] nss       : list [NamespaceTree.Node],
+                obj       : PExpr, // nullable
+      [NotNull] name      : Parsetree.Name,
+                noMacros  : bool,
+                noMembers : bool
+    ) : void
+    {
+      def pattern = name.Id;
+      def isAll = string.IsNullOrEmpty(pattern); // don't use pattern
+      // scan namespace tree node and add appropriate nodes into 'elems' list.
+      def scanAndAdd (subNode : NamespaceTree.Node)
+      {
+        when (subNode.Children != null)
+          foreach (elem when isAll || MatchName(elem.Key, pattern) in subNode.Children)
+          {
+            def name = elem.Key;
+            def node = elem.Value;
+
+            match (node.Value)
+            {
+              | No => ()
+              | MacroCall(macr) => 
+                when (!noMacros)
+                  elems.Add(Elem.Node (
+                    if (macr.Keywords.IsEmpty) node.PartName else macr.Keywords.Head,
+                    node));
+              
+              | _ => elems.Add(Elem.Node (name, node));
+            }
+          }
+        
+        subNode.EnsureCached ();
+
+        def scanStaticMembers (ti)
+        {
+          foreach (member in ti.GetMembers (BindingFlags.Public | BindingFlags.Static))
+            when (isAll || MatchName(member.GetName(), pattern))
+              elems.Add(Elem.Member (member));
+        }
+
+        unless (noMembers)
+          match (subNode.Value)
+          {
+            | Cached(ti)                 => scanStaticMembers (ti)
+            | CachedAmbiguous(typeInfos) =>
+              foreach (ti in typeInfos)
+                scanStaticMembers (ti);
+
+            | _                          => ()
+          }
+      }
+
+      if (obj is null)
+        foreach (subNode in nss)
+          scanAndAdd (subNode)
+      else match (Util.QidOfExpr (obj)) // extract list of name parts from expression
+      {
+        | Some ((nameParts, _)) => 
+          match (NamespaceTree.Node.PassTo (nss, nameParts)) // open node
+          {
+            | null => ()
+            | subNode => scanAndAdd (subNode)
+          }
+        | None => ()
+      }
+    }
+
+    public GetName (this member : IMember) : string
+    {
+      match (member.MemberKind)
+      {
+        | Constructor => ReplaceSpecialName (member.DeclaringType.Name)
+        | _ => member.Name
+      }
+    }
+
+    /// Look for special names
+    public ReplaceSpecialName(name : string) : string
+    {
+      | "Nemerle.Core.list" 
+      | "Nemerle.Core.list+Cons" 
+      | "Nemerle.Core.list+Nil"  => "list"
+      | "System.Byte"            => "byte"
+      | "System.SByte"           => "sbyte"
+      | "System.Int16"           => "short"
+      | "System.UInt16"          => "ushort"
+      | "System.Int32"           => "int"
+      | "System.UInt32"          => "uint"
+      | "System.Int64"           => "long"
+      | "System.UInt64"          => "ulong"
+      | "System.Single"          => "float"
+      | "System.Double"          => "double"
+      | "System.Decimal"         => "decimal"
+      | "System.String"          => "string"
+      | "System.Object"          => "object"
+      | "System.Boolean"         => "bool"
+      | "System.Char"            => "char"
+      | _                        => name
+    }
+  }
+
+  public interface IEngine
+  {
+    /// Send request on Build the Types Tree. It not lead to immediately rebuild project. 
+    /// The project will be rebuilded when IDE turn into idle state (user will not be type in editor).
+    RequestOnBuildTypesTree() : void;
+  }
+}

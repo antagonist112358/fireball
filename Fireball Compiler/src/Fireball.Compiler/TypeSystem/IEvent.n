@@ -1,0 +1,21 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.TypeSystem
+{
+  /// <summary>
+  /// Description of IEvent.
+  /// </summary>
+  public interface IEvent : IMember
+  {
+    GetEventInfo () : System.Reflection.EventInfo;
+    GetAdder () : IMethod;
+    GetRemover () : IMethod;
+  }
+}

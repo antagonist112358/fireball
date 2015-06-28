@@ -1,0 +1,64 @@
+variant Tree ['a] {
+  | Node { left : Tree['a]; mid : 'a; right : Tree['a]; }
+  | Leaf
+
+  public override ToString () : string
+  {
+    match (this) {
+      | Node (l, m, r) =>
+        "(" + l.ToString () + " " + m.ToString () + " " + r.ToString () + ")"
+      | Leaf => "."
+    }
+  }
+}
+
+class A {
+  public f : int;
+  static mutable cnt : int;
+  public this () { ++cnt; f = cnt; }
+}
+
+variant V : A {
+  | X
+  | Y
+}
+
+variant Open {
+  | Open1
+  | Open2
+
+  public this (_nu : string) {
+  }
+  public this () {
+  }
+}
+
+variant O {
+  | B
+
+  public this (g : string) { this.g = g; }  
+
+  g : string;
+}
+
+
+
+module M {
+  Main () : void
+  {
+    def tr = Tree.Node (Tree.Node (Tree.Leaf (), 1, Tree.Leaf ()), 2, Tree.Leaf ());
+    System.Console.WriteLine (tr.ToString ());
+    def x = V.X();
+    def y = V.X();
+    System.Console.WriteLine (x.f.ToString () + " " + y.f.ToString ());
+    System.Console.WriteLine ((Open.Open1 () : object) == Open.Open1 ());
+  }
+}
+
+/*
+BEGIN-OUTPUT
+((. 1 .) 2 .)
+1 2
+False
+END-OUTPUT
+*/

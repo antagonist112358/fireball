@@ -1,0 +1,28 @@
+class M {
+  static f () : void {
+    mutable x = 1;
+    x = "foo"; // E: expected int.* got string
+  }
+  static g () : void {
+    def x = 1;
+    x = 3;    // E: .*read-only
+  }
+}
+
+class C {
+  f : int;
+  static qux () : void
+  {
+    def q (x) { x.f = 3; } // E: needed writable
+    q(C());
+  }
+}
+
+// bug #809
+class A { }
+class B : A { }
+
+mutable x = B ();
+x = A (); // OK
+mutable b : B = B();
+b = A (); // E: expected B, got A in assigned value

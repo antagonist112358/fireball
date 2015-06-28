@@ -1,0 +1,100 @@
+// GE: first defined here
+
+class M {
+  f (_ : int) : void {}
+  f (_ : int) : void {} // E: redefinition
+
+  this () {}
+  this () {} // E: redefinition
+
+  static this () {}
+  static this () {} // E: redefinition
+}
+
+class C {
+  protected virtual m () : void {}      // OK
+  protected virtual m2 () : void {}      // OK
+  protected virtual m3 () : void {}      // OK
+  protected m4 () : void {}      // OK
+  protected m5 () : void {}      // OK
+}
+
+class D : C {
+  protected m () : void {}        // W: hides
+  protected new m2 () : void {}        // OK
+  protected override m3 () : void {}        // OK
+  protected override m4 () : void {}        // E: `override' specified.*no `virtual'
+  protected new m5 () : void {}        // OK
+  
+  protected new m1_not_present () : void {}        // OK
+  protected override m2_not_present () : void {}        // E: no such member
+}
+
+class E : D {
+  protected override m3 () : void {}        // OK
+  protected override m5 () : void {}        // E: `override' specified.*no `virtual'
+}
+
+class Overload {
+  meth () : int { 3 }
+  meth () : string { "3" } // E: return type overload
+  
+  meth3 (_ : int) : int { 3 }
+  meth3 (_ : int) : string { "3" } // E: return type overload
+  
+  meth4 (_ : int) : int { 3 }  // OK
+  meth4 (_ : string) : string { "3" } // OK
+  
+  meth2 () : int { 3 }
+  meth2 () : int { 3 } // E: redefinition
+}
+
+class RefOut {
+  meth1 (_ : ref int) : void { } // OK
+  meth2 (_ : ref out int) : void { } // E: nested ref/out type found
+  meth2 (_ : out ref int) : void { } // E: nested ref/out type found
+  meth3 (_ : list [ref int]) : void { } // E: nested ref/out type found
+  meth4 (_ : ref int -> void) : void { } // OK
+}
+
+class A {
+}
+
+class B {
+  public meth (_ : A) : void {} // OK
+}
+
+public class EE {
+  public meth (_ : A) : void {} // E: Method `meth' is more accessible than `A'
+  meth2 (_ : A) : void {} // OK
+  foo : A; // OK
+  public bar : A; // E: Field `bar' is more accessible than `A'
+  protected Bar : A { get { A() } } // E: Property `Bar' is more accessible than `A'
+}
+
+public class HH { // E: first defined
+}
+public class HH { // E: you must specify `partial' modifier on
+}
+
+partial public class HU { } // H: part with incompatible modifiers
+partial internal class HU { } // E: joined partial classes `HU' must have compatible modifiers
+
+struct S1 { // E: type definition for `S1' is cyclic
+  x : int;
+  s : S2;
+}
+
+struct S2 {
+  s : S1;
+}
+
+class Bug859 {
+    static Foo(_ : ref int) : void { }
+    static Foo(_ : out int) : void { }   // E: redefinition of method Bug859.Foo
+}
+
+namespace System {
+  class Uri { }  // E: redefinition of external type `System.Uri'
+}
+

@@ -1,0 +1,15 @@
+// Compiler options: -doc:xml-034.xml  
+using System;
+
+/// valid comment.
+public class Test
+{
+  static Main () :  void 
+  {
+  }
+}
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/
+// OPTIONS: -doc:xml-034.xml

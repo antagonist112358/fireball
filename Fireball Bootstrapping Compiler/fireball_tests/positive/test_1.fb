@@ -1,0 +1,50 @@
+namespace Fireball.Tests {
+
+	using System;
+	using SGC = System.Collections.Generic;
+
+  class TestClass {
+    // Fields
+    protected var text: String = "Hello World";
+    val numTimes: int = 5;
+
+		// Class level inference (for literal value)
+		val thisIsANum = 13.857;
+		
+		// Class level inference for new ref type
+		val aList = SGC.List.[String]();
+		
+    // Method
+    def testMethod() : string {
+      // local variables
+      var intVal = 4;
+      val str = "Goodbye";
+      intVal = 5;
+			
+			// test tuple assignment
+			val (a, b) = (5, "Bella Connie!");
+			
+			b
+    }
+  }
+
+  module Program {
+    public def Main(args: array[String]) : void {
+      Console.WriteLine("Hello World");
+			val tester = TestClass();
+			val testMethodVal = tester.testMethod();
+			Console.WriteLine($"Value from test method: $testMethodVal");
+			
+			//Console.WriteLine("\nPress any key...");
+			//Console.ReadKey(true)
+    }
+  }
+
+}
+
+/*
+BEGIN-OUTPUT
+Hello World
+Value from test method: Bella Connie!
+END-OUTPUT
+*/

@@ -1,0 +1,77 @@
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Compiler;
+using PT = Nemerle.Compiler.Parsetree;
+ 
+namespace Nemerle
+{
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Parameter)]
+  macro Lazy (_ : TypeBuilder, meth : ParsedMethod, parm : ParsedParameter)
+  {
+    def unique = parm.PName.NewName (Util.tmpname (parm.Name));
+    def newBody = Util.locate(meth.Body.Location, 
+      <[
+        InternalMacros.RedirectName ($(parm.PName : name),
+        $(unique : name).Value,
+        $(meth.Body))
+      ]>);
+
+    meth.Body = newBody;
+    parm.name = PT.Splicable.Name (unique);
+    //TODO: May be need correct location of parm.ty.
+    parm.Type = <[ Nemerle.LazyValue [$(parm.Type)] ]>;
+  }
+  
+  macro lazy (val)
+  {
+    match (val)
+    {
+      | PT.PExpr.Literal => <[ LazyValue.FromValue ($val) ]>
+      | _ => <[ Nemerle.LazyValue (fun () { $val }) ]>
+    }
+  }
+  
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Class,
+                       Inherited = false, AllowMultiple = false)]
+  macro InheritConstructors (par : TypeBuilder)
+  {
+      par.DisableImplicitConstructor ();
+  }
+
+
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeTypedMembers, // WithTypedMembers
+                       Nemerle.MacroTargets.Class,
+                       Inherited = false, AllowMultiple = false)]
+  macro InheritConstructors (par : TypeBuilder)
+  {
+    MacrosHelper.InheritConstructorsAddingFields (par, [], NemerleModifiers.Public);
+  }
+}

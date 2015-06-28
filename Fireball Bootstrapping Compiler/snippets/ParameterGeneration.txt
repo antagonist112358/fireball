@@ -1,0 +1,81 @@
+    private static MakeParameterSequence(parms: list[PParameter], parmToValue : PParameter) : list[PExpr] {
+      parms.Map(p => {
+        if (p.Equals(parmToValue)) {
+          p.DefaultValue.Value
+        } else {
+          <[$(p.ParsedSplicableName.GetName() : name)]>
+        }
+      });
+    }
+
+
+      def make_combinations(fixedParmNames: list[PExpr], fixedParms: list[PParameter], parms: list[PParameter]) : void {        
+      foreach(parm in parms) {
+          // Generate the assignment expressions, i.e. 'this.field = field'
+          // or in the case of a variable parameter, simply '{value expr}' 
+          def lst = NList.Append(fixedParmNames, MakeParameterSequence(parms, parm));
+          // Create a list of method parameters
+          def methParms = NList.Append(fixedParms, NList.Filter(parms, p => !p.Equals(parm)));
+          // Add the permutation
+          methods ::= CreateConstructorFor(loc, h, funName, modifiers, methParms, lst)
+        }
+      }
+      
+      def takeOneOut(fixedParms: list[PParameter], fixedParmNames: list[PExpr], parms: list[PParameter]) : void {
+        match(parms) {
+          | [] => ()
+          | _ :: tail => 
+            make_combinations(fixedParmNames, fixedParms, parms);
+            takeOneOut(fixedParms, fixedParmNames, tail);
+        }        
+      }
+      
+      def leaveOut(lst: list[PParameter]) : list[list[PParameter]] {
+        if (lst.Length == 1) [lst]
+        else {
+          lst.Map(parm => {
+            lst.Filter(p => !p.Equals(parm))
+          })
+        }
+      }
+
+      def permutations(lst) : list[list[PParameter]] {
+        match(lst) {
+          | [] => [[]]
+          | head :: tail => [head] :: {
+            if (tail.Length == 2) leaveOut(tail)
+            else permutations(tail)
+          }
+        }        
+      }
+			
+			
+      def genPermutations(fixedParms: list[PParameter], varParms: list[PParameter]) : void {
+        // Get the parameters without default values' name
+        def fixedParmNames = parms_without_default_value.Map(p => <[$(p.ParsedSplicableName.GetName() : name)]>).Reverse();
+        def permuts = System.Linq.Enumerable.ToList(permutations(varParms));
+        mutable x = permuts;
+        // Recursively call the takeOneOut to generate permutations
+        takeOneOut(fixedParms, fixedParmNames, varParms);
+      }
+            
+      // Create the underlying method without any substitutions
+      def fixedParameters = h.Parameters.Map(p => match(p.DefaultValue) {
+        | Some(value) => 
+          parms_with_default_value ::= p;
+          if (value is PExpr.Literal) p
+          else PParameter(p.Location, p.name, p.Type, p.modifiers, None(), p.PatternHack)
+        | None =>
+          parms_without_default_value ::= p;
+          p
+      });
+      
+      def newHeader = PFunHeader(h.Location, h.TypeParameters, h.ParsedSplicableName, h.ParsedReturnType, fixedParameters, h._parsedParametersOpenLocation, h._parsedParametersCloseLocation);
+      def noValuesCtor = ClassMember.Function(header = newHeader, name = newHeader.ParsedSplicableName,  modifiers = modifiers, loc = loc, body = body, implemented = impl_int);
+      noValuesCtor.AddCustomAttribute(<[System.Runtime.CompilerServices.CompilerGenerated]>);
+      
+      // Create the constructor with nothing specified
+      methods ::= noValuesCtor;
+      
+      // Get all the permutations of default parameters
+      genPermutations(parms_without_default_value.Reverse(), parms_with_default_value.Reverse());			

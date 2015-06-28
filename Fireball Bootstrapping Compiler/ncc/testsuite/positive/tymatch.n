@@ -1,0 +1,115 @@
+using Nemerle.IO;
+
+class A { public this () {} }
+class B : A {
+  public this () {}
+  public b () : void { printf ("b\n"); }
+}
+class C : A {
+  public this () {}
+  public c () : void { printf ("c\n"); }
+}
+
+module M {
+  f (a : A) : void
+  {
+    match (a) {
+      | (x is B) => x.b ()
+      | (x is C) => x.c ()
+      | _ => printf ("miss\n")
+    }
+  }
+
+  g (c : C) : void
+  {
+    match (c) {
+      | (_ : A) => ()
+      | _ => () // W: unused
+    }
+  }
+
+variant KU {
+  | KA
+  | KB { x : int; }
+}
+
+public class TypesMatch
+{
+    public Method [From, To] (x : From, f : From -> To) : To
+    {
+        match (x) {
+        | t is To => t
+        | _ => f (x)
+        }
+    }
+
+    public FunMatch (x : object) : string
+    {
+      | x is int -> string => x (5)
+      | _ => "nothing"
+    }
+}
+
+  
+  public Main () : void
+  {
+    f (A ());
+    f (B ());
+    f (C ());
+
+    match (KU.KA () : KU) {
+      | KU.KB (_x) => assert(false)
+      | _ => ()
+    } 
+    
+    match (System.Exception ("d")) {
+      | _ is System.SystemException => printf ("wrong!\n")
+      | _ : System.Exception  => printf ("good!\n")
+    }
+
+    when (A () is A) // W: redundant
+      printf ("ok\n");
+
+    match (A()) {
+      | _ : B => printf ("oops\n"); // W: deprecated
+      | _ : C => printf ("oops\n"); // W: deprecated
+      | _  => printf ("ok2\n");
+    }
+
+
+    //def seq : System.Collections.Generic.IEnumerable[int] = array[1,2,3];
+    def seq : object = array[1,2,3];
+
+    def arr_match(seq)
+    {
+      | _ary is array[int] => System.Console.WriteLine("Is array!")
+      | _ => System.Console.WriteLine("Is NOT array.")
+    }
+
+    arr_match (seq);
+    arr_match ("aa");
+
+    def ex = TypesMatch ();
+    System.Console.WriteLine (ex.Method ("aa", x => x + "b"));
+    System.Console.WriteLine (ex.Method ("22", x => int.Parse (x)  + 1));
+    System.Console.WriteLine (ex.FunMatch (x => (x + 1).ToString()));
+    System.Console.WriteLine (ex.FunMatch (x => x + "aaa"));
+  }
+}
+
+/*
+BEGIN-OUTPUT
+miss
+b
+c
+good!
+ok
+ok2
+Is array!
+Is NOT array.
+aa
+23
+6
+nothing
+END-OUTPUT
+*/

@@ -1,0 +1,52 @@
+using System.Collections.Generic;
+using System.Collections;
+using Nemerle.Utility;
+using System.Console;
+
+// foo
+#define foobar
+
+namespace Example {
+  public class SomeClass[T,X] {
+  
+    mutable n : string;
+  
+    public Foo () : Seasons
+    {
+    }
+    
+    public Foo2 () : void
+    {
+    
+    
+    
+    }
+    public Bar () : void
+    {
+      this.Foo ();
+    }
+  }
+} 
+
+public class SomeOtherClass['a] {
+    public class MoreClasses {
+        
+    }
+    
+    mutable N : Dictionary ['a, string];
+    public T : 'a;
+    public X : 'a -> void;
+}
+
+public variant Seasons {
+| Winter
+| Summer
+}
+
+variant MyColor
+{
+| Red
+| Green
+| Yellow
+| Rgb { R : int; G : int; B : int }
+}

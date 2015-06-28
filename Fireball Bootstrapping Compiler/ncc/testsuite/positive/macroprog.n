@@ -1,0 +1,301 @@
+// REFERENCE: macrolib.dll
+
+using Nemerle.IO;
+
+[Serializable]
+class Foo {
+  x : int = 0;
+}
+
+[assembly: AssemblyMac (a.b)]
+
+[addVersion]
+module M {
+  foo (x : int) : void
+  requ x > 0
+  {
+    printf ("%d\n", x);
+  }
+
+  foo1 (x : int) : string
+  requ x > 0 otherwise "TADA"
+  {
+    "WRONG"
+  }
+
+  
+  asyn goo (x : int) : void
+  {
+    printf ("%d\n", x);
+    asyn printf ("%d\n", x + 1);
+  }
+  
+  Main () : void {
+    mutable i = 0;
+    forpermutation (i in 3 to 3) {
+      printf ("%d\n", i);
+    }
+
+    def pow7 = generate_power (7);
+    printf ("%lf\n", pow7 (2.0));
+
+    A.gg (printf ("a\n"));
+
+    ala (); //W: N649: field `x' is never assigned to, and will always have its default value
+    def _ = haha ();
+
+    Foo.Bla.Bla ();
+
+    def x = Foo ();
+    (x : ISerializable).Serialize ();
+    printf ("%d\n", x.foo);
+
+    try { foo (0); } catch { | _ is AssertionException => printf ("catched\n") }
+    
+    IflikeSyntax.Run ();   
+    ThrowlikeSyntax.Run ();
+    ArraylikeSyntax.Run ();
+    RawSyntax.Run ();
+    OperatorSyntax.Run ();
+    Permutations.Run ();
+
+    goo (1);
+    assert(foo1 (1) == "TADA");
+
+    LogTest.Go ();
+    
+    metaclass inline_meta { x : int; y : string };
+    assert(inline_meta (1, "").X == 1);
+    assert(inline_meta (2, "a").Y == "a");
+    
+    _ = null : IEmpty;
+    _ = GenericGeneratedClass(1);
+    _ = GenericSplGeneratedClass("ss");
+    _ = null : GeneratedDelegate;
+    
+    System.Console.WriteLine (ulongLiteral ());
+    
+    assert((typeof(M).Assembly.GetCustomAttributes (typeof(System.Reflection.AssemblyCompanyAttribute), false)[0] :> System.Reflection.AssemblyCompanyAttribute).Company == "foo");
+    
+    assert(create_enum (1) == MyEnum.A);
+    
+    assert(create_initialized_field () != null);
+  }
+}
+
+module IflikeSyntax {
+  public Run () : void {
+    mif (true) {
+      printf ("single then\n");
+    }
+    mif (4 == 4) {
+      printf ("double then\n")
+    }
+    else
+      printf ("grr\n");      
+    mif (4 == 4) {
+      printf ("semicolon then\n")
+    };
+    else
+      printf ("grr\n");
+    mif (5 == 5) 
+      printf ("nosemicolon then\n");
+    printf ("jiha\n");
+    assert((mif (true) 4; else 3) == 4);
+    assert((mif (false) 4 else 2) == 2);                 
+  }
+}
+
+module ThrowlikeSyntax {
+  public Run () : void {
+    try {
+      try {
+        _throw System.Exception ();
+      }
+      catch {
+        | _ =>
+          printf ("first catch\n");
+          _throw;
+      } 
+    }
+    catch {
+      | _ => printf ("second catch\n");
+    }
+  }
+}
+
+module ArraylikeSyntax {
+  public Run () : void {
+    def x = arrr [1,2];
+    foreach (el in x) printf ("%d ", el);
+    printf ("\n");
+    def x = arrr .[2] [[1,2], [2,3]];
+    foreach (el in x) printf ("%d ", el);
+    printf ("\n");
+    def x = arrr (2);
+    foreach (el in x) printf ("%d ", el);
+    printf ("\n");
+  }
+}
+
+module RawSyntax {
+  public Run () : void {
+    def doc =
+     xml 
+      <doc>
+        <ala><ma>kot</ma><age>23</age></ala>
+      </doc>;
+      
+    def frag = doc.CreateDocumentFragment ();
+    frag.InnerXml = "<tola><ma>:)</ma></tola>"; 
+    _ = doc.FirstChild.AppendChild (frag);
+    printf ("%s\n", doc.InnerXml);
+  }
+}
+
+module OperatorSyntax {
+  public Run () : void {
+    def x = 4;
+    def y = %% x + 4;
+    printf ("%d\n", y);
+  }
+}
+
+module Permutations {
+  [Nemerle.Assertions.Requires (data.Length == permutation.Length)]
+  permute (data : array [int], permutation : array [int]) : void
+  {
+    def visited = array (permutation.Length);
+
+    for (mutable i = 0; i < permutation.Length; i++) {
+      mutable pos = i;
+      while (!visited [pos]) {
+        visited [pos] = true;
+        def next_pos = permutation [pos];
+        unless (visited [next_pos]) {
+          data [pos] <-> data [next_pos];
+          pos = next_pos;
+        }
+      }
+    }
+  }
+
+  permute_specialized (data : array [int]) : void
+  {
+    permute' (data, array [10, 7, 11, 0, 12, 5, 14, 6, 9, 4, 13, 2, 1, 8, 3]);
+  }
+  
+  public Run () : void {
+    def perm = array [10, 7, 11, 0, 12, 5, 14, 6, 9, 4, 13, 2, 1, 8, 3];
+    def arr = array (perm.Length);
+    for (mutable i = 0; i < perm.Length; i++) arr [i] = i;
+    permute (arr, perm);
+    for (mutable i = 0; i < perm.Length; i++) assert(arr [i] == perm [i]);
+    permute (arr, perm);
+    permute_specialized (arr);
+    for (mutable i = 0; i < perm.Length; i++) assert(arr [i] == perm [i]);
+  }
+}
+
+class MyFoo
+{
+  bar () : void
+  {
+    MarkWithMy ();
+  }
+}
+
+using Nemerle.Logging;
+
+[assembly: LogCondition (LogEnabled)]
+
+[LogFunction (LogTest.dolog)]
+
+[LogFlag (VERB, true),
+ LogFlag (DEBUG, 0)]
+ 
+public class LogTest
+{
+  public mutable static LogEnabled = true;
+  
+  public static dolog (s : string) : void
+  {
+    System.Console.WriteLine ("LOG: " + s);
+  }
+  
+    public static Go () : void
+    {
+      log (VERB, "verb logging");
+
+      whenlogging (VERB)
+        def qux = "foobar";
+      // some code
+      log (VERB, $ "verb logging $qux");
+
+      log (DEBUG, "debug logging");
+
+      LogEnabled = false;
+      log (VERB, "hide me");
+      LogEnabled = true;
+      log (VERB, "show me");
+
+      //System.Diagnostics.Trace.Assert(false);
+
+      def x = generateIFoo ();
+      (x : IFoo).Foo();
+      _ = x;
+
+      assert(typeof(MyFoo).GetCustomAttributes (typeof(MyAttribute),false).Length > 0);
+    }
+}
+
+namespace Ops
+{
+  module OptionalSyntax {
+    public Run () : void {
+      myfor(mutable x = 0; x < 10; x++; 10) { }
+      myfor(mutable x = 0; x < 10; x++) { }
+      assert(not true || true and 1 == 1);
+
+      _ = bug740({ def n = object(); n } : object);
+    }
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+3
+128
+a
+proba
+creating haha
+from Bla.Bla
+<x>0</x>
+5
+catched
+single then
+double then
+semicolon then
+nosemicolon then
+jiha
+first catch
+second catch
+1 2 
+1 2 2 3 
+0 0
+<doc><ala><ma>kot</ma><age>23</age></ala><tola><ma>:)</ma></tola></doc>
+x + 4
+8
+I could be asynced with members
+I could be asynced
+1
+my precious asyn
+2
+LOG: verb logging
+LOG: verb logging foobar
+LOG: show me
+Hello!
+1
+END-OUTPUT
+*/

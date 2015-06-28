@@ -1,0 +1,506 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+
+namespace Nemerle.Compiler
+{
+  /** Nodes representing a tree of syntax extension definition.
+
+      Macros contain list of elements of grammar to describe syntax extensions,
+      which they introduce.
+      Later, parser is reading those lists and merge them into current
+      tree of syntax extensions, which can have branches and contain macro call
+      definitions in leaves.
+   */
+  public variant GrammarElement : System.IEquatable[GrammarElement]
+  {
+    | Operator { name : string; }
+    | Keyword { name : string; }
+    | Expression
+    | Parameter
+    | RawToken 
+    | ExpressionList
+    | Optional { body : GrammarElement; }
+    | Branch { options : list [GrammarElement]; }
+    | End { define : SyntaxDefinition; }
+
+
+    /// Next element in grammar tree. It is used only in merged
+    /// trees created by parser
+    public  Next : GrammarElement;
+    internal Target : MacroTargets;
+    
+    public this () { }
+
+    internal this (next : GrammarElement) {  Next = next; }
+    
+    internal this (next : GrammarElement, target : MacroTargets)
+    {
+      this (next);
+      Target = target;
+    }
+
+    internal CloneWithNext (other : GrammarElement) : GrammarElement
+    {
+      assert(other != null);
+      match (this) {
+        | Operator (name) => Operator (other, other.Target, name)
+        | Keyword (name)  => Keyword (other, other.Target, name)
+        | Expression      => Expression (other, other.Target)
+        | Parameter       => Parameter (other, other.Target)
+        | ExpressionList  => ExpressionList (other, other.Target)
+        | RawToken        => RawToken (other, other.Target)         
+        | Optional (body) => Optional (other, other.Target, body)
+        | Branch | End    => Util.ice ("tree like elements are not allowed to be cloned")
+      }
+    }
+
+    internal AddBranch (next : GrammarElement) : GrammarElement
+    {
+      match (this) {
+        | Branch (li) => Branch (null, Target | next.Target, next :: li)
+        | _ => Branch (null, Target | next.Target, [next, this])
+      }
+    }
+
+    [Nemerle.OverrideObjectEquals]
+    public Equals (other : GrammarElement) : bool
+      implements System.IEquatable[GrammarElement].Equals
+    {
+      if (other == null) true
+      else
+        match ((this, other)) {
+          | (Operator (n1), Operator (n2))
+          | (Keyword (n1), Keyword (n2)) => n1 == n2
+          | (ExpressionList, ExpressionList)            
+          | (Parameter, Parameter)
+          | (RawToken, RawToken)          
+          | (Expression, Expression) => true
+          | (Optional (e1), Optional (e2)) => e1.Equals (e2)
+          | _ => false
+        }
+    }
+
+    public ToStringWhole () : string
+    {
+      if (Next != null)
+        ToString () + " " + Next.ToStringWhole ()
+      else
+        ToString ()
+    }
+    
+    public override ToString () : string
+    {
+      match (this) {
+        | Operator (name) => name
+        | Keyword (name)  => name
+        | Expression      => "PExpr"
+        | Parameter       => "Parameter"
+        | ExpressionList  => "PExpr*"
+        | Optional (body) => body.ToString () + "?"
+        | RawToken        => "Token"
+        | Branch (opts)   => "(" + NList.Map (opts, fun (x) { $"`$(x)'" }).ToString (" | ") + ")"
+        | End (d)         => d.MacroNamespace.GetDisplayName ()
+      }
+    }
+  }
+
+  /** Definition of syntax extension, which given macro introduces.
+   */
+  [Record]
+  public class SyntaxDefinition {
+    public Start : string;
+    public Keywords : list [string];
+    public MacroNamespace : NamespaceTree.Node;
+    public Tree : GrammarElement;
+    public Permute : list [SyntaxElement] -> list [SyntaxElement];
+  }
+
+  public class OperatorDefinition : SyntaxDefinition {
+    public Left : int;
+    public Right : int;
+
+    public this (node : NamespaceTree.Node, name : string, left : int, right : int, is_unary : bool) {
+      base (name, if (is_unary) [] else null, node, null, null);
+      Left = left;
+      Right = right;
+    }
+  }
+  
+  public partial class MainParser
+  {
+    /** This functions loads given syntax extensions into current syntax
+        tree. Overlaping definitions are merged if possible.
+     */
+    internal static load_syntax (extensions : list [SyntaxDefinition],
+                                 mutable keywords : Map [string, GrammarElement])
+      : Map [string, GrammarElement]
+    {
+      foreach (definition when !(definition is OperatorDefinition) in extensions) {
+        def start = definition.Start;
+
+        keywords =
+          match (keywords.Find (start)) {
+            | Some (existing) =>
+              keywords.Replace (start, MergeSyntax (definition.Tree, existing, definition))
+            | _ =>
+              keywords.Add (start, MergeSyntax (definition.Tree, null, definition))
+          }
+      }
+      keywords
+    }
+
+    [Nemerle.Assertions.Requires (ext != null)]
+    internal static MergeSyntax (s1 : GrammarElement, s2 : GrammarElement,
+                          ext : SyntaxDefinition) : GrammarElement
+    {
+      if (s1 == null)
+        match (ext.MacroNamespace.Value) {
+          | NamespaceTree.TypeInfoCache.MacroCall (m) =>
+            def target =
+              if (m.Usage == null) (1 << 15) :> MacroTargets
+              else m.Usage.ValidOn;
+
+            def end = GrammarElement.End (null, target, ext);
+            if (s2 != null) s2.AddBranch (end)
+            else end
+
+          | _ => Util.ice ("no macro")
+        }
+      else if (s2 == null) {
+        def end = MergeSyntax (s1.Next, null, ext);
+        match (s1) {
+          | GrammarElement.Optional (e) =>
+            def subnode = MergeSyntax (e, null, ext);
+            GrammarElement.Optional (subnode).CloneWithNext (end)
+
+          | _ => s1.CloneWithNext (end)
+        }
+      }
+      else {
+        match ((s1, s2)) {
+          | (GrammarElement.Operator (n1), GrammarElement.Operator (n2)) when n1 == n2
+          | (GrammarElement.Keyword (n1), GrammarElement.Keyword (n2)) when n1 == n2
+          | (GrammarElement.ExpressionList, GrammarElement.ExpressionList)            
+          | (GrammarElement.Parameter, GrammarElement.Parameter)
+          | (GrammarElement.RawToken, GrammarElement.RawToken)          
+          | (GrammarElement.Expression, GrammarElement.Expression) =>
+            def end = MergeSyntax (s1.Next, s2.Next, ext);
+            s1.CloneWithNext (end)
+            
+          | (GrammarElement.Optional (e1), GrammarElement.Optional (e2)) when e1.Equals (e2) =>
+            def end = MergeSyntax (s1.Next, s2.Next, ext);
+            // FIXME: the last element in nested optional chain won't be used for now
+            //        but in general it should hold current next 
+            def newsubnode = MergeSyntax (e1, e2, ext); 
+            GrammarElement.Optional (newsubnode).CloneWithNext (end)
+
+          | _ =>
+            assert(!s1.Equals (s2));
+            def end = MergeSyntax (s1.Next, null, ext);
+            def next = s1.CloneWithNext (end);
+            s2.AddBranch (next)
+        }
+      }
+    }
+
+    
+    //------------- PARSING OF MACRO SYNTAX EXTENSIONS ---------------------
+
+    parse_top_extensions (modifiers : AttributesAndModifiers, target : MacroTargets) : void
+    {
+      def extensions ()
+      {
+        match (peek_token ())
+        {
+          | Token.Keyword (k) as tok =>
+            match (env.SyntaxKeywords.Find (k))
+            {
+              | Some (ext) when ext.Target %&& target =>
+                shift ();
+                def (end, parms) = parse_grammar_rule (ext, TokenStoppers.None, target);
+
+                def eat_definition (definition : SyntaxDefinition)
+                {
+                  def expr = PExpr.MacroCall (tok.Location, MkNameGenerated(""), definition.MacroNamespace,
+                                              definition.Permute (parms));
+                  modifiers.AddCustomAttribute (expr);
+                }
+                
+                match (end)
+                {
+                  | GrammarElement.End (definition) => eat_definition (definition)
+
+                  | GrammarElement.Branch (opts) =>
+                    foreach (GrammarElement.End (definition) as el in opts)
+                      when (el.Target %&& target)
+                        eat_definition (definition)
+                    
+                  | _ => Message.FatalError (tok.Location, $"unable to parse syntax rule, stopped at: $end")
+                }
+
+                extensions ()
+                
+              | _ => ()
+            }
+          | _ => ()
+        }
+      }
+
+      extensions ();
+    }
+    
+    parse_syntax_definition (tree : GrammarElement, stop : TokenStoppers) : PExpr
+    {
+      def nm  = last_tok.ToString();
+      def loc = last_tok.Location;
+      def (end, parms) = parse_grammar_rule (tree, stop, (1 << 15) :> MacroTargets);
+      match (end) {
+        | GrammarElement.End (definition) =>
+          def mloc = loc.Combine(last_tok.Location);
+          def mloc = parms.FoldLeft(mloc, (e, l) => l.Combine(e.Location));
+          PExpr.MacroCall (mloc, MkName (nm, loc), definition.MacroNamespace,
+                           definition.Permute (parms))
+        | _ =>
+          fatal_error (loc, "unable to parse syntax rule, stopped at: " + end.ToString ())
+      }
+    }
+
+    matches_stream (tree : GrammarElement) : bool {
+      def str = peek_sibling_token ();
+      match (tree) {
+        | GrammarElement.Operator (o) =>
+          match (o) {       
+            | "]" | ")" => str is Token.EndOfGroup
+            | ";" => str is Token.Semicolon
+            | "(" => str is Token.RoundGroup
+            | "[" => str is Token.SquareGroup            
+
+            | _ =>
+              match (str) {
+                | Token.Operator (o1) when o1 == o => true
+                | _ => false
+              }
+          }
+        
+        | GrammarElement.Keyword (k) =>
+          match (str) {
+            | Token.Keyword (k1) when k1 == k => true
+            | _ => false
+          }
+
+        | GrammarElement.Optional (sub) =>
+          matches_stream (sub) || matches_stream (tree.Next)
+
+        | GrammarElement.End => str is Token.EndOfGroup || stream == null
+
+        | GrammarElement.Expression => stream != null
+          
+        | _ => false
+      }
+    }
+
+    /// add empty syntax elements, which were ommited in this grammar branch
+    ///
+    /// this function should probably be extended ;-)
+    static create_optional_holders (mutable tre : GrammarElement,
+                                    mutable acc : list [SyntaxElement]) : list [SyntaxElement]
+    {
+      while (tre != null) {
+        match (tre) {
+          | GrammarElement.Expression =>
+            acc = SyntaxElement.Expression (null) :: acc
+            
+          | GrammarElement.Parameter =>
+            acc = SyntaxElement.Parameter (null) :: acc
+            
+          | _ => ()
+        }
+        tre = tre.Next
+      }
+      acc
+    }
+    
+    parse_grammar_rule (tree : GrammarElement, stop : TokenStoppers, target : MacroTargets)
+      : GrammarElement * list [SyntaxElement]
+    {
+//      Message.Debug (tree.ToStringWhole ());
+      def expect_semicolon () {
+        if (stream == null)
+          jump_to_sibling ();
+        else if (stream is Token.Semicolon)
+          shift ()
+        else
+          Error (stream, "expected `;'");
+      }
+      
+      def loop (acc : list [SyntaxElement], x : GrammarElement) {
+        assert(x != null);
+
+        unless (x.Target %&& target)
+          Message.FatalError (last_tok.Location, "parse error, none of syntax definitions"
+                              " matches input");
+        
+        def next = x.Next;
+        match (x) {
+          | GrammarElement.Operator ("[" as brace)
+          | GrammarElement.Operator ("(" as brace) =>
+            def expect_close (el : GrammarElement) {
+              | GrammarElement.Operator (")") as x 
+              | GrammarElement.Operator ("]") as x => x.Next
+              | x => Error (last_tok, $"error parsing `$brace...' syntax rule"); x
+            }
+            match (get_token ()) {
+              | Token.RoundGroup (Token.LooseGroup (first) as loose, _, _) when brace == "(" 
+              | Token.SquareGroup (Token.LooseGroup (first) as loose, _, _) when brace == "[" =>              
+                match (next) {
+                  | GrammarElement.ExpressionList =>
+                    def exprs = parse_expr_sequence (loose);
+                    loop (exprs.RevMap (fun (x) { SyntaxElement.Expression (x) }) + acc,
+                          expect_close (next.Next))
+
+                  | _ =>
+                    push_stream (loose);
+                    push_stream (first);
+                    def (next, res) = parse_grammar_rule (next, TokenStoppers.None, target);
+                    pop_stream ($"tokens inside of $brace...");
+                    shift (); // shift the loose group, which just ended
+                    pop_stream ($"end of $brace...");
+                    loop (NList.RevAppend (res, acc), expect_close (next))
+                }
+
+              | Token.RoundGroup | Token.SquareGroup =>              
+                loop (acc, expect_close (next.Next))
+
+              | x => 
+                Error (x, $"expecting `$brace' and some tokens inside");
+                loop (acc, next)
+            }
+
+          | GrammarElement.Operator ("]")
+          | GrammarElement.Operator (")") => (x, NList.Rev (acc))
+ 
+          | GrammarElement.RawToken =>
+            if (stream == null) {
+              Error (last_tok, "expecting some tokens after this one");
+              loop (acc, next)
+            }             
+            else {
+              // mark next token in stream as beginning of token group
+              new_group_beginning ();
+              // exit outside of current group
+              pop_stream ("raw token");
+              // remember entire group for passing it to macro
+              def deffered = get_token ();
+              // cheat a little bit to move at the end of eaten group
+              // what happens here is - new_group_beginning left original group
+              // in our front, so we enter inside and set stream to null (end of group)
+              push_stream (stream);
+              stream = null;
+              loop (SyntaxElement.RawToken (deffered) :: acc, next)             
+            }
+            
+          | GrammarElement.Operator (";") =>
+            expect_semicolon ();
+            loop (acc, next)
+            
+          | GrammarElement.Operator (n) =>
+            expect_operator (n);
+            loop (acc, next)
+
+          | GrammarElement.Keyword (n) =>
+            unless (flag_sibling_keyword (n)) 
+              Error (peek_token (), $"expected `$(n)' keyword");
+            loop (acc, next)
+
+          | GrammarElement.Expression =>
+            def expr = parse_expr (stop);
+            loop (SyntaxElement.Expression (expr) :: acc, next)
+
+          | GrammarElement.ExpressionList => Util.ice ("expr list?")
+
+          | GrammarElement.Parameter =>
+            def p = parse_parameter ();
+            loop (SyntaxElement.Parameter (p) :: acc, next)
+
+          | GrammarElement.Optional (GrammarElement.Expression as inner) =>
+            def newacc =
+              if (matches_stream (next))
+                create_optional_holders (inner, acc)
+              else
+                SyntaxElement.Expression (parse_expr (stop)) :: acc;
+            loop (newacc, next)
+
+          | GrammarElement.Optional (opt) =>
+            if (matches_stream (opt)) {
+              def (_, res) = parse_grammar_rule (opt, stop, target);
+              loop (NList.RevAppend (res, acc), next)
+            }
+            else
+              loop (create_optional_holders (opt, acc), next)
+           
+          | GrammarElement.Branch (opts) =>
+            mutable end = null;
+            def check (_) {
+              | [] => 
+                if (end == null) {
+                  Message.FatalError (last_tok.Location, "parse error, none of syntax definitions"
+                                       " matches input: " + opts.ToString ())
+                }
+                else (end, NList.Rev (acc))
+
+              | (cur : GrammarElement) :: rest when cur.Target %&& target => 
+                match (cur) {
+                  | GrammarElement.End as cur =>
+                    if (end != null)
+                      end = x; // if many ends are there, return branch node
+                    else
+                      end = cur;
+                      
+                    check (rest);
+
+                  | _ =>
+                    if (matches_stream (cur))
+                      loop (acc, cur)
+                    else
+                      check (rest)
+                }
+                
+              | _ :: rest => check (rest)
+            }
+            check (opts)          
+            
+          | GrammarElement.End => (x, NList.Rev (acc))
+        }
+      };
+      loop ([], tree)
+    }
+  }
+}

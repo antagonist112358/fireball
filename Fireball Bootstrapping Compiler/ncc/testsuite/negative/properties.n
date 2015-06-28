@@ -1,0 +1,22 @@
+class C {
+  public X : int { get { 0 } }
+  public Y : int { get { 0 } } // H: hiden definition
+  public virtual Z : int { get { 0 } }
+  public virtual foo () : int { 3 }
+  public this () {}
+}
+
+class D : C {
+  public override X : int { get { 1 } } // E: `override' specified.*no `virtual'
+  public Y : int { get { 1 } }  // W: hides .*property.* C.Y
+  public override Z : string { get { "" } }     // E: no.*in parent
+  public override foo () : string { "" }        // E: no.*in parent
+  public this () {}
+}
+
+public class Bug904 {
+  protected virtual Prop : int {
+    get { throw System.NotImplementedException() }
+    protected internal set { throw System.NotImplementedException() } // E: accessor is more accessible than containing entity
+  }
+}

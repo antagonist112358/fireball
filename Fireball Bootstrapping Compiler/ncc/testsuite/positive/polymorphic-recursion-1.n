@@ -1,0 +1,118 @@
+using Nemerle.IO;
+using Nemerle.Collections;
+
+namespace Bug523
+{
+  public interface IMonad[A]
+  {
+      bind[B](f : (A -> IMonad[B])) : IMonad[B];
+  }
+
+  public interface IContinuation[A] : IMonad[A]
+  {
+      CallCC[B](f : (A -> IContinuation[B]) -> IContinuation[A]) : IContinuation[A];
+  }
+
+  public class Continuation[R,A]:IContinuation[A]
+  {
+      
+      private value : (A -> R) -> R;
+      public static return[B] (a : A): Continuation[B,A]{ 
+          Continuation(fun(k : A -> B){k(a)}) 
+      }
+      public this(f : (A -> R) -> R ){ 
+          value = f ;
+      }
+      public bind[B](f : (A -> IMonad[B])) : IMonad[B]{
+          Continuation(fun(k : B -> R)
+                       { 
+                           value(fun (a : A)
+                                 {
+                                     def g = f(a) :> Continuation[R,B]; 
+                                     g.value(k) 
+                                 })
+                       })
+      }
+      public CallCC[B](f : (A -> IContinuation[B]) -> IContinuation[A]) : IContinuation[A]{
+          def g(k : A -> R)
+          {
+              def h(a : A)
+              {
+                  Continuation(fun(_: B -> R){k(a)})
+              }
+              ((f(h)) :> Continuation [R,A]).value(k)
+          };
+          Continuation(g)
+      }
+  }
+}
+
+module Bug536
+{
+  public foo () : void
+  {
+     def matchesf['a] (_ : object * object) { }
+     _ = matchesf;
+  }
+}
+
+module M
+{
+  variant T ['a]
+  {
+    | Empty
+    | Node { f1 : 'a; f2 : T [T ['a]]; }
+  }
+
+  collect ['a] (x : T ['a]) : list ['a]
+  {
+    match (x) {
+      | T.Empty => []
+      | T.Node (e, es) =>
+        e :: NList.Concat (NList.Map (collect (es), collect))
+    }
+  }
+  
+  Main () : void
+  {
+    def double['a] (f : 'a -> 'a, y : 'a) { f (f (y)) }
+    and foo (v) { double (fun (x) { x + 1 }, v) }
+    and goo (w) { double (fun (x) { x && x }, w) };
+    assert(goo (true));
+    assert(foo (3) == 5);
+
+    def x12 = T.Node (1, T.Node (T.Node (2, T.Empty ()), T.Empty ()));
+   
+    match (collect (x12))
+    {
+      | [1, 2] => printf ("OK\n")
+      | _ => printf ("oops\n")
+    };
+    
+    Bug536.foo();
+
+    def zip4 ['a, 'b, 'c]
+        (
+         pl : list [list ['a] * list ['b] * list ['c] * string]
+        ) : list ['a] * list ['b] * list ['c] * string
+    {
+      match (pl) {
+        | [] => ([], [], [], "")
+        | (l1, l2, l3, l4) :: ls =>
+            def (r1, r2, r3, r4) = zip4 (ls);
+            (l1 + r1, l2 + r2, l3 + r3, l4 + r4)
+      }
+    }
+
+    _ = zip4 ([]);
+
+    def poly_loop [A,B] (f : A -> B, x : A) { f (x) }
+    _ = poly_loop (1 + _, 42);
+  }
+}
+
+/*
+BEGIN-OUTPUT
+OK
+END-OUTPUT
+*/

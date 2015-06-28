@@ -1,0 +1,76 @@
+using Nemerle.IO;
+
+class Closurising {
+  myfun : void -> void;
+  fld : int;
+  
+  public this (_x : int) { // E: closure utilizing 'this' reference is not allowed when base ctor call is not placed at the beginning of current ctor
+    fld = 1;
+    myfun = fun () { print ("fun $fld\n") }
+    myfun ();
+    base ();
+    fld = 7;
+    myfun ();
+  }
+}
+
+class A {
+  mutable x : int;
+  static q () : void {}
+  static w (_ : void -> void) : void {}
+  public this (mutable y : int = 7) { // E: closure utilizing 'this' reference is not allowed when base ctor call is not placed at the beginning of current ctor
+    q ();
+    --y;
+    base ();
+    this.x = 1;
+    def f() {++x};
+    f (); 
+    w (f);
+  }
+  public static Main () : void {
+    System.Console.WriteLine (A ().x)
+  }
+}
+
+class B {
+  this (x : int) { // W: Base constructor call can be missed
+    when (x == 0)
+      base ();
+  }
+}
+      
+class C {
+  this () {}
+  this (x : int) { // W: Base constructor call can happen 2 times
+    when (x == 0)
+      base ();
+    this ();
+  }
+}
+
+class D {
+  this (x : int) { // E: Base constructor call happens at least 2 times
+    match (x) {
+      | 0 => base ()
+      | _ => base (); if (x == 1) base (); else base ();
+    }
+    base ();
+  } 
+}
+
+struct E {
+  this (_ : int) {
+    base (); // E: Base constructor call in struct isn't allowed
+  }
+}
+
+class F {
+  this () {
+    def f () { 
+      base() // E: Constructor call inside local function or loop isn't allowed
+    };
+    _ = f;
+    for (mutable i = 0; i < 1; ++i)
+      base (); // E: Constructor call inside local function or loop isn't allowed
+  }
+}

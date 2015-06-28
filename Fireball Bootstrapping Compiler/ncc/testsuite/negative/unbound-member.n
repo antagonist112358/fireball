@@ -1,0 +1,112 @@
+namespace N1 {
+class C {
+  public mutable x : int;
+  public m () : void {}
+}
+
+class M {
+  static main () : void {
+    def c = (null : C);
+    c.x = 3; // OK
+    Foo.Bar.baz;        // E: unbound name `Foo'
+    M.quxx;           // E: unbound name `quxx' in `M'
+    c.y = 3    // E: there is no member named `y' in N1.C
+  }
+
+  static f (c : C) : void { c.m = 3 }    // E: .*read-only
+}
+
+
+class M1 {
+  fld : int;
+  meth () : void {}
+  static g () : void { def x = 1; x = M.fld }    // E: unbound name `fld' in `M'
+  static h () : void { def x = 1; x = M.meth }    // E: unbound name `meth' in `M'
+}
+
+
+class Cxyz {
+  public foo () : void
+  {
+  }
+}
+
+class M2 {
+  public bar (): void
+  {
+    Cxyz.foo (); // E: trying to access an instance member N1.Cxyz.foo without an object
+  }
+}
+}
+
+namespace N2 {
+module X {
+  public Foo () : void {}
+}
+
+class C {
+  this () {}
+  public Foo () : void {}
+}
+
+class D {
+  public this () {}
+  public this (_ : int) {}
+}
+
+module M {
+qux1 () : void {
+  X.Foo1 (); // E: unbound name `Foo1' in `X'
+  C.Foo (); // E: C.Foo
+}
+
+qux () : void
+{
+  D.Foo (); // E: unbound name `Foo' in `D'
+} 
+}
+}
+
+
+module Bug576
+{
+  variant formula {
+    | True 
+  }
+  
+  eq (f1 : formula, f2 : formula) : bool
+  {
+     match (t1) {
+       | True =>        // E: unbound type
+         f2 == True()   // E: unbound name
+       | _    => true   // W: unused
+     }
+  }
+
+  
+  public t1 () : void
+  {
+    ()      
+  }
+}
+
+module Bug755
+{
+  public t1 () : void
+  {
+    System.Console.WriteLine ("foo");
+    System.Console1.WriteLine ("foo"); // E: unbound name `Console1' in `System'
+    System.Console.WriteLine2 ("foo"); // E: unbound name `WriteLine2' in `System.Console'
+    def x = 2;
+    xx.ToString (); // E: unbound name `xx'
+  }
+}
+
+module Bug790
+{
+  public t1 () : void
+  {
+    def s = "foo";
+    _ = s.Length.Foo.Bar; // E: unbound name `Foo' in `s.Length'
+  }
+}

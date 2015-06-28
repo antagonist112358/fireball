@@ -1,0 +1,843 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using System;
+
+using Nemerle.Assertions;
+using Nemerle.Imperative;
+using Nemerle.Utility;
+using Nemerle.Compiler;
+using Nemerle.Collections;
+
+using P     = Nemerle.Compiler.Parsetree;
+using PExpr = Nemerle.Compiler.Parsetree.PExpr;
+using T     = Nemerle.Compiler.Typedtree;
+using TExpr = Nemerle.Compiler.Typedtree.TExpr;
+using SCG   = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  public enum WellTyped
+  {
+    | Yes
+    | NotYet
+    | Error
+  }
+
+  public interface IExprWalkerCallback
+  {
+    Push(info : ExprWalkInfo) : void;
+    Pop (info : ExprWalkInfo) : void;
+    Stop(info : ExprWalkInfo) : void;
+    Skip(info : ExprWalkInfo) : void;
+  }
+
+  public delegate ExprWalkHandler(info : ExprWalkInfo) : void;
+
+  public class ExprWalkInfo
+  {
+    mutable _isStopped : bool;
+    mutable _isSkipped : bool;
+    mutable _handler   : ExprWalkHandler;
+    mutable _callback  : IExprWalkerCallback;
+    
+            _visited   : SCG.HashSet[object] = SCG.HashSet();
+
+    [Accessor] mutable _node : object;
+
+    internal Init(handler : ExprWalkHandler, callback : IExprWalkerCallback) : void
+    {
+      _handler   = handler;
+      _callback  = callback;
+      _isStopped = false;
+      _isSkipped = false;
+      _visited.Clear();
+    }
+
+    internal Push(node : object) : bool
+    {
+      when (node == null || !_visited.Add(node))
+        return false;
+        
+      _node      = node;
+      _isSkipped = false;
+
+      if (_isStopped || node == null || _handler == null)
+      {
+        false;
+      }
+      else
+      {
+        _handler(this);
+
+        if (!_isStopped && !_isSkipped)
+        {
+          when (_callback != null)
+            _callback.Push(this);
+          true
+        }
+        else
+          false
+      }
+    }
+
+    internal Pop() : void
+    {
+      unless (_isStopped)
+        when (_callback != null)
+          _callback.Pop(this);
+    }
+
+    private Walk(walk : ExprWalker -> void) : void
+    {
+      walk(ExprWalker(_callback));
+      Skip();
+    }
+
+    public Walk(node : PExpr)     : void { Walk(w => w.Walk(node, _handler)) }
+    public Walk(node : TExpr)     : void { Walk(w => w.Walk(node, _handler)) }
+    public Walk(node : T.Pattern) : void { Walk(w => w.Walk(node, _handler)) }
+
+    public Stop() : void
+    {
+      _isStopped = true;
+      when (_callback != null)
+        _callback.Stop(this);
+    }
+    
+    public Skip() : void
+    {
+      _isSkipped = true;
+      when (_callback != null)
+        _callback.Skip(this);
+    }
+  }
+
+  public class ExprWalker
+  {
+    [Accessor] mutable _info     : ExprWalkInfo = ExprWalkInfo();
+    [Accessor] mutable _callback : IExprWalkerCallback;
+
+    public this()
+    {
+    }
+
+    public this(callback : IExprWalkerCallback)
+    {
+      _callback = callback;
+    }
+
+    protected Push (node : object) : bool
+    {
+      _info.Push(node);
+    }
+
+    protected Pop () : void
+    {
+      _info.Pop();
+    }
+
+    protected Init(walkHandler : ExprWalkHandler) : void
+    {
+      _info.Init(walkHandler, _callback);
+    }
+
+    protected Go(lst : list[PExpr])           : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.ClassMember])   : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.Splicable])     : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.SyntaxElement]) : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.Function_decl]) : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.MatchCase])     : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.TryCase])       : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[P.PParameter])      : void { when (lst != null) foreach (item in lst) Go(item); }
+
+    protected Go(lst : list[TExpr])           : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.Parm])          : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.Try_case])      : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.TParameter])    : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.TFunHeader])    : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.Pattern])       : void { when (lst != null) foreach (item in lst) Go(item); }
+    protected Go(lst : list[T.Match_case])    : void { when (lst != null) foreach (item in lst) Go(item); }
+
+    protected Go(lst : list[IMember]) : void { when (lst != null) 
+      foreach (item in lst) 
+        Go(item); }
+
+/*
+    protected Go(lst : list[Decl])    : void { when (lst != null) foreach (item in lst) Go(item); }
+    
+    protected Go(decl : Decl) : void
+    {
+      when(_info.Push(decl))
+      { 
+        match(decl)
+        {
+        | n is Decl.Namespace => Go(n.Decls);
+        | t is Decl.Type      => Go(t.Builder);
+        | GlobalAttribute
+        | Using
+        | None
+        | _ => ()
+        }
+        _info.Pop();
+      }
+    }
+*/
+
+    protected Go(member : IMember) : void 
+    {
+      when(_info.Push(member))
+      {
+        match(member)
+        {
+        | mb is MethodBuilder   =>
+          Go(mb.Ast.name);
+          Go(mb.GetParameters());
+          unless(mb.IsAbstract)
+            Go(mb.BodyParsed);
+
+        | fb is FieldBuilder    => 
+          Go(fb.Ast.name);
+          when(fb.IsInitializerPresent)
+            Go(fb.InitializerParsed);
+
+        | tb is TypeBuilder     => 
+          Go(tb.Ast.name);
+          Go(tb.GetDirectMembers().Sort((left, right) => {left.Location.Line.CompareTo(right.Location.Line)}));
+
+        | pb is PropertyBuilder => 
+          unless(pb.IsAbstract)
+          {
+            Go(pb.GetGetter()); 
+            Go(pb.GetSetter());
+          }
+
+        | _ => ();
+        }
+        _info.Pop();
+      }
+    }
+    
+    protected Go(body : FunBody) : void
+    {
+      when (_info.Push(body))
+      {
+        match (body)
+        {
+        | Parsed(e) => Go(e); // { expr : Parsetree.PExpr; }
+        | Typed (e) => Go(e); // { expr : Typedtree.TExpr; }
+        | ILed
+        | Abstract  => ();
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(splicable : P.Splicable) : void
+    {
+      when (splicable is P.Splicable.Expression && _info.Push(splicable)) //!!!
+      {
+        match (splicable)
+        {
+        | Expression(e) => Go(e); // { expr : PExpr; }
+        | Name                    // { body : Parsetree.Name; }
+        | HalfId        => ();    // { prefix : Parsetree.Name; }
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(parms : P.Typarms) : void
+    {
+      when (_info.Push(parms))
+      {
+        Go(parms.tyvars);
+
+        foreach (c in parms.constraints)
+        {
+          Go(c.tyvar);
+          Go(c.ty);
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(header : P.PFunHeader) : void
+    {
+      when (_info.Push(header))
+      {
+        Go(header.TypeParameters);
+        Go(header.SplicableName);
+        Go(header.Parameters);
+        Go(header.ReturnType);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(decl : P.Function_decl) : void
+    {
+      when (_info.Push(decl))
+      {
+        Go(decl.header);
+        Go(decl.body);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(parm : P.PParameter) : void
+    {
+      when (_info.Push(parm))
+      {
+        Go(parm.Type);
+        Go(parm.name);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(tryCase : P.TryCase) : void
+    {
+      when (_info.Push(tryCase))
+      {
+        match (tryCase)
+        {
+        | Catch (sp, e1, e2)     => Go(sp); Go(e1); Go(e2);         // { exn : Splicable; exn_ty : PExpr; handler : PExpr; }
+        | Filter(sp, e1, e2, e3) => Go(sp); Go(e1); Go(e2); Go(e3); // { exn : Splicable; exn_ty : PExpr; filter : PExpr; handler : PExpr; }
+        | Ellipsis(e)            => Go(e);                          // { body : PExpr; }
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(matchCase : P.MatchCase) : void
+    {
+      when (_info.Push(matchCase))
+      {
+        Go(matchCase.patterns);
+        Go(matchCase.body);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(decl : P.TopDeclaration) : void
+    {
+      when (_info.Push(decl))
+      {
+        match (decl)
+        {
+        | Class    (lst, m)                              // { mutable t_extends : list [PExpr]; decls : list [ClassMember]; }
+        | Record   (lst, m)
+        | Interface(lst, m)                              // { mutable t_extends : list [PExpr]; methods : list [ClassMember]; }
+        | Variant  (lst, m)                              // { mutable t_extends : list [PExpr]; mutable decls : list [ClassMember]; }
+        | Enum     (lst, m)    => Go(lst); Go(m);        // { t_extends : list [PExpr]; decls : list[ClassMember]; }
+        | Alias    (ty)        => Go(ty);                // { ty : PExpr; }
+        | VariantOption(decls) => Go(decls);             // { decls : list [ClassMember]; }
+        | Macro    (h, lst, e) => Go(h); Go(lst); Go(e); // { header : PFunHeader; synt : list [PExpr]; expr : PExpr; }
+        | Delegate (h)         => Go(h);                 // { header : PFunHeader; }
+        }
+
+        Go(decl.name);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(member : P.ClassMember) : void
+    {
+      when (_info.Push(member))
+      {
+        match (member)
+        {
+        | TypeDeclaration(td)    => Go(td);          // { td : TopDeclaration; }
+        | Field     (e)                              // { mutable ty : PExpr; }
+        | EnumOption(Some(e))    => Go(e);           // { value : option [PExpr]; }
+        | Function  (h, _, body) => Go(h); Go(body); // { header : PFunHeader; kind : FunKind; mutable body : FunBody; }
+        | EnumOption             => ()
+        | Property(returnType = ty, parameters = dims, getter = get, setter = set) =>   
+
+          Go(ty);
+          Go(dims);
+          match (get) { | Some(m) => Go(m) | _ => () }
+          match (set) { | Some(m) => Go(m) | _ => () }
+
+        | Event(ty, field, add, remove)         =>   // { ty : PExpr; field : ClassMember.Field; add : ClassMember.Function; remove : ClassMember.Function; }
+
+          Go(ty);
+          Go(field);
+          Go(add);
+          Go(remove);
+        }
+
+        Go(member.name);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(element : P.SyntaxElement) : void
+    {
+      when (_info.Push(element))
+      {
+        match (element)
+        {
+        | Expression      (e)                 // { body : PExpr; }
+        | TType           (e)    => Go(e);    // { body : PExpr; }
+        | MatchCase       (mc)   => Go(mc);   // { body : Parsetree.MatchCase; }
+        | Function        (body) => Go(body); // { body : Function_decl; }
+        | Parameter       (body) => Go(body); // { body : PParameter; }
+        | ClassMember     (body) => Go(body); // { body : Parsetree.ClassMember; }
+        | ParameterBuilder                    // { body : Typedtree.TParameter; }
+        | RawToken                            // { body : Token; }
+        | TypeBuilder                         // { body : Compiler.TypeBuilder; }
+        | FieldBuilder                        // { body : Compiler.FieldBuilder; }
+        | MethodBuilder                       // { body : Compiler.MethodBuilder; }
+        | PropertyBuilder                     // { body : Compiler.PropertyBuilder; }
+        | EventBuilder           => ();       // { body : Compiler.EventBuilder; }
+        }
+
+        _info.Pop();
+      }
+    }
+
+    private static 
+      Sort[T] (lst : list[T]) : list[T] where T : Located
+    {
+      lst.Sort((i1, i2) =>
+      {
+        match (i1.Location.Line - i2.Location.Line)
+        {
+        | n when n < 0 => -1
+        | 0            => i1.Location.Column - i2.Location.Column
+        | _            =>  1
+        }
+      });
+    }
+
+    protected Go(expression : PExpr) : void
+    {
+      when (_info.Push(expression))
+      {
+        match (expression)
+        {
+        | Wildcard
+        | Ref                                           // { name : Name; }
+        | Literal                                       // { val : Nemerle.Compiler.Literal; }
+        | This
+        | Base
+        | Error
+        | ToComplete                                    // { body : Name; }
+        | TypedPattern                                  // { body : Typedtree.Pattern; }
+        | TypedType                                     // { body : TypeVar; }
+        | Void                       => ()
+        | Typed           (body)     => Go(body);       // { body : Typedtree.TExpr; }
+        | As              (e, sp)                       // { pat : PExpr; name : Splicable; }
+        | Member          (e, sp)    => Go(e); Go(sp);  // { obj : PExpr; member : Splicable; }
+        | Is              (e1, e2)                      // { pat : PExpr; ty : PExpr; }
+        | Where           (e1, e2)                      // { name : PExpr; fields : PExpr; }
+        | Assign          (e1, e2)                      // { target : PExpr; source : PExpr; }
+        | DefMutable      (e1, e2)                      // { name : PExpr; val : PExpr; }
+        | Define          (e1, e2)                      // { pattern : PExpr; val : PExpr; }
+        | TryFinally      (e1, e2)                      // { body : PExpr; handler : PExpr; }
+        | TypeConversion  (e1, e2)                      // { expr : PExpr; ty : PExpr; }  // (expr :> ty)
+        | TypeEnforcement (e1, e2)                      // { expr : PExpr; ty : PExpr; } // (expr : ty)
+        | Array           (e1, e2)   => Go(e1); Go(e2); // { rank : PExpr; args : PExpr; }
+        | Throw           (e)                           // { exn : PExpr; }
+        | Typeof          (e)                           // { ty : PExpr; }
+        | ParmByRef       (e)                           // { parm : PExpr; }
+        | ParmOut         (e)                           // { parm : PExpr; }
+        | Spliced         (e)                           // { body : PExpr; }
+        | Ellipsis        (e)        => Go(e);          // { body : PExpr; }
+        | Match           (e, cs, _) => Go(e); Go(cs);  // { expr : PExpr; cases : list [MatchCase]; mutable expr_loc : Location; }
+        | Call            (e, lst)                      // { func : PExpr; parms : list [PExpr]; }
+        | GenericSpecifier(e, lst)                      // { func : PExpr; generic_parms : list [PExpr]; }
+        | Indexer         (e, lst)   =>                 // { obj : PExpr; args : list [PExpr]; }
+
+          match (lst)
+          {
+          | [] => Go(e);
+          | _  => Go(Sort(e :: lst));
+          }
+
+        | ListLiteral     (lst)                         // { elements : list [PExpr]; }
+        | Sequence        (lst)                         // { body : list [PExpr]; }
+        | Tuple           (lst)                         // { args : list [PExpr]; }
+        | EmptyArray      (lst)      => Go(lst);        // { sizes : list [PExpr]; }
+        | DefFunctions    (funs)     => Go(funs);       // { funs : list [Function_decl]; }
+        | Lambda          (decl)     => Go(decl);       // { decl : Function_decl; }
+        | Try             (b, cs)    => Go(b); Go(cs);  // { body : PExpr; cases : list [TryCase]; }
+        | Quoted          (el)       => Go(el);         // { body : SyntaxElement; }
+        | MacroCall  (_, _, parms)   =>                 // { name : Name; ns : NamespaceTree.Node; parms : list [SyntaxElement]; }
+
+          Go(parms.Sort((p1, p2) =>
+          {
+            match (p1.Location.Line - p2.Location.Line)
+            {
+            | p when p < 0 => -1
+            | 0            => p1.Location.Column - p2.Location.Column
+            | _            =>  1
+            }
+          }));
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(parm : T.Parm) : void
+    {
+      when (_info.Push(parm))
+      {
+        Go(parm.expr);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(localValue : LocalValue) : void
+    {
+      when (_info.Push(localValue))
+        _info.Pop();
+    }
+
+    protected Go(tryCase : T.Try_case) : void
+    {
+      when (_info.Push(tryCase))
+      {
+        match (tryCase)
+        {
+        | Fault (e)          => Go(e);                  // { handler : TExpr; }
+        | Catch (e1, e2)     => Go(e1); Go(e2);         // { exn : LocalValue; handler : TExpr; }
+        | Filter(e1, e2, e3) => Go(e1); Go(e2); Go(e3); // { exn : LocalValue; filter : TExpr; handler : TExpr; }
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(parm : T.TParameter) : void
+    {
+      when (_info.Push(parm))
+      {
+        match (parm.default_value) { | Some(e) => Go(e) | _ => () }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(header : T.TFunHeader) : void
+    {
+      when (_info.Push(header))
+      {
+        Go(header.Parameters);
+        Go(header.body);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(case : T.Match_case) : void
+    {
+      when (_info.Push(case))
+      {
+        foreach ((pat, expr, lst) in case.patterns)
+        {
+          Go(pat);
+          Go(expr);
+
+          foreach ((_, expr) in lst)
+            Go(expr);
+        }
+
+        Go(case.body);
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(pattern : T.Pattern) : void
+    {
+      when (_info.Push(pattern))
+      {
+        match (pattern)
+        {
+        | Literal                         // { lit : Nemerle.Compiler.Literal; }
+        | Enum                            // { fld : IField; val : Nemerle.Compiler.Literal; }
+        | HasType                         // { typ : FixedType; }
+        | Wildcard
+        | Error               => ()
+        | Application(_, pat) => Go(pat); // { name : TypeInfo; arg : Pattern; }
+        | As         (pat, e) => Go(pat); Go(e); // { pat : Pattern; decl : LocalValue; }
+        | Tuple      (lst)    => Go(lst); // { args : list [Pattern]; }
+        | Record     (args)   =>          // { args : list [IMember * Pattern]; }
+
+          foreach ((_, pat) in args)
+            Go(pat);
+        }
+
+        _info.Pop();
+      }
+    }
+
+    protected Go(expression : TExpr) : void
+    {
+      when (_info.Push(expression))
+      {
+        match (expression)
+        {
+        | Label         (_, e)                                  // { id : int; body : TExpr; }
+        | TupleIndexer  (e, _, _)                               // { obj : TExpr; pos : int; len : int; } // 0-based
+        | Throw         (e)                                     // { exn : TExpr; }
+        | HasType       (e, _)                                  // { expr : TExpr; test_ty : FixedType; }
+        | PropertyMember(e, _)                                  // { obj : TExpr; prop : IProperty; }
+        | FieldMember   (e, _)                                  // { obj : TExpr; fld : IField; }
+        | EventMember   (e, _)                                  // { obj : TExpr; ev : IEvent; }
+        | DebugInfo     (e, _) when e != null                   // { expr : TExpr; pe : PExpr; }
+        | TypeConversion(e, _, _, _)                            // { mutable expr : TExpr; target_type : TypeVar; kind : ConversionKind; target_type_location : Location; }
+        | MethodRef     (e, _, _, _) => Go(e);                  // { obj : TExpr; meth : IMethod; type_parms : list [TypeVar]; notvirtual : bool; }
+        | MacroEnvelope (_, _, e, epe) => Go(e); Go(epe);       // { original : Parsetree.PExpr; the_macro : IMacro; expanded : TExpr; expandedPExpr : Parsetree.PExpr;}
+        | ArrayIndexer  (e, lst)     => Go(e); Go(lst);         // { obj : TExpr; args : list [TExpr]; }
+        | PointerIndexer(e, i)       => Go(e); Go(i);           // { obj : TExpr; index : TExpr; }
+        | Call          (e, lst, _)  => Go(e); Go(lst);         // { mutable func : TExpr; mutable parms : list [Parm]; mutable is_tail : bool; }
+        | Block         (e1, e2)     => Go(e1); Go(e2);         // { jump_out : LocalValue; body : TExpr; }
+        | Sequence      (e1, e2)                                // { mutable e1 : TExpr; mutable e2 : TExpr; }
+        | TryFinally    (e1, e2)                                // { body : TExpr; handler : TExpr; }
+        | Assign        (e1, e2)     => Go(e1); Go(e2);         // { target : TExpr; source : TExpr; }
+        | DefValIn      (e1, e2, e3) => Go(e1); Go(e2); Go(e3); // { name : LocalValue; val : TExpr; mutable body : TExpr; }
+        | Try           (e, lst)     => Go(e); Go(lst);         // { body : TExpr; mutable cases : list [Try_case]; }
+        | Tuple         (lst)        => Go(lst);                // { args : list [TExpr]; }
+        | SelfTailCall  (_, lst)        => Go(lst);                // { parms : list [Parm]; }
+        | Array         (l1, l2)     => Go(l1); Go(l2);         // { args : list [TExpr]; dimensions : list [TExpr]; }
+        | DefFunctionsIn(lst, e)     => Go(lst); Go(e);         // { funs : list [TFunHeader]; mutable body : TExpr; }
+        | Match         (e, lst)     => Go(e); Go(lst);         // { expr : TExpr; cases : list [Match_case]; }
+        | If      (e1, e2, e3, _, _) => Go(e1); Go(e2); Go(e3); // { cond : TExpr; e_then : TExpr; e_else : TExpr; }
+        | ClosureObjectOf(e)         => Go(e);                  // { varRef : TExpr; }
+        | ClosureFieldOf(e)          => Go(e);                  // { varRef : TExpr; }
+        | Switch        (e, o, lst)  =>                         // { indexing_expr : TExpr; default : option [TExpr]; cases : list [int * TExpr]; }
+
+          Go(e);
+          match (o) { | Some(e) => Go(e) | _ => () }
+
+          foreach ((_, e) in lst)
+            Go(e);
+
+        | MultipleAssign(lst)        =>                         // { assigns : list [LocalValue * TExpr]; }
+
+          foreach ((e1, e2) in lst)
+          {
+            Go(e1);
+            Go(e2);
+          }
+
+        | Delayed(susp)              =>                         // { susp : Typer.DelayedTyping; }
+
+          when (susp.IsResolved)
+            Go(susp.ResolutionResult);
+
+        | Cache   (desc, e) => Go(desc.TExpr); Go(e);
+        | CacheRef(desc)    => Go(desc.TExpr);
+
+        | ImplicitValueTypeCtor
+        | StaticEventRef                                        // { from : FixedType.Class; ev : IEvent; }
+        | ConstantObjectRef                                     // { from : FixedType.Class; mem : IField; }
+        | StaticPropertyRef                                     // { from : FixedType.Class; prop : IProperty; }
+        | StaticRef                                             // { from : FixedType.Class; mem : IMember; type_parms : list [TypeVar]; }
+        | LocalRef                                              // { decl : LocalValue; }
+        | LocalFunRef                                           // { decl : LocalValue; type_parms : list [TypeVar]; }
+        | Literal                                               // { val : Nemerle.Compiler.Literal; }
+        | MethodAddress                                         // { from : TypeVar; meth : IMethod; is_virt : bool; type_parms : list [TypeVar]; }
+        | Base                                                  // { base_ctor : IMethod; }
+        | TypeOf                                                // { target_type : TypeVar; }
+        | MethodOf                                              
+        | CtorOf 
+        | FieldOf
+        | OpCode                                                // { name : string; }
+        | Goto                                                  // { target : int; mutable try_block : int; }
+        | DefaultValue
+        | Error
+        | DebugInfo
+        | This                       => ()
+        | Def
+        | Use                        => Util.ice("wrong node type")
+        }
+
+        _info.Pop();
+      }
+    }
+
+    public Walk([NotNull] expression : PExpr, [NotNull] walkHandler : ExprWalkHandler) : void
+    {
+      Init(walkHandler);
+      Go(expression);
+    }
+
+    public Walk([NotNull] pattern : T.Pattern, [NotNull] walkHandler : ExprWalkHandler) : void
+    {
+      Init(walkHandler);
+      Go(pattern);
+    }
+
+    public Walk([NotNull] member : P.ClassMember, [NotNull] walkHandler : ExprWalkHandler) : void
+    {
+      Init(walkHandler);
+      Go(member);
+    }
+
+    public Walk([NotNull] expression : TExpr, [NotNull] walkHandler : ExprWalkHandler) : void
+    {
+      Init(walkHandler);
+      Go(expression);
+    }
+
+    /*
+    public Walk([NotNull] expression : Decl, [NotNull] walkHandler : ExprWalkHandler) : void
+    {
+      .Init(walkHandler);
+      Go(expression);
+    }
+    */
+
+    public GetLocation(expression : PExpr) : Location
+    {
+      mutable loc = expression.Location;
+
+      Walk(expression, info =>
+      {
+        when (info.Node is Located)
+          loc = loc.Combine((info.Node :> Located).Location);
+      });
+
+      loc
+    }
+
+    public GetLocation(member : P.ClassMember) : Location
+    {
+      mutable loc = member.Location;
+
+      Walk(member, info =>
+      {
+        when (info.Node is Located)
+          loc = loc.Combine((info.Node :> Located).Location);
+      });
+
+      loc
+    }
+
+    public Resolve(expression : TExpr, speculative = false) : void
+    {
+      Walk(expression, info =>
+      {
+        match (info.Node)
+        {
+        | tExpr is TExpr =>
+          match (tExpr)
+          {
+          | TExpr.Delayed(susp) when !susp.IsResolved => susp.Resolve(speculative);
+          | _ => ()
+          }
+        | _ => ()
+        }
+      });
+    }
+
+    public ForEachUnresolvedDelayed(manager : ManagerClass, expression : TExpr, action : Typer.DelayedTyping -> void) : void
+    {
+      def walk(info)
+      {
+        match (info.Node)
+        {
+          | TExpr.Call(TExpr.Delayed(susp), _, _)  when !susp.IsResolved && !manager.NotResolvedNestedDelayedTypings.Contains(susp)
+          | TExpr.Delayed(susp)                    when !susp.IsResolved && !manager.NotResolvedNestedDelayedTypings.Contains(susp) =>
+            manager.NotResolvedNestedDelayedTypings.Add(susp, true);
+            action(susp);
+            info.Skip();
+              
+          | TExpr.LocalFunRef(LocalValue where(ValueKind=LocalValue.Kind.Function(header=T.TFunHeader where(Body=FunBody.Typed(body)) as f)), _) 
+            when manager.DelayedTypingsSecondPass && !manager.NotResolvedNestedDelayedTypings.Contains(f) =>
+            manager.NotResolvedNestedDelayedTypings.Add(f, true);
+            Walk(body, walk);
+              
+          | _ => ()
+        }
+      }
+      
+      Walk(expression, walk);
+    }
+
+    public FindUnresolvedDelayed(expression : TExpr) : SCG.IEnumerable[Typer.DelayedTyping]
+    {
+      def result = SCG.List();
+
+      Walk(expression, info =>
+      {
+        match (info.Node)
+        {
+          | tExpr is TExpr =>
+            match (tExpr)
+            {
+              | TExpr.Delayed(susp) when !susp.IsResolved => result.Add(susp);
+              | _ => ()
+            }
+          | _ => ()
+        }
+      });
+
+      result
+    }
+
+    /// Is subexpression nave all types infered, have no unresolved and no errors
+    public IsWellTyped(expression : TExpr) : WellTyped
+    {
+      mutable result = WellTyped.Yes;
+
+      Walk(expression, info =>
+      {
+        match (info.Node)
+        {
+          | tExpr is TExpr =>
+            match (tExpr)
+            {
+              | TExpr.Error                                      => result = WellTyped.Error;  info.Stop();
+              | TExpr.Delayed(susp) when !susp.IsResolved        => result = WellTyped.NotYet; info.Stop();
+              | _                     when tExpr.Type.Hint.IsNone  => result = WellTyped.NotYet; info.Stop();
+              | _ => ()
+            }
+          | _ => ()
+        }
+      });
+
+      result
+    }
+  } // class ExprWalker
+} // Nemerle.Compiler

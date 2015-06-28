@@ -1,0 +1,21 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.AST
+{
+  /// <summary>
+  /// Description of TypeBound.
+  /// </summary>
+  public enum TypeBound
+  {
+    | LowerBound
+    | UpperBound
+    | Invariant
+  }
+}

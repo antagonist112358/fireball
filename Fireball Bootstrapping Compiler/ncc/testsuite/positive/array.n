@@ -1,0 +1,166 @@
+using System.Console;
+using Nemerle.IO;
+
+struct A {
+  public x : int;
+
+  public this (a : int) {
+    x = a;
+  }
+}
+
+struct B {
+  public mutable a : int;
+}
+
+class Address {
+  static a_double : array [2, B] = array (10, 10);
+
+  public static Run () : void {
+    mutable i = 0;
+    mutable j = 0;
+
+    for (i = 0; i < 10; i++)
+      for (j = 0; j < 10; j++)
+        a_double [i,j].a = i * j;
+        
+    for (i = 0; i < 10; i++)
+      for (j = 0; j < 10; j++)
+        assert(a_double [i,j].a == i * j);
+  } 
+}
+
+module Tricky
+{
+    public
+    makeAnArray(): array[System.Int32]
+    {
+        array.[][1, 2]
+    }
+}
+
+
+public class ArrayTest
+{
+  public static Main () : void
+  {
+    printf ("Array test.\n");
+
+    mutable _a = array [1, 2, 3];
+    mutable _b = array ["ala", "ma", "kota"];
+    def arl = Nemerle.Collections.NCollectionsExtensions.FromList(typeof(System.String), ["a","b"]);
+    Nemerle.Collections.NCollectionsExtensions.Iter (arl, fun (x) { printf ("%s ", x); });
+    printf ("\n");
+
+    def struct_arr = array [A(87), A()];
+    printf ("%d %d\n", struct_arr[0].x, struct_arr[1].x);
+
+    mutable x = 2;
+    mutable y = 3;
+
+    mutable c = array [x, y, x + y, x - y, if (x < y) x else y];
+
+    mutable r0 = c [2];
+
+    c [2] = 1979;
+
+    mutable r1 = c [2];
+
+    printf ("%d\n%d\n", r0, r1);
+
+    def x1 = array (20);
+    x1[5] = 7;
+    def x2 = array (20);
+    x2[5] = "foo";
+    def x3 = array [1,2,3];
+    printf ("%d\n", System.Convert.ToInt32 (x3 == null));
+
+    def empty = array (3) : array [string];
+    System.Console.WriteLine (empty.GetType ());
+
+    Address.Run ();
+
+    def ar = array [object (), 3, 7];
+    foreach (a in ar)
+      System.Console.WriteLine (a);
+
+    def ar = array [42 : System.IComparable, 42];
+    foreach (a in ar)
+      System.Console.WriteLine (a);
+    System.Console.WriteLine (ar.GetType ());
+    
+    assert(Tricky.makeAnArray().Length == 2);
+
+    // bug #670
+    def data = array(4) : array[byte];
+    foreach( i in [0 .. 3])
+    {
+        data[i] = 42;
+        System.Console.WriteLine("data[{0}] = {1}", i, data[i]);
+    }
+
+
+    // bug #688
+    def a1 = array["qq", "aa"];
+    def a2 = a1 :> array[object];
+    System.Console.WriteLine(a2.GetType());
+
+    // bug #717
+    {
+      def seq : System.Collections.Generic.IEnumerable[int] = array[1,2,3];
+      def seq2 : System.Collections.IEnumerable = array[1,2,3];
+
+      def f(seq)
+      {
+        | _ is array[int] => System.Console.WriteLine("Is array!")
+        | _ => System.Console.WriteLine("Is NOT array.")
+      }
+
+      def f2(seq)
+      {
+        | _ is array[int] => System.Console.WriteLine("Is array!")
+        | _ => System.Console.WriteLine("Is NOT array.")
+      }
+
+      f (seq);
+      f2 (seq2);
+    }
+    
+    // bug 813
+    {
+        def seq = array["1", "2"];
+        def seq1 : System.Collections.Generic.IList[System.Collections.Generic.IEnumerable[char]] = seq;
+        _ = seq1;
+    }
+    
+    def obj = array[1] : object;
+    def res = obj is array[int];
+    WriteLine($"array[1] is array[int]: $res");
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Array test.
+a b 
+87 0
+5
+1979
+0
+System.String[]
+System.Object
+3
+7
+42
+42
+System.IComparable[]
+data[0] = 42
+data[1] = 42
+data[2] = 42
+data[3] = 42
+System.String[]
+Is array!
+Is array!
+array[1] is array[int]: True
+END-OUTPUT
+*/

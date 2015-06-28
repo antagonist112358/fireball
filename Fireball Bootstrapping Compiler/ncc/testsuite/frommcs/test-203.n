@@ -1,0 +1,27 @@
+public enum AttributesAndModifiers
+{
+  | Public = 0x0001
+}
+
+class Foo
+{
+  internal AttributesAndModifiers: AttributesAndModifiers{
+    get {
+       AttributesAndModifiers.Public;
+    }
+  }
+}
+
+class Bar
+{
+  public static Main () :  int
+  {
+    System.Console.WriteLine (AttributesAndModifiers.Public);
+     0;
+  }
+}
+/*
+BEGIN-OUTPUT
+Public
+END-OUTPUT
+*/

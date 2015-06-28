@@ -1,0 +1,241 @@
+using System;
+using Nemerle.IO;
+
+// ------------ DEPENDANT STRUCTS ----------------
+struct DependantStruct {
+  public a : TestStruct;
+  public b : T2;
+}
+
+[Record]
+public struct TestStruct
+{
+  public mutable x : int;
+  public mutable y : int;
+}
+
+public struct T2 {
+  public mutable ts : TestStruct;
+  public mutable z : int;
+
+  play_with_this () : void {
+    def initial = z;
+    def x = this;
+    x.z = 1111;
+    ++(x.z);
+// FIXME: (bug #338)
+//    assert(x.z == 1112);
+    assert(this.z == initial);
+    ++z;
+    assert(z == initial + 1);
+    this.ts = TestStruct (1,1);
+  }
+
+  public Get () : string {
+    play_with_this ();
+    System.Console.WriteLine (this);
+    printf ("%d\n", z);
+    (z + 1).ToString ()
+  }
+}
+
+// -----------------------------------------------
+
+// -------------- STRUCTS IMPLEMENTING INTERFACES ---------
+
+interface AI {
+  Think (knowledge : string) : bool;
+}
+
+struct Neuromancer : AI {
+  public tape : list [bool];
+
+  public Think (knowledge : string) : bool
+  {
+    knowledge == "42"
+  }
+}
+
+
+struct K : System.IDisposable {
+  public x : int;
+
+  public Dispose () : void { }
+}
+
+// ---------------------------------------------------
+
+// ---------- NESTED VALUE TYPES ---------------------
+
+[Record]
+public class Parential {
+
+  public struct Childish {
+    internal mutable i : int;
+  }
+  
+  public enum EneDue {
+    | Ra
+    | Be
+  }
+
+  internal x : Childish;
+  internal y : EneDue;
+}
+
+class NestedValueType {
+  public static Run () : void {
+  #if RUNTIME_MS
+    printf ("5\n");  
+    printf ("Be\n");
+  #else
+    def x = Parential.Childish ();
+    x.i = 5;
+    def y = Parential.EneDue.Be;
+    def par = Parential (x, y);
+    print (par.x.i.ToString () + "\n");
+    print (y.ToString () + "\n");
+  #endif
+  }
+}
+
+// ----------------------------------------------
+
+class Singularity : AI {
+  disk : list [bool];
+
+  public Think (knowledge : string) : bool
+  {
+    knowledge == "42"
+  }
+
+  [Nemerle.NotImplemented]
+  public f (x : int) : int;
+}
+
+struct EmptyOne {
+  public foo () : void { }
+}
+
+
+namespace ThisAssign {
+  struct A {
+    x : int;
+
+    foo (x : A) : void {
+      this = x;
+    }
+  }
+}
+
+
+public struct MapCollection
+{
+    x : int;
+    
+    public foo () : void
+    {
+        def buffer = 0;
+        [].Iter (fun(_map){ _ = buffer; });
+    }
+}
+
+struct S {
+  public mutable g : int;
+ 
+  public play () : void {
+    def x = this;
+    x.g = 10;
+    ++x.g;
+    assert(x.g == 11);
+  }
+}
+
+    [Record]
+    class some_struct // as in gdevdsp.h
+    {
+        size : int;
+        version_major : int;
+        version_minor : int;
+
+        display_open     : IntPtr * IntPtr -> int;
+        display_preclose : IntPtr * IntPtr -> int;
+        display_close    : IntPtr * IntPtr -> int;
+
+        display_presize : IntPtr * IntPtr * int * int * int * uint -> int;
+        display_size    : IntPtr * IntPtr * int * int * int * uint * IntPtr -> int;
+        display_sync    : IntPtr * IntPtr -> int;
+        display_page    : IntPtr * IntPtr * int * int -> int;
+        display_update  : IntPtr * IntPtr * int * int * int * int -> int;
+        display_memalloc: IntPtr * IntPtr * ulong -> IntPtr;
+        display_memfree : IntPtr * IntPtr * IntPtr -> int;
+    } 
+
+public module Test
+{
+  test_passing_around (s : TestStruct) : void
+  {
+    printf ("%i %i\n", s.x, s.y);
+    ++s.x;
+  }
+
+  f (s : AI) : void
+  {
+    when (s.Think ("42") && !s.Think ("7 * 8"))
+      printf ("ok\n")
+  }
+  
+  Main () : void
+  {
+    def s = TestStruct (10, 20);
+    
+    test_passing_around (s);
+    test_passing_around (s);
+
+    f (Neuromancer ());
+    f (Singularity ());
+
+    printf ("%i\n", s.x);
+    
+
+    def ar = array (10);
+    ar [0] = T2 ();
+    ar [0].z = 17;
+    ar [0].ts.x = 24;
+    ar [0].ts.y = 33;
+
+    printf ("%i %i %i\n", ar[0].z, ar[0].ts.x, ar[0].ts.y);
+
+    NestedValueType.Run ();
+
+    assert(ar [0].Get () == "19");
+
+    // bug 338
+    def x = S();
+    x.play ();
+
+    def a = S ();
+    def b = S ();
+    a.g = 1; b.g = 2;
+    a.g <-> b.g;
+    assert(b.g == 1 && a.g == 2);
+
+    // bug 598
+    _ = some_struct;
+  }
+}
+
+/*
+BEGIN-OUTPUT
+10 20
+10 20
+ok
+ok
+10
+17 24 33
+5
+Be
+T2
+18
+END-OUTPUT
+*/

@@ -1,0 +1,164 @@
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
+
+module Literals
+{
+  public FloatValue1      : float = FloatValueBase1 + FloatValueBase2;
+  public FloatValue2      : float = FloatValueBase1 - FloatValueBase2;
+  public FloatValue3      : float = FloatValueBase1 * FloatValueBase2;
+  public FloatValue4      : float = FloatValueBase1 / FloatValueBase2;
+  public FloatValue5      : float = FloatValueBase1 % FloatValueBase2;
+  public FloatValueBase1  : float = 1.0f;
+  public FloatValueBase2  : float = FloatValueBase1 + 2.0f;  
+
+  public DoubleValue1     : double = DoubleValueBase1 + DoubleValueBase2;
+  public DoubleValue2     : double = DoubleValueBase1 - DoubleValueBase2;
+  public DoubleValue3     : double = DoubleValueBase1 * DoubleValueBase2;
+  public DoubleValue4     : double = DoubleValueBase1 / DoubleValueBase2;
+  public DoubleValue5     : double = DoubleValueBase1 % DoubleValueBase2;
+  public DoubleValueBase1 : double = 1.0;
+  public DoubleValueBase2 : double = DoubleValueBase1 + 2.0;
+  
+  public BoolValue1     : bool = !BoolValueBase1 && !BoolValueBase2;
+  public BoolValue2     : bool = !BoolValueBase1 || !BoolValueBase2;
+  public BoolValueBase1 : bool = true;
+  public BoolValueBase2 : bool = true && !BoolValueBase1;
+  
+  public IntValue1      : int = IntValueBase1 + IntValueBase2;
+  public IntValue2      : int = IntValueBase1 - IntValueBase2;
+  public IntValue3      : int = IntValueBase1 * IntValueBase2;
+  public IntValue4      : int = IntValueBase1 / IntValueBase2;
+  public IntValue5      : int = IntValueBase1 % IntValueBase2;
+  public IntValue6      : int = IntValueBase1 & IntValueBase2;
+  public IntValue7      : int = IntValueBase1 | IntValueBase2;
+  public IntValue8      : int = IntValueBase1 ^ IntValueBase2;
+  public IntValue9      : int = IntValueBase1 %| IntValueBase2;
+  public IntValue10     : int = IntValueBase1 %& IntValueBase2;
+  public IntValueBase1  : int = 1;
+  public IntValueBase2  : int = IntValueBase1 + 2;
+  
+  public LongValue1     : long = LongValueBase1 + LongValueBase2;
+  public LongValue2     : long = LongValueBase1 - LongValueBase2;
+  public LongValue3     : long = LongValueBase1 * LongValueBase2;
+  public LongValue4     : long = LongValueBase1 / LongValueBase2;
+  public LongValue5     : long = LongValueBase1 % LongValueBase2;
+  public LongValue6     : long = LongValueBase1 & LongValueBase2;
+  public LongValue7     : long = LongValueBase1 | LongValueBase2;
+  public LongValue8     : long = LongValueBase1 ^ LongValueBase2;
+  public LongValue9     : long = LongValueBase1 %| LongValueBase2;
+  public LongValue10    : long = LongValueBase1 %& LongValueBase2;
+  public LongValueBase1 : long = 1L;
+  public LongValueBase2 : long = LongValueBase1 + 2L;
+}
+
+module QualifiedLiterals
+{
+  public FloatValue1      : float = QualifiedLiterals.FloatValueBase1 + QualifiedLiterals.FloatValueBase2;
+  public FloatValue2      : float = QualifiedLiterals.FloatValueBase1 - QualifiedLiterals.FloatValueBase2;
+  public FloatValue3      : float = QualifiedLiterals.FloatValueBase1 * QualifiedLiterals.FloatValueBase2;
+  public FloatValue4      : float = QualifiedLiterals.FloatValueBase1 / QualifiedLiterals.FloatValueBase2;
+  public FloatValue5      : float = QualifiedLiterals.FloatValueBase1 % QualifiedLiterals.FloatValueBase2;
+  public FloatValueBase1  : float = 1.0f;
+  public FloatValueBase2  : float = QualifiedLiterals.FloatValueBase1 + 2.0f;
+
+  public DoubleValue1      : double = QualifiedLiterals.DoubleValueBase1 + QualifiedLiterals.DoubleValueBase2;
+  public DoubleValue2      : double = QualifiedLiterals.DoubleValueBase1 - QualifiedLiterals.DoubleValueBase2;
+  public DoubleValue3      : double = QualifiedLiterals.DoubleValueBase1 * QualifiedLiterals.DoubleValueBase2;
+  public DoubleValue4      : double = QualifiedLiterals.DoubleValueBase1 / QualifiedLiterals.DoubleValueBase2;
+  public DoubleValue5      : double = QualifiedLiterals.DoubleValueBase1 % QualifiedLiterals.DoubleValueBase2;
+  public DoubleValueBase1  : double = 1.0;
+  public DoubleValueBase2  : double = QualifiedLiterals.DoubleValueBase1 + 2.0;
+
+  public BoolValue1     : bool = !QualifiedLiterals.BoolValueBase1 && !QualifiedLiterals.BoolValueBase2;
+  public BoolValue2     : bool = !QualifiedLiterals.BoolValueBase1 || !QualifiedLiterals.BoolValueBase2;  
+  public BoolValueBase1 : bool = true;
+  public BoolValueBase2 : bool = true && !QualifiedLiterals.BoolValueBase1;
+  
+  public IntValue1      : int = QualifiedLiterals.IntValueBase1 + QualifiedLiterals.IntValueBase2;
+  public IntValue2      : int = QualifiedLiterals.IntValueBase1 - QualifiedLiterals.IntValueBase2;
+  public IntValue3      : int = QualifiedLiterals.IntValueBase1 * QualifiedLiterals.IntValueBase2;
+  public IntValue4      : int = QualifiedLiterals.IntValueBase1 / QualifiedLiterals.IntValueBase2;
+  public IntValue5      : int = QualifiedLiterals.IntValueBase1 % QualifiedLiterals.IntValueBase2;
+  public IntValue6      : int = QualifiedLiterals.IntValueBase1 & QualifiedLiterals.IntValueBase2;
+  public IntValue7      : int = QualifiedLiterals.IntValueBase1 | QualifiedLiterals.IntValueBase2;
+  public IntValue8      : int = QualifiedLiterals.IntValueBase1 ^ QualifiedLiterals.IntValueBase2;
+  public IntValue9      : int = QualifiedLiterals.IntValueBase1 %| QualifiedLiterals.IntValueBase2;
+  public IntValue10     : int = QualifiedLiterals.IntValueBase1 %& QualifiedLiterals.IntValueBase2;
+  public IntValueBase1  : int = 1;
+  public IntValueBase2  : int = QualifiedLiterals.IntValueBase1 + 2;
+  
+  public LongValue1     : long = QualifiedLiterals.LongValueBase1 + QualifiedLiterals.LongValueBase2;
+  public LongValue2     : long = QualifiedLiterals.LongValueBase1 - QualifiedLiterals.LongValueBase2;
+  public LongValue3     : long = QualifiedLiterals.LongValueBase1 * QualifiedLiterals.LongValueBase2;
+  public LongValue4     : long = QualifiedLiterals.LongValueBase1 / QualifiedLiterals.LongValueBase2;
+  public LongValue5     : long = QualifiedLiterals.LongValueBase1 % QualifiedLiterals.LongValueBase2;
+  public LongValue6     : long = QualifiedLiterals.LongValueBase1 & QualifiedLiterals.LongValueBase2;
+  public LongValue7     : long = QualifiedLiterals.LongValueBase1 | QualifiedLiterals.LongValueBase2;
+  public LongValue8     : long = QualifiedLiterals.LongValueBase1 ^ QualifiedLiterals.LongValueBase2;
+  public LongValue9     : long = QualifiedLiterals.LongValueBase1 %| QualifiedLiterals.LongValueBase2;
+  public LongValue10    : long = QualifiedLiterals.LongValueBase1 %& QualifiedLiterals.LongValueBase2;
+  public LongValueBase1 : long = 1L;
+  public LongValueBase2 : long = QualifiedLiterals.LongValueBase1 + 2L;
+}
+
+module Decimals
+{
+  public DecimalValue1      : decimal = DecimalValueBase1 + DecimalValueBase2;
+  public DecimalValue2      : decimal = DecimalValueBase1 - DecimalValueBase2;
+  public DecimalValue3      : decimal = DecimalValueBase1 * DecimalValueBase2;
+  public DecimalValue4      : decimal = DecimalValueBase1 / DecimalValueBase2;
+  public DecimalValueBase1  : decimal = 1m;
+  public DecimalValueBase2  : decimal = DecimalValueBase1 + 2m;
+}
+
+module QualifiedDecimals
+{
+  public DecimalValue1     : decimal = QualifiedDecimals.DecimalValueBase1 + QualifiedDecimals.DecimalValueBase2;
+  public DecimalValue2     : decimal = QualifiedDecimals.DecimalValueBase1 - QualifiedDecimals.DecimalValueBase2;
+  public DecimalValue3     : decimal = QualifiedDecimals.DecimalValueBase1 * QualifiedDecimals.DecimalValueBase2;
+  public DecimalValue4     : decimal = QualifiedDecimals.DecimalValueBase1 / QualifiedDecimals.DecimalValueBase2;
+  public DecimalValueBase1 : decimal = 1m;
+  public DecimalValueBase2 : decimal = QualifiedDecimals.DecimalValueBase1 + 2m;
+}
+
+module Program
+{  
+  Main() : void
+  {
+    def checkConstant(t)
+    {
+      foreach (field in t.GetFields())
+      {
+        when (!field.IsLiteral)
+          Console.WriteLine($"$(field.Name) is not a constant");
+      }
+    }
+    
+    def checkReadOnly(t)
+    {
+      foreach (field in t.GetFields())
+      {
+        when (!field.IsInitOnly)
+          Console.WriteLine($"$(field.Name) is not readonly");
+
+       def attrs = field.GetCustomAttributes(typeof(DecimalConstantAttribute), true);
+       when (attrs.Length == 0)
+         Console.WriteLine($"$(field.Name) doesn't have DecimalConstant attribute");
+      }
+    }  
+    
+    // Read only
+    checkConstant(typeof(Literals));
+    checkConstant(typeof(QualifiedLiterals));
+    
+    // Decimal
+    checkReadOnly(typeof(Decimals));
+    checkReadOnly(typeof(QualifiedDecimals));
+  }
+}
+
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/

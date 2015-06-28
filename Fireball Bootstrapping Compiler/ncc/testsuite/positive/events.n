@@ -1,0 +1,146 @@
+using System;
+
+class A {
+  mutable foo : EventHandler;
+  public event Foo : EventHandler
+  {
+    add { foo += value; }
+    remove { foo -= value; }
+  }
+  public event Bar : EventHandler;
+  public go () : void { foo (null, null) }
+  public go2 () : void { Bar (null, null); }
+  public this () {}
+}
+namespace GGGG {
+module B {
+  mutable foo : EventHandler;
+  public event Foo : EventHandler
+  {
+    add foo += value;
+    remove foo -= value;
+  }
+  public event Bar : EventHandler;
+  public go () : void { foo (null, null) }
+  public go2 () : void { Bar (null, null); }
+  this () {}
+}
+
+module M {
+  handler (_ : object, _ : EventArgs) : void
+  {
+    System.Console.WriteLine ("handler called");
+  }
+
+  handler2 (_ : object, _ : EventArgs) : void
+  {
+    System.Console.WriteLine ("handler2");
+  }
+
+  handler3 (_ : object, _ : EventArgs) : void
+  {
+    System.Console.WriteLine ("handler3");
+  }
+
+  public event Boo : EventHandler;
+
+  Main () : void
+  {
+// TODO: automagically check for nullness
+//    Boo (null, null);
+    AppDomain.CurrentDomain.ProcessExit += EventHandler (handler2);
+    AppDomain.CurrentDomain.ProcessExit += handler;
+    // this adds instead of removing, but this is mono (mcs) bug
+    // AppDomain.CurrentDomain.ProcessExit -= EventHandler (handler2);
+    System.Console.WriteLine ("main");
+    mutable foo = EventHandler (handler2);
+    foo += handler3;
+    foo += EventHandler (handler3);
+    foo.Invoke (null, null);
+    System.Console.WriteLine ("---");
+    foo -= handler2;
+    foo (null, null);
+    System.Console.WriteLine ("---");
+
+    def a = A ();
+    a.Foo += handler;
+    a.go ();
+    System.Console.WriteLine ("---X");
+
+    a.Bar += handler;
+    a.Bar += handler3;
+    a.Bar -= handler;
+    a.go2 ();
+    System.Console.WriteLine ("---X");
+    
+    B.Foo += handler;
+    B.go ();
+    System.Console.WriteLine ("---B");
+
+    B.Bar += handler;
+    B.Bar += handler3;
+    B.Bar -= handler;
+    B.go2 ();
+    System.Console.WriteLine ("---B");
+    assert(AccessThis.TestClass.Run () == 0);
+  }
+}
+}
+
+
+namespace AccessThis {
+  public class TestClass : TestBaseClass {
+
+          public this ( hndlr : EventHandler)
+          {
+            base ();
+            this.Blah += hndlr; // works fine
+            Blah += hndlr;
+          }
+
+          public static Run () : int
+          {
+            def handl = EventHandler (fun (_ : object, _ : EventArgs) {
+              Console.WriteLine ("called test base")
+            });
+             def x = TestClass (handl);
+             x.Fire ();
+                   0;
+          }
+  }
+
+  public class TestBaseClass {
+
+          public event Blah : EventHandler;
+
+
+          public Fire () : void {
+            Blah (null, null);
+          }
+  }
+}
+
+/*
+BEGIN-OUTPUT
+main
+handler2
+handler3
+handler3
+---
+handler3
+handler3
+---
+handler called
+---X
+handler3
+---X
+handler called
+---B
+handler3
+---B
+called test base
+called test base
+handler2
+handler called
+END-OUTPUT
+*/

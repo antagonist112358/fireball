@@ -1,0 +1,25 @@
+class A {
+  public Prop : string {
+    get { ""  }
+    private set { ignore (value) }
+  }
+
+  public this () { Prop = "" }
+}
+
+class B {
+  OnlyGet : int {
+    get { 1 }
+  }
+
+  
+  public this () {
+    def x = A();
+    OnlyGet = 4;        // E: read-only
+  }
+
+  goo () : void {
+    def x = A();
+    x.Prop = "#";        // E: Cannot access protected member 'A\.Prop' via a qualifier of type 'A'
+  }
+}

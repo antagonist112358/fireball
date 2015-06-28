@@ -1,0 +1,384 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Compiler;
+using Nemerle.Collections;
+
+namespace Nemerle.Core
+{
+  macro DebugPrint(expression, printFunction = <[ System.Console.WriteLine ]>)
+  {
+    def code = expression.ToString() + " ==> ";
+    <[
+        def result = $expression;
+        $printFunction($(code : string) + result.ToString());
+    ]>
+  }
+  
+  macro assert(cond, message = <[ "" ]>) 
+  {
+    match (cond) {
+      | <[ false ]> =>
+        // skip cond in this case so it gets 'a type
+        <[ throw AssertionException ($(cond.Location.File : string), 
+                                     $(cond.Location.Line : int),
+                                     "", $message) ]>
+      | _ =>
+        <[ unless ($cond) 
+             throw AssertionException ($(cond.Location.File : string), 
+                                       $(cond.Location.Line : int),
+                                       $(cond.ToString () : string),
+                                       $message) ]>
+    }
+  }
+  
+  /// <summary>Checks for a condition; if the condition is false, outputs a specified message and displays a message 
+  /// box that shows the call stack. The message include code of condition.</summary>
+  /// <param name="condition">The conditional expression to evaluate. If the condition is true, the specified message is not sent and the message box is not displayed.</param>
+  /// <param name="message">The message to send to the <see cref="P:System.Diagnostics.Trace.Listeners"/> collection.</param>
+  /// <remark>Used System.Diagnostics.Debug.Assert() to display message</remark>
+  macro assert2(condition, message = <[ "" ]>)
+  {
+    match (condition)
+    {
+      | <[ false ]> => // skip condition in this case so it gets 'a type
+        <[ System.Diagnostics.Debug.Assert(false, ($message).ToString()) ]>
+        
+      | _ => <[ 
+        unless ($condition) 
+        {
+          def msg = "Assertion: " + $(condition.ToString() : string)
+                    + "\nAt: " + $(condition.Location.File : string) + " failed.";
+          System.Diagnostics.Debug.Fail(msg, ($message).ToString())
+        } ]>
+    }
+  }
+
+  macro assert3(condition, message = <[ "" ]>)
+  {
+    match (condition)
+    {
+      | <[ false ]> => // skip condition in this case so it gets 'a type
+        <[ System.Diagnostics.Debug.Assert(false, ($message).ToString());
+           throw AssertionException ($(condition.Location.File : string), 
+                                     $(condition.Location.Line : int),
+                                     "", $message);
+        ]>
+        
+      | _ => <[ 
+        unless ($condition) 
+        {
+          def msg = "Assertion: " + $(condition.ToString() : string)
+                    + "\nAt: " + $(condition.Location.File : string) + " failed.";
+          System.Diagnostics.Debug.Fail(msg, ($message).ToString());
+          throw AssertionException ($(condition.Location.File : string), 
+                                    $(condition.Location.Line : int),
+                                    $(condition.ToString () : string),
+                                    $message);
+        } ]>
+    }
+  }
+}
+
+namespace Nemerle.Assertions
+{
+  /// Enforces that given parameter is not a null value.
+  ///
+  ///    Performs runtime check at every call to enclosing method.
+  ///    
+  ///    Example: Foo([NotNull] o : object) : void { ... }
+  [Nemerle.MacroUsage (MacroPhase.WithTypedMembers, MacroTargets.Parameter,
+                       Inherited = true, AllowMultiple = false)]
+  macro NotNull(_ : TypeBuilder, m : MethodBuilder, p : ParameterBuilder)
+  {
+    if (p.ty.CanBeNull)
+    {
+      def name      = <[ $(p.AsParsed().PName : name) ]>;
+      def nameLoc   = p.NameLocation;
+      def loc       = m.Body.Location;
+      def paramName = p.Name.ToString();
+      def msg       = $<#The ``NotNull'' contract of parameter ``$paramName'' has been violated. See $nameLoc.#>;
+      def condition = if (p.ty.Fix().IsValueType) name
+                      else                        <[ $name : object ]>;
+
+      m.Body = <[
+        when ($condition == null)
+        {
+          //System.Diagnostics.Debug.Fail($(msg : string));
+          throw System.ArgumentNullException($(paramName : string), $(msg : string))
+        }
+          
+        $(m.Body)
+      ]>;
+      
+      m.Body.Location = loc;
+    }
+    else
+      Message.Warning(p.Location, 
+        $"The ``NotNull'' contract for parameter ``$(p.Name)'' has no effect. Instance of type ``$(p.ty)'' can't be null reference.");
+  }
+
+  /// Enforces that given string parameter is not a null and not an empty value.
+  ///
+  ///    Performs runtime check at every call to enclosing method.
+  ///    
+  ///    Example: Foo([NotNullOrEmpty] s : string) : void { ... }
+  [Nemerle.MacroUsage (MacroPhase.WithTypedMembers, MacroTargets.Parameter,
+                       Inherited = true, AllowMultiple = false)]
+  public macro NotNullOrEmpty(_ : TypeBuilder, m : MethodBuilder, p : ParameterBuilder)
+  {
+    def paramName = p.Name.ToString();
+    if (p.ty.TryRequire(<[ttype : System.String]>))
+    {
+        def name      = <[ $(p.AsParsed().PName : name) ]>;
+        def nameLoc   = p.NameLocation;
+        def loc       = m.Body.Location;
+        def msg       = $<#The ``NotNullOrEmpty'' contract of parameter ``$paramName'' has been violated. See $nameLoc.#>;
+        def parameter = <[ $name ]>;
+
+        m.Body = 
+        <[
+            when (System.String.IsNullOrEmpty($parameter))
+            {
+                throw System.ArgumentException($(msg), $(paramName));
+            }
+            $(m.Body)
+        ]>;
+
+        m.Body.Location = loc;
+    }
+    else
+    {
+      Message.Warning(p.Location, 
+        $"The ``NotNullOrEmpty'' contract for parameter ``$paramName'' has no effect. The type of parameter ``$paramName'' must be System.String.");
+    }
+  }
+
+  /// Example: foo ([Requires (value != 4)] i : int) : void { ... }
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Parameter,
+                       Inherited = true, AllowMultiple = true)]
+  macro Requires (_ : TypeBuilder, m : ParsedMethod, p : ParsedParameter, assertion, other = null)
+  syntax ("requires", assertion, Optional ("otherwise", other))  
+  {
+    def loc = m.Body.Location;
+    def check =
+      if (other != null)
+        <[ unless ($assertion) $other ]>
+      else
+        <[ assert($assertion, "The ``Requires'' contract of parameter `" +
+                   $(p.Name : string) + "' has been violated.") ]>;
+    
+    def newBody = Util.locate(loc, <[
+      def $("value" : usesite) = $(p.PName : name);
+      $check;
+      $(m.Body)
+    ]>);
+    m.Body = newBody;
+  }
+
+  /** Enforces given boolean condition at method invocation beginning.  
+
+      It checks at runtime, that given condition is true at the beginning
+      of each method invocation. The `otherwise' section allows to specify
+      what should happen when condition is false (for example throw some
+      exception).                                            
+  
+     Example:   [Requires (i != 4 &amp;&amp; boo ())]
+                foo (i : int) : void
+                { ... }
+             or
+                foo (i : int) : void
+                 requires i > 0
+                { ... }
+
+             after opening Nemerle.Assertions namespace
+   */
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
+                       Nemerle.MacroTargets.Method,
+                       Inherited = true, AllowMultiple = true)]
+  macro Requires (_ : TypeBuilder, m : ParsedMethod, assertion, other = null)
+  syntax ("requires", assertion, Optional ("otherwise", other))
+  {
+    def check =
+      if (other != null)
+        <[ unless ($assertion) $other ]>
+      else
+        <[ assert($assertion, "The ``Requires'' contract of method `" +
+                   $(m.Name : string) + "' has been violated.") ]>;
+        
+    def newBody = Util.locate(m.Body.Location, <[
+      $check;
+      $(m.Body)
+    ]>);
+      
+    m.Body = newBody;
+  }
+  
+  /** Enforces given boolean condition at the end of method invocation.  
+
+      It checks at runtime, that given condition is true at the end
+      of each method invocation. The `otherwise' section allows to specify
+      what should happen when condition is false (for example throw some
+      exception).                                            
+  
+     Example:  [Ensures (foo () != 4)]
+            foo (i : int) : int { ... }
+          or
+            foo (i : int) : int
+             ensures value > 0
+            { ... }
+
+          after opening Nemerle.Assertions namespace
+   */
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers,
+                       Nemerle.MacroTargets.Method,
+                       Inherited = true, AllowMultiple = true)]
+  macro Ensures (_ : TypeBuilder, m : MethodBuilder, assertion, other = null)
+  syntax ("ensures", assertion, Optional ("otherwise", other))
+  {
+    def check =
+      if (other != null)
+        <[ unless ($assertion) $other ]>
+      else
+        <[ assert($assertion, "The ``Ensures'' contract of method `" +
+                   $(m.Name : string) + "' has been violated.") ]>;
+    
+    def newBody = Util.locate(m.Body.Location, 
+      if (m.ReturnType.Equals (FixedType.Void ()))
+        <[
+          $(m.Body);
+          $check;
+        ]>
+      else
+        <[
+          def $("value" : usesite) = $(m.Body);
+          $check;
+          $("value" : usesite);
+        ]>);
+      
+      m.Body = newBody;
+  }
+
+  /*
+      TODO for invariant:
+      - invariants are inherited from super class - all derived classes have
+        implicit call to own / overriden _N_invariant in public methods
+      - addition of expose to method can be disabled with attribute
+      - add expose (o upto T), which fires invariants for o in its superclasses
+      - only constants, fields, arrays, state independent and confined (depending
+        on owned mutable fields) methods can be mentioned in invariants
+      - add class invariants (for static fields)
+      - add support for checked exceptions and rethrowing them (in case of invariant
+        violation, they are rewhrown as inner exceptions)
+
+     Example: [Invariant (i > 0)] class A { mutable i : int; ... }
+  */
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers,
+                       Nemerle.MacroTargets.Class,
+                       Inherited = true, AllowMultiple = true)]
+  macro Invariant (ty : TypeBuilder, body)
+  syntax ("invariant", body)
+  {
+    def existing =
+      NList.Find (ty.LookupMember ("_N_invariant"), fun (x : IMember) {
+        x.DeclaringType.Equals (ty) && x is IMethod
+      });
+
+    match (existing) {
+      | None =>
+        def methods = ty.GetMethods (BindingFlags.Public %|
+                                     BindingFlags.Instance %|
+                                     BindingFlags.DeclaredOnly);
+        foreach (m :> MethodBuilder in methods)
+        {
+          def newBody = Util.locate(m.Body.Location,
+            <[ InvariantExpose (this, $(m.Body)) ]>);
+          m.Body = newBody;
+        }
+        ty.Define ( <[ decl:
+          public mutable _N_invariant_affinity : int = -1;
+        ]> );
+        ty.Define ( <[ decl:
+          public virtual _N_invariant () : void
+          {
+            assert($body, "The class invariant has been violated.")
+          }
+        ]> );
+      | Some (m) =>
+        def m = m :> MethodBuilder;
+        def newBody = Util.locate(m.Body.Location, <[
+          $(m.Body);
+          assert($body, "The class invariant has been violated.");
+        ]>);
+        m.Body = newBody;
+    }
+  }
+
+  macro InvariantExpose (exposed, body) 
+  syntax ("expose", "(", exposed, ")", body)
+  {
+    def tbody = Nemerle.Macros.ImplicitCTX ().TypeExpr (body);
+    def default = Macros.DefaultValueOfType (tbody.ty.Fix ());
+
+    <[ 
+      def e = $exposed;
+      lock (e) {
+        def currentThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+        
+        when (e._N_invariant_affinity != -1 && e._N_invariant_affinity != currentThreadId)
+          throw System.Exception($"Invariant lock has already been taken from another thread $currentThreadId");
+          
+        e._N_invariant_affinity = currentThreadId
+      }
+      mutable need_to_check = false;
+
+      mutable result = $default;
+      try {
+        result = $(tbody : typed);
+        need_to_check = true;
+        result
+      }
+      /* FIXME: we would need support for checked exceptions (at method's signature level)
+      catch {
+        | e is IChecked => need_to_check = true; throw;
+        | _ => throw;
+      }
+      */
+      finally 
+      {
+        lock (e) 
+        {
+          e._N_invariant_affinity = -1;
+          when (need_to_check)
+            e._N_invariant ()        
+        }
+      }
+    ]>     
+  }
+}

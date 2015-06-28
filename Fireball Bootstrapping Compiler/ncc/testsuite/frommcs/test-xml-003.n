@@ -1,0 +1,18 @@
+// Compiler options: -doc:xml-003.xml
+using System;
+
+namespace Testing
+{
+  public class Test
+  {
+    public static Main () :  void
+    {
+      /// here is an extraneous comment
+    }
+  }
+}
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/
+// OPTIONS: -doc:xml-003.xml

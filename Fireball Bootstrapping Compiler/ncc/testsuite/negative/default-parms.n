@@ -1,0 +1,35 @@
+enum Foo : long { | A  = -7 | B }
+
+module M {
+  public Foo1 (x : string = Main()) : void // E: Incorrect format of parameter `x' default value. You should use
+  {
+  }
+  
+  public Foo2 (x : string = 3) : void // E: invalid type for default value of parameter `x', needed string, got 3
+  {
+  }
+  
+  public Foo4 (x : int = null) : void // E: invalid type for default value of parameter `x', needed int, got null
+  {
+  }
+  
+  public Foo5 (x : int = 42) : void // OK
+  {
+  }
+  
+  public Foo6 (x : decimal = 42M) : void // E: only `null' is allowed for default value of type `decimal' \(parameter `x'\)
+  {
+  }
+  
+  public Foo7 (x : object = ()) : void // E: the void literal is not allowed for default value of parameter `x'
+  {
+  }
+  
+  public Foo8 (x = null) : void // E: type inference not supported when default value is null \(parameter `x'\)
+  {
+  }
+  
+  Main () : void
+  {
+  }
+}

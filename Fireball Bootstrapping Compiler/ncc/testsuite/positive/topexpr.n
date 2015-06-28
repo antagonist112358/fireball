@@ -1,0 +1,24 @@
+using Nemerle.IO;
+
+[assembly: System.Reflection.AssemblyTitle("test test test")]
+
+System.Console.WriteLine("hello there!"); 
+
+def f (x) {
+  x + 1
+}
+
+def g (y) {
+  y + "a"
+}
+
+print (f (1));
+print (f (2));
+print (g ("b"));
+
+/*
+BEGIN-OUTPUT
+hello there!
+23ba
+END-OUTPUT
+*/

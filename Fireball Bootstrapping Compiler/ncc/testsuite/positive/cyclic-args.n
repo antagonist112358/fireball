@@ -1,0 +1,64 @@
+﻿class A {
+  m (_ : B) : void {}
+}
+
+class B {
+  m (_ : A) : void {}
+}
+
+// test whether these are OK in any order
+class C2 : C1 [int] {}
+class C1 ['a] {}
+
+class D1 ['a] {}
+class D2 : D1 [int] {}
+
+class E2 ['a] where 'a : E1 ['a] {}
+class E1 ['a] {}
+
+class F1 ['a] {}
+class F2 ['a] where 'a : F1 ['a] {}
+
+
+module M {
+  Main () : void
+  {
+    def loop () {
+      loop ();
+    }
+    loop ();
+    System.Console.WriteLine (""); // W: skipped
+  }
+
+  f() : void
+  {
+    def loop()
+    {
+      if (true)
+      {
+        try { () }
+        finally { }
+        loop()
+      }
+      else
+        loop();
+    }
+    loop();
+    System.Console.WriteLine (""); // W: skipped
+  }
+
+  g() : void
+  {
+    def loop()
+    {
+      if (true)
+      {
+        throw System.Exception()
+      }
+      else
+        loop();
+    }
+    loop();
+    System.Console.WriteLine(""); // W: skipped
+  }
+}

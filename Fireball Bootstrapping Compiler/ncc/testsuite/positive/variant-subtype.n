@@ -1,0 +1,69 @@
+[Record]
+class A {}
+
+variant X : A { | Y }
+
+variant Z {
+  | Foo { x : string; }
+  | Zoo { x : string; }
+  | Boo
+}
+
+class T {
+  static f (_ : A) : void {}
+  static Main () : void {
+    T.f (X.Y());
+    assert(ImmutableCovariance.Func () == true);
+    def _ = Top.Child.Inner ();
+  }
+}
+
+public module Top {
+  public variant Child {
+    | X
+    | Y
+    
+    public class Inner {}
+  }
+}
+
+public class ImmutableCovariance
+{
+    public variant V
+    {
+        | A
+        | B
+    }
+
+    public static Func() : bool
+    {
+        def foo (l)
+        {
+            | V.A :: xs => foo (xs)
+            | V.B :: xs => !foo (xs)
+            | [] => true
+        };
+
+        def a = V.A();
+
+        foo ([a])
+    }
+}
+
+module VariantReturnType {
+ public variant My { | A | B }
+
+ public general () : My {
+   My.A ()
+ }
+
+ public specific () : My.A {
+   My.A ()
+ }
+}
+
+
+/*
+BEGIN-OUTPUT
+END-OUTPUT
+*/

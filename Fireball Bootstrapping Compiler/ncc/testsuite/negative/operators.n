@@ -1,0 +1,45 @@
+using Nemerle.Collections;
+
+module M {
+  [Record]
+  class X {}
+  Main () : void
+  {
+    def _ = 1 * null; // E: in argument #2.*, needed a int, got.*null
+
+    def h = Hashtable (); // OK
+    h [ "foo" ] = "bar"; // OK
+    h [ "dupa" ] = 3; // E: expected .*string.*got int in assigned value
+    def _ = "foo" : System.Type; // E: expected System.Type.* got .*string.*in type-enforced expression
+
+          def loop (x, x2) {
+            match ((x, x2)) {
+              | [] => x // E: the matched value.*was expected to be compatible with .*
+            }
+          }
+
+          loop ([], []);
+
+
+         def loop (x, x2) {
+            | [] => x // E: the matched value.*was expected to be compatible with .*
+          }
+
+          loop ([], []);
+
+    ()
+  }
+}
+
+namespace Undefined {
+  public class Foo {
+
+          public static FooRun () :  void
+          {
+                  mutable  k =  Foo ();
+
+                  mutable  i = ~ k; (); // E: typing fails on finding the operator
+
+          }
+  }
+}

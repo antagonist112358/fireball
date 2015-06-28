@@ -1,0 +1,263 @@
+using Nemerle.IO;
+using System.Console;
+
+class Tailed {
+  public foo (x : int, y : int) : int {
+    if (x > 20000000) 
+      y
+    else
+      foo (x + 1, (y + 1) % 220000);
+  }
+}
+
+[Record]
+class X {
+  k : int;
+  public foo () : void
+  {
+    if (k == 3) ()
+    else X (3).foo ()
+  }
+}
+
+
+namespace Bug478 {
+  class C[T] {
+     public static foo (_ : T) : void
+     {
+       if (typeof(T).Equals (typeof(int)))
+         System.Console.WriteLine ("int");
+       else
+         C[int].foo (3);
+     }
+
+     public static foo2 (n : int, x : T) : void
+     {
+       if (n < 10000000)
+         foo2 (n + 1, x)
+       else
+         System.Console.WriteLine (x);
+     }
+  }
+
+  class D {
+     public static bar[X] () : void
+     {
+       if (typeof(X).Equals (typeof(int)))
+         System.Console.WriteLine ("int");
+       else
+         bar.[int] ();
+     }
+     
+     public static bar2[X] (n : int) : void
+     {
+       if (n < 10000000)
+         bar2 (n + 1)
+       else
+         System.Console.WriteLine (typeof (X));
+     }
+     
+     public static bar3[X] (n : int) : void
+     {
+       if (n < 10000000)
+         bar2.[X] (n + 1)
+       else
+         System.Console.WriteLine (typeof (X));
+     }
+     
+     public xbar[X] () : void
+     {
+       if (typeof(X).Equals (typeof(int)))
+         System.Console.WriteLine ("int");
+       else
+         xbar.[int] ();
+     }
+     
+     public xbar2[X] (n : int) : void
+     {
+       if (n < 10000000)
+         xbar2 (n + 1)
+       else 
+         System.Console.WriteLine (typeof (X));
+     }
+     
+     public xbar3[X] (n : int) : void
+     {
+       if (n < 10000000)
+         xbar3.[X] (n + 1)
+       else 
+         System.Console.WriteLine (typeof (X));
+     }
+  }
+
+  module Test {
+    public Go () : void {
+      D.bar.[string] ();
+      D.bar2 (0);
+      D.bar2.[int] (0);
+      D.bar3.[int] (0);
+
+      def d = D ();
+      d.xbar.[string] ();
+      d.xbar2 (0);
+      d.xbar2.[int] (0);
+      d.xbar3.[int] (0);
+
+      C.foo ("bar");
+      C.foo2 (0, 42);
+      C.foo2 (0, "foo");
+    }
+  }
+}
+
+class Bug804 
+{
+  class Base
+  {
+    public virtual f( i : int ) : void
+    {
+      WriteLine("Base.f");
+      when( i != 0 )
+        f(i-1);
+    }
+  
+  };
+  
+  class Derived : Base
+  {
+    public base_f( i : int ) : void
+    {
+      WriteLine("Derived.base_f");
+      base.f(i);
+    }
+  
+    public override f( i : int ) : void
+    {
+      WriteLine("Derived.f");
+      when( i < 10 )
+        f(i+1);
+    }
+  
+  };
+
+  public static Run () : void {
+    def b = Base();
+    def d = Derived();
+    
+    WriteLine (typeof (this));
+    WriteLine("Calling b.f(10)");
+    b.f(10);
+    
+    WriteLine("Calling d.f(10)");
+    d.f(10);
+    
+    WriteLine("Calling d.base_f(10)");
+    d.base_f(10); 
+  }
+}
+
+module M {
+  global_loop (acc : int, n : int) : int
+  {
+      if (n < 20000000)
+        global_loop (acc + 5, n + 1)
+      else
+        acc
+  }
+
+  refing (x : ref int) : void {
+    def y = array (10);
+    for (mutable i = 0; i < 10; ++i) {
+      y[x] = 4;
+      for (mutable u = 0; u < 10; ++u) 
+      for (mutable o = 0; o < 10; ++o) {
+        def _ = u;
+        ()
+      }
+    }
+  }
+
+  
+      Bug578 [a] (l : list [a]) : int
+      {
+        def loop (acc : int, x : list [a]) : int // W: never used
+        {
+          match (l) {
+            | _::xs => loop(acc + 1, xs)
+            | Nil  => 0
+          }
+        };
+        loop (0, l)
+      }
+  
+  Main () : void {
+    mutable sum = 0;
+    for (mutable i = 0; i < 20000000; i = i + 1)
+      sum = sum + 3;
+    printf ("%d\n", sum);
+    mutable i = 0;
+    while (i < 20000000) {
+      sum = sum + 7;
+      i = i + 1
+    };
+    printf ("%d\n", sum);
+    def loop (acc, n) {
+      if (n < 20000000)
+        loop (acc + 6, n + 1)
+      else
+        acc
+    };
+    sum = loop (sum, 0);
+    printf ("%d\n", sum);
+    sum = global_loop (sum, 0);
+    printf ("%d\n", sum);
+    def x = Tailed ();
+    printf ("%d\n", x.foo (0, 0));
+
+    X (30).foo ();
+
+    Bug478.Test.Go ();
+    Bug804.Run ();
+  }
+}
+
+/*
+BEGIN-OUTPUT
+60000000
+200000000
+320000000
+420000000
+200001
+int
+System.Object
+System.Int32
+System.Int32
+int
+System.Object
+System.Int32
+System.Int32
+int
+42
+foo
+Bug804
+Calling b.f(10)
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Base.f
+Calling d.f(10)
+Derived.f
+Calling d.base_f(10)
+Derived.base_f
+Base.f
+Derived.f
+Derived.f
+END-OUTPUT
+*/

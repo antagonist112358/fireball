@@ -1,0 +1,12 @@
+// Compiler options: -t:library
+
+namespace Qt
+{
+        public class QtSupport
+        {
+                protected static event mousePressEvent :  MousePressEvent;
+
+                protected delegate MousePressEvent () :  void;
+        }
+
+}

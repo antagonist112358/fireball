@@ -1,0 +1,44 @@
+//
+// NemerleCodeProvider.n
+//
+// Author:
+//  Atsushi Enomoto <atsushi@ximian.com>
+//  Kamil Skalski   <nazgul@nemerle.org>
+//
+// Too short to be copyrighted.
+//
+using System;
+using System.CodeDom.Compiler;
+using System.ComponentModel;
+
+namespace Nemerle.Compiler
+{
+  public class NemerleCodeProvider : CodeDomProvider
+  {
+    public this () { }
+
+    public override FileExtension : string {
+      get { "n" }
+    }
+
+    [Obsolete ("do not use CreateCompiler directly")]
+    public override CreateCompiler () : ICodeCompiler
+    {
+      NemerleCodeCompiler ();
+    }
+
+    [Obsolete ("do not use CreateGenerator directly")]
+    public override CreateGenerator () : ICodeGenerator
+    {
+      NemerleCodeGenerator();
+    }
+
+    public override GetConverter (ty : Type) : TypeConverter
+    {
+      if (typeof (System.CodeDom.MemberAttributes).Equals(ty))
+        NemerleMemberAttributeConverter.Default;
+      else
+        base.GetConverter (ty);
+    }
+  }
+}

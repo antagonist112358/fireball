@@ -1,0 +1,69 @@
+using System;
+using System.Console;
+using System.Collections.Generic;
+
+module Program
+{
+  Main() : void
+  {
+    mutable i = 0;
+    while (i > 10)
+      if (i == 0)
+        WriteLine(i);
+      else
+        WriteLine(i + 1);
+    otherwise
+      WriteLine("Otherwise1");
+    
+    while (i > 10)
+      if (i == 0)
+        WriteLine(i);
+      else
+        WriteLine(i + 1);
+      
+    mutable j = 2;
+    while (j < 3)
+    {
+      while (j < 1)
+        ++j;
+      otherwise
+        WriteLine("Otherwise{0}", j);
+      ++j;
+    }
+    otherwise
+      WriteLine("Other1");
+      
+    // Complex cases
+    if (1 == 2)
+    {
+      mutable k = 0;
+      unless (false)
+        while (k > 10)
+          unless (false)
+            WriteLine("Other3");
+    }
+    else
+    {
+      mutable k = 0;
+      while (k > 10)
+        WriteLine("Other4");
+    }
+  
+    if (1 == 2)
+      while (false)
+        WriteLine(i);
+    else
+      while (false)
+        WriteLine(i);
+      otherwise
+        WriteLine("Otherwise3");
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Otherwise1
+Otherwise2
+Otherwise3
+END-OUTPUT
+*/

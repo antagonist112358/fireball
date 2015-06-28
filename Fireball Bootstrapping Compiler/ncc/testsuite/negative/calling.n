@@ -1,0 +1,98 @@
+class M {
+  static f () : void { u (1) } // E: in argument #1.* needed.*
+
+  static u (_ : string) : void { } // OK
+
+  static g () : void { 1 () }    // E: the value called \(.*1.*\) has non-functional type int
+
+  static h () : void { M.g(2) }    // E: wrong number of parameters in call, needed 0, got 1
+
+  static p (params _ : array [int])  : void {} // H: overload definition
+
+  static foo () : void {
+    def x = System.Text.StringBuilder ();
+    x.Chars (0) = 'a';         // E: attempt to call an indexer property `Chars'
+    
+    p (3); // OK
+    mutable q = 3;
+    p (ref q); // E: ref/out parameters are not allowed with `parms'
+    p ("foo"); // E: .*needed .*int.* got string
+
+    ignore (4, 4);              // OK
+  }
+
+  static qux (_x : ref B) : void {}
+  static rq (_x : BD) : void {}
+
+  static ble42 () : void
+  {
+    mutable x = BD (); // OK
+    rq (x); // OK
+    qux (ref x); // E: in argument #1 \(_x\), needed a B, got BD: the types B and BD are not compatible
+  }
+
+  static quxxxxx () : void
+  {
+    _ = Nemerle.Collections.NList.Map(["foo"], fun(x ) {x.Clone ()} ) : list[int]; // E: expected list\[int\], got list\[object\] in type-enforced expression
+  }
+
+}
+
+class B {}
+class BD : B {}
+
+
+variant H {
+  | J
+  | K
+}
+
+class X {
+  g () : void {
+    def f (x : H) {
+      _ = x; 
+    }
+   f (H.J);  // E: in argument #1.*, needed a H, got void -> H
+ }
+}
+
+
+
+class Axx { }
+class Bxx : Axx { public foo () : void {}
+public bar () : void
+{
+base.foo (); // E: there is no member named `foo' in Axx
+}
+}
+
+
+
+module M42 {
+  class B2 {}
+  class C {}
+  
+  foo (_ : B2) : string { "" }  // H: overload definition
+  foo (_ : C) : int { 42 }  // H: overload definition
+  
+  Mai () : void
+  {
+    System.Console.WriteLine ( // H: Posible overload
+      foo (null) // E: typing fails on ambiguity
+    );
+  }
+
+  Qux () : void
+  {
+    System.Console.WriteLine ( // E: typing fails on ambiguity
+      null
+    );
+  }
+
+  Muxz () : void
+  {
+    mutable x = 2;
+    System.Console.WriteLine ("-- {0} --", x++); // E: each overload has an error during call
+  }
+}
+

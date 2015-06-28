@@ -1,0 +1,114 @@
+using System.Console;
+
+[Record]
+public class F
+{
+  name : string;
+
+  [Nemerle.Memoize]
+  public Method1(a : void -> int) : int
+  {
+    Write($"$name.Method1(): ");
+    a()
+  }
+
+  [Nemerle.Memoize(Scope = Class, Synchronized = true)]
+  public Method2(a : void -> int) : int
+  {
+    Write($"$name.Method2(): ");
+    a()
+  }
+
+  [Nemerle.Memoize(Synchronized = true)]
+  public Method3(a : void -> int) : int
+  {
+    Write($"$name.Method3(): ");
+    a()
+  }
+
+  [RecordIgnore] private mutable method4_switch : bool;
+
+  [Nemerle.Memoize(InvalidValue = 0)]
+  public Method4(x : int) : int
+  {
+    if(method4_switch) {
+      x
+    } else {
+      method4_switch = true;
+      0
+    }
+  }
+
+  [Nemerle.Memoize]
+  public static Method5(a : void -> int) : int
+  {
+    Write("static Method5(): ");
+    a()
+  }
+}
+
+module Program
+{
+  Main() : void
+  {
+    def test()
+    {
+      WriteLine("side effect");
+      3
+    }
+    def a = F("a");
+    WriteLine(a.Method1(test));
+    WriteLine(a.Method1(test));
+    WriteLine(a.Method2(test));
+    WriteLine(a.Method2(test));
+    WriteLine(a.Method3(test));
+    WriteLine(a.Method3(test));
+    def b = F("b");
+    WriteLine(b.Method1(test));
+    WriteLine(b.Method1(test));
+    WriteLine(b.Method2(test));
+    WriteLine(b.Method2(test));
+    WriteLine(b.Method3(test));
+    WriteLine(b.Method3(test));
+    def c = F("c");
+    WriteLine(c.Method4(7));
+    WriteLine(c.Method4(7));
+    WriteLine(c.Method4(7));
+    WriteLine(F.Method5(test));
+    WriteLine(F.Method5(test));
+    WriteLine(F.Method5(test));
+    WriteLine(F.Method5(test));
+    //_ = ReadLine();
+  }
+}
+
+/*
+
+BEGIN-OUTPUT
+a.Method1(): side effect
+3
+3
+a.Method2(): side effect
+3
+3
+a.Method3(): side effect
+3
+3
+b.Method1(): side effect
+3
+3
+3
+3
+b.Method3(): side effect
+3
+3
+0
+7
+7
+static Method5(): side effect
+3
+3
+3
+3
+END-OUTPUT
+*/

@@ -1,0 +1,129 @@
+using Nemerle.IO;
+
+
+[Record]
+class A {
+  public f : int = 4;
+
+  public static j : int = 11;
+  public static mutable g : int = 11;  
+  public static h = 8;
+  
+  public this () { }
+
+  static this () {  g = 5; }
+}
+
+module B {
+  public mutable g : int = 10;
+  public h = 9;
+
+  this () {
+    g = 7;
+  }
+}
+
+namespace St {
+ module D {
+   public g = 12;
+ } 
+}
+
+enum E {
+  | Foo = 0b001
+  | Bar = 0b010
+  | Har = (Foo | Bar)
+}
+
+
+module C {
+  li = "Ala";
+  la = false;
+  public g : int = 12;
+
+  lit = Literal () : Literal;
+  mutable lit1 = (Literal () : object) :> Literal;
+}
+
+public class Literal
+{
+  static z : byte = 222;  
+  static x = 2;
+  static y : string = "a";
+  static k : object = null;
+  static i : ulong = ulong.MaxValue;
+  static mi : long = long.MinValue;  
+}
+
+
+class Order
+{
+  a = 0;
+  b : int = a + 1;
+  c : int = b + 1;
+  d : int = c + 1;
+
+  public static Run () : void {
+    def x = Order ();
+    printf ("%d %d %d %d\n", x.a, x.b, x.c, x.d);
+  }
+}
+
+module Main {
+  mutable count : int;
+  public Get () : int {
+    count++;
+    count
+  }
+  
+  Mutables () : void {
+    printf ("------- mutables -------\n");
+    mutable x = 1, y = "a";
+    System.Console.WriteLine ($" $x $y");
+
+    mutable z = Get (), w = Get (), j = z + w;
+    System.Console.WriteLine ($" $z $w $j");
+
+    mutable (a,b) = ("a","b");
+    printf ("%s %s\n", a, b);
+
+    for (mutable (i, ii) = (0,0); i < 5; { i++; ii-- }) {
+      printf ("%d ", i + ii);
+    }
+    printf ("\n");    
+  }
+  
+  Main () : void {
+    mutable a : A = null;
+    when (a != null) _ = a.f;
+
+    def b : A = null;
+    when (b != null) _ = b.f;
+    
+    def x = A ();
+    def y = A (3);
+    printf ("%d %d\n", x.f, y.f);
+    printf ("%d %d\n", B.g, B.h);
+    printf ("%d %d\n", A.g, A.h);
+    printf ("%d\n", C.g);
+    printf ("%d\n", E.Har :> int);
+    Order.Run ();
+    Mutables ();
+  }
+}
+
+/*
+BEGIN-OUTPUT
+4 3
+7 9
+5 8
+12
+3
+0 1 2 3
+------- mutables -------
+ 1 a
+ 1 2 3
+a b
+0 0 0 0 0  
+END-OUTPUT
+*/

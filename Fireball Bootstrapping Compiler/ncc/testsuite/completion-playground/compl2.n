@@ -1,0 +1,77 @@
+using Nemerle.Compiler;
+using Nemerle.Completion;
+using Nemerle.Collections;
+using System.IO;
+using System.Console;
+
+def engine = Engine ();
+def files = Hashtable ();
+def rawArgs = NList.FromArray (System.Environment.GetCommandLineArgs ());
+def (progName, args) = rawArgs.Head::rawArgs.Tail;
+when (args.Length == 0) {
+  WriteLine(
+    $"usage: $progName <filename>\n" +
+     "       <filename> is the Nemerle source code you want to pass to the \n" +
+     "       code completion engine");
+  System.Environment.Exit(1);
+}
+foreach (arg in args) {
+  using (sr = StreamReader (arg)) {
+    def str = sr.ReadToEnd ();
+    engine.Sources.Add (arg, str);
+    files [arg] = str;
+  }
+}
+
+def type_tree = engine.GetTypesTree ();
+def _second_tree = engine.GetTypesTree ();
+mutable the_method = null;
+
+System.Console.WriteLine ("FOUND TYPES\n===========");
+foreach (t in type_tree.Types) {
+  System.Console.WriteLine ("{0}, {1}/{2} -> {3}/{4}", t.Name, t.Location.Line, t.Location.Column,
+    t.Location.EndLine, t.Location.EndColumn);
+  foreach (method in t.Methods) {
+    System.Console.WriteLine ("* {0}, {1}/{2} -> {3}/{4}", method.Name, method.Location.Line, method.Location.Column,
+      method.Location.EndLine, method.Location.EndColumn);
+    when (method.Name == "Bar")
+      the_method = method;
+  }
+}
+
+def try_completion (body) {
+  System.Console.WriteLine ("\nTrying to complete:");
+  System.Console.WriteLine (body);
+  def info = engine.RunCompletionEngine (the_method, body);
+  if (info == null) {
+    System.Console.WriteLine ("NO MEMBER FOUND");
+  }
+  else {
+    if (info.CompletionKind == CompletionKind.Members) {
+      System.Console.WriteLine ("FOUND MEMBERS\n=============");
+      def members = info :> CompletionMembers;
+      foreach (member in members.Members)
+        System.Console.WriteLine (member.Name);
+    }
+    else {
+      System.Console.WriteLine ("FOUND TYPES\n===========");
+      def types = info :> CompletionTypes;
+      foreach (t in types.Types) {
+        if (t.TypeKind == NemerleTypeKind.DeclaredType)
+          System.Console.WriteLine ((t :> DeclaredTypeInfo).Name);
+        else
+          System.Console.WriteLine ((t :> ReferencedTypeInfo).Type.Name);
+      } 
+    }
+  }
+  System.Console.WriteLine ("Finished");
+}
+
+try_completion ("this.Fo");
+try_completion ("def a = \"a\"; a.L");
+try_completion ("string.For");
+try_completion ("string.");
+try_completion ("Q");
+try_completion ("System.");
+try_completion ("System.Reflection.");
+try_completion ("def s = System.Collections.Generic.List (); s.");

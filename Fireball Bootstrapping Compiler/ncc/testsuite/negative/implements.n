@@ -1,0 +1,131 @@
+using SCG = System.Collections.Generic;
+using SC = System.Collections;
+
+public class Moo2 : System.Collections.Generic.IComparer[Moo2]
+{
+  private Compare(_ : object, _ : object) : int implements SC.IComparer.Compare {0} // E: the method Moo2.Compare.* int try to implement interface .System\.Collections\.IComparer. which don't implement by containing type.*Moo2.
+  public Compare(_ : Moo2, _ : Moo2) : int {0}
+}
+
+interface I {
+  m () : void;
+  m (x : int) : void;
+}
+
+class A : I { // E: does not implement interface member 'I.m
+  m () : void {}   // W: method implementing interface member must be public
+}
+
+class B : I { // OK
+  public m () : void {}  // OK
+  x (_ : int) : void implements I.m {} // OK
+} // OK
+
+interface I2 : I { m2 () : void; } // OK
+
+interface IWithWrongMembers : I {
+  public goo () : int; // E: interface members are not allowed to have any attributes specified
+  foo () : int { 1 }   // E: interface method cannot have body
+  m1 () : void implements I.m; // E: interface method cannot implement anything
+}
+
+class C : B {}    // OK
+
+class D : B, I2 {} // E: does not implement interface member 'I2.m2
+
+class E : B, I2 { public m2 () : void {} } // OK
+
+class E2 : B, I2 { // E: does not implement interface member 
+  m2 () : void {}  // W: method implementing interface member must be public
+  } 
+
+abstract class X : I {          // OK
+  abstract public m () : void;  // OK
+  abstract public m (x : int) : void;   // OK
+} // OK
+
+class Z
+{
+  abstract public m () : void;  // E: method .* is abstract, but its declaring class.* is not
+}
+
+class Y1 : X { } // E: method .* must be overriden, because it is abstract and the current class.* is not
+
+class Y2 : X { // E: method .* must be overriden, because it is abstract and the current class.* is not
+  public override m () : void {}
+}
+
+abstract class Y3 : X { public override m () : void {} } // OK
+
+class Y4 : Y3 { public override m (_ : int) : void {} } // OK
+
+class ABase { public virtual foo () : void {} } // OK
+
+class ADer : ABase {
+  internal override foo () : void {} // E: attempt to change the access modifiers of
+}
+
+interface InheritingI : FooBar { }  // E: interfaces are not allowed to inherit
+
+class FooBar { public virtual foo () : void {} } // OK
+
+class FooBar2 : FooBar { public sealed override foo () : void {} } // OK
+
+class FooBar3 : FooBar2 { public override foo () : void {} } // E: `override' specified.*is `sealed'
+
+struct foo {}
+struct bar {}
+
+interface II1 ['a] {}
+
+class C1 : II1 [foo] {}
+
+class C2 : C1, II1 [foo * foo] {} // OK
+
+interface II2 : II1 [bar] {}
+
+class C3 : C1, II2 {} // OK
+
+sealed class SealedClass  { }
+class DeriveSealde : SealedClass { } // E: cannot extend sealed class
+
+namespace N1 {
+
+interface IFoo {
+  Foo (_ : string) : void;
+}
+
+class Ci123 : IFoo
+{
+  public Foo (_ : object) : void {}
+  public Foo (_ : string) : void {} // E: ambiguous
+}
+}
+
+namespace N2 {
+
+interface IFoo {
+  Foo () : void;
+}
+
+class Ci123 : IFoo // E: does not implement interface member
+{
+  public Foo (_ : object) : void {}
+}
+}
+
+
+public variant V { | X | Y }
+public variant V2 : V { | A | B } // E: cannot use variant as base type
+
+
+class Bug648 : System.Collections.Generic.IEqualityComparer [int] { // E: does not implement interface member .*IEqualityComparer.*\.Equals
+  public GetHashCode(_ : int) : int {
+    2
+  }
+}
+
+
+
+module Base { }
+module Deriv : Base { } // E: cannot derive from module

@@ -1,0 +1,136 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Fireball.Compiler.Lexer;
+
+namespace Fireball.Compiler.AST
+{
+  /// <summary>
+  /// Description of ParserExpression.
+  /// </summary>
+  public variant ParserExpression : AstNode
+  {
+    // The '_' character, used mainly in pattern matching and type annotations, but also used in the "ignore result" expression: '_ = ignored'
+    | Wildcard  
+    // Used only as a type
+    | Void      
+    // Used for type checking
+    | Is    { pattern: ParserExpression; type: ParserExpression }
+    // Reference
+    | Ref {
+        public Name: Named { get; internal set }
+        
+        public new this(name: Named)
+        {
+          base( if (name == null) Location.Default else name.Location );
+          Name = name;
+        }
+      }
+    // Pattern match
+    | Match    { expression: ParserExpression; cases: Seq[MatchCase]; mutable expressionLocation : Location }
+    // Method call
+    | Call            { func : ParserExpression; parms : Seq [ParserExpression]; }
+    // Generics specification
+    | GenericSpecifier { func : ParserExpression; generic_parms : Seq [ParserExpression]; }
+    // Literal list construction
+    | ListLiteral     { elements : Seq [ParserExpression]; }
+    // Assignment
+    | Assign          { target : ParserExpression; source : ParserExpression; }
+    // Variable definition
+    | DefMutable      { name : ParserExpression; val : ParserExpression; }
+    // Value definition
+    | Define          { pattern : ParserExpression; val : ParserExpression; }
+    // Nested function definition
+    /* Not implimented yet */ //| DefFunctions    { funs : list [Function_decl]; }
+    // Anonymous function (lambda) definition    
+    /* Not implimented yet */ //| Lambda          { decl : Function_decl; }
+    // Exception throw
+    | Throw           { exn : ParserExpression; }
+    // Try...Catch with catch cases
+    | Try             { body : ParserExpression; cases : Seq [TryCase]; }
+    // Try...Finally without catch cases
+    | TryFinally      { body : ParserExpression; handler : ParserExpression; }
+    // Literal value
+    | Literal         { val : Literal; }
+    // The 'this' keyword
+    | This
+    // The 'new' keyword
+    | New             { body: ParserExpression }
+    // Typeof operator
+    | TypeOf          { type: ParserExpression }
+    // Sequence
+    | Sequence        { body: Seq[ParserExpression] }
+    // Class member
+    | Member {
+        memberExpression: ParserExpression;
+        memberName: Named;
+        
+        public new this(membExpr: ParserExpression, membName: Named)
+        {
+          def loc1 = membExpr.Location;
+          def loc2 = membName.Location;
+          
+          if (loc1.IsGeneratedOrEmpty && !loc2.IsGenerated)
+            base(membName.Location);
+          else if (loc1.IsSourceAvailable && loc2.IsSourceAvailable)
+            base(loc1 + loc2);
+          else
+            base();
+            
+          this.memberExpression = membExpr;
+          this.memberName = membName;
+        }
+        
+        public new this(membExpr: ParserExpression, membName: ParserExpression.Ref)
+        {
+          this(membExpr, membName.Name)
+        }
+      }
+    // Operation targeting the 'base' type
+    | Base {
+        type: option[ParserExpression];       
+        
+        public this(loc: Location, typeExpr : ParserExpression = null)
+        {
+          base(loc);
+          type = if(typeExpr == null) None() else Some(typeExpr);
+        }
+      }
+    // Runtime type conversion (like 'expr :> type')
+    | TypeConversion    { expression: ParserExpression; type: ParserExpression }
+    // Type bounding of a generic parameter or type alias (like 'T <: Seq[char]')
+    | TypeEnforcement   { expression: ParserExpression; boundingType: ParserExpression; bound: TypeBound }
+    // Tuple
+    | Tuple {
+        args : list[ParserExpression];
+        public ArgumentsCount : int { get; internal set; }
+        
+        public this(args: Seq[ParserExpression])
+        {
+          this.args = args.NToList();
+          ArgumentsCount = this.args.Length;
+        }
+        
+        public this(args: Seq[ParserExpression], explicitCnt: int)
+        {
+          this(args);
+          ArgumentsCount = explicitCnt;
+        }
+      }
+    // An array
+    | Array           { rank : ParserExpression; args : ParserExpression; }
+    // An empty (non-initialized) array
+    | EmptyArray      { sizes : Seq[ParserExpression]; }
+    // An ellipsis
+    | Ellipsis        { body : ParserExpression; }
+    // Spliced section
+    | Spliced         { body : ParserExpression; }
+    
+  }
+}

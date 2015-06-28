@@ -1,0 +1,114 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Compiler;
+using Nemerle.Assertions;
+
+namespace Nemerle.Compiler
+{
+  // stateless utility module
+  internal module Delegates
+  {
+    /**
+     * Generates a delegate class
+     */
+    internal GenerateDelegateClass ([NotNull] globenv : GlobalEnv,
+                                    parent_type : TypeBuilder,
+                                    attrs : AttributesAndModifiers,
+                                    return_value_attrs : AttributesAndModifiers,
+                                    header : PFunHeader) : TypeBuilder
+    {
+      Util.locate (header.Location, {
+        when ((attrs.mods %& ~NemerleModifiers.AccessModifiers) != NemerleModifiers.None)
+          Message.Error (header.Location, "delegates are only allowed to have access specifiers as attributes");
+
+        attrs.mods |= NemerleModifiers.Sealed;
+
+        // create the BeginInvoke parameters
+        def begin_invoke_parms = create_begin_invoke_parms (header.Parameters);
+
+        // build the delegate's return type and method body for the type inference engine
+        def ret_type = header.ReturnType;
+        def invoke_body = <[ Nemerle.Extensions.DefaultValue ($ret_type) ]>;
+        def delegate_name = header.PName;
+        def tparms = header.TypeParameters;
+
+        // add the delegate class as a nested type in the delegate's parent type or in global env
+        def pt_decl = <[ decl:
+          ..$attrs class $(delegate_name : name) [..$(tparms.tyvars)] : System.MulticastDelegate
+          where ..$(tparms.constraints)
+          {
+            public virtual BeginInvoke (..$begin_invoke_parms) : System.IAsyncResult { null }
+            public virtual EndInvoke (_ : System.IAsyncResult) : $ret_type $invoke_body
+            public virtual Invoke (..$(header.Parameters)) : $ret_type $invoke_body
+
+            public this (_ : object, _ : System.IntPtr)
+            {
+              base (typeof (System.Object), "")
+            }
+          }
+        ]>;
+
+        unless(return_value_attrs?.IsEmpty)
+          foreach(f is ClassMember.Function in (pt_decl.td :> TopDeclaration.Class).decls)
+          {
+            match(f.header.Name)
+            {
+              | "Invoke" | "EndInvoke" => f.ReturnValueModifiers = return_value_attrs
+              | _ => ()
+            }
+          }
+
+        def td =
+          match (parent_type)
+          {
+            | null => globenv.Define (pt_decl)
+            | parent => parent.DefineNestedType (pt_decl);
+          };
+
+        td.MarkAsDelegate ();
+        td.Compile ();
+        td
+      })
+    }
+
+    create_begin_invoke_parms (existing : list [PParameter]) : list [PParameter]
+    {
+      | [] => [<[ parameter: $(Util.tmpname("asyncCallback") : dyn) : System.AsyncCallback ]>, <[ parameter: $(Util.tmpname("object") : dyn) : object ]>]
+      | x :: xs =>
+        def hasnt_params (x) { !(x is <[ System.ParamArrayAttribute ]>) }
+        if (!x.modifiers.custom_attrs.ForAll(hasnt_params))
+          PParameter (x.Location, x.name, x.Type, AttributesAndModifiers(x.modifiers.mods, x.modifiers.custom_attrs.Filter (hasnt_params)))
+          :: create_begin_invoke_parms(xs);
+        else
+          x :: create_begin_invoke_parms(xs);
+    }
+  }
+}

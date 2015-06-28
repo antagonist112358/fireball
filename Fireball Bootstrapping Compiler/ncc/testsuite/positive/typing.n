@@ -1,0 +1,73 @@
+module Bug368 {
+  foo (_x : string) :  array [string] {  array["foo array"] }    
+  foo (_x : string, _y : string) : string  { "foo str" }
+  
+  bar (_x : string) :  array [string] {  array["bar array"] }    
+  bar (_x : string, _y : string) : list [string]  { ["bar list"] }
+    
+  public static Run () : void
+  {
+
+        def copy (src)
+        {
+            def files = bar (src);
+            _ = files[0];
+            foreach (file : string in files){
+              System.Console.WriteLine (file);
+            }
+        }
+
+        copy("foo");
+        
+        def copy1 (src)
+        {
+            def files = foo (src);
+
+            foreach (file : string in files){
+              System.Console.WriteLine (file);
+            }
+        }
+
+        copy1("foo");
+        
+  }
+}
+
+
+// bug #789
+interface I1{ f1(x:int):int; }
+interface I2{ f2(x:int):int; }
+
+class M1 : I1, I2
+{
+  public f1(x:int):int {x+1}
+  public f2(x:int):int {x+2}
+}
+
+class M2 : I1, I2
+{
+  public f1(x:int):int {x-1}
+  public f2(x:int):int {x-2}
+}
+
+def x1 = 5;
+def Processors = [M1() : I2,M2() : I2];
+
+def y = Processors.Map( m  =>
+  match(m) {
+    | m is M1 => m.f1(x1)
+    | m is M2 => m.f2(x1)
+    | _ => x1
+  } );
+
+System.Console.WriteLine($"y = $y"); 
+
+Bug368.Run ();
+
+/*
+BEGIN-OUTPUT
+y = [6, 3]
+bar array
+foo array
+END-OUTPUT
+*/

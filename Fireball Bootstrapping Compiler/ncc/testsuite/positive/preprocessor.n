@@ -1,0 +1,90 @@
+/**/
+/* */
+/***/
+/** */
+///
+
+
+#define test
+#undef t
+
+# define  f45__DdD_
+
+#if true && (false || !(true && !(false)) && false)
+  public class D
+#elif false || test  // comment
+  public class A
+  {
+    public this(b : int)
+    {
+	  this.b = b;
+    }
+    
+	b : int;
+  }
+#else
+  public class H
+  # endif
+
+#if  f45__DdD_
+using Nemerle.Collections;
+#endif
+
+ # line 666  
+
+#region mogdule G   // ddd
+public module G {
+
+}
+ # endregion
+
+ # line   default
+
+
+// NOTE: this test should be exacly like this, do not change
+public variant Token
+{
+  | EndOfFile
+  | Bla    
+  
+  public override ToString () : string {
+    match (this) {
+      | EndOfFile => ""
+        
+#if false
+      | Semicolon      => ";"
+      | RoundGroup => ()
+#endif
+      | Bla => ""
+    }
+  }
+}
+// end test
+
+
+#if NOTEXISTING
+  // #if
+  bla bla bla
+#endif
+
+module M {
+  Main () : void {
+    NList.Iter ([1,2], fun (_) {});
+  }
+}
+
+public module AA
+{
+  public F() : void
+  {
+#if foobar
+    _ = $ "$lit [$(LitForAtom (lit.atom))/$v] ==> $formula [$(clause [1])]"
+#else
+    ()
+#endif
+  }
+}
+
+
+
+

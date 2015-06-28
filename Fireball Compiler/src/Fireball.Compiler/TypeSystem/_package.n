@@ -1,0 +1,17 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.TypeSystem
+{
+
+  /** Namespace level declarations **/
+  public type MemberKinds = System.Reflection.MemberTypes;
+  public type BindingFlags = System.Reflection.BindingFlags;
+  public type FieldInfo = System.Reflection.FieldInfo;
+}

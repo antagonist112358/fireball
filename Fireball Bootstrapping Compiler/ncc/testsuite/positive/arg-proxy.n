@@ -1,0 +1,135 @@
+using Nemerle.IO;
+
+
+variant foo {
+  | A { v : int * int; }
+}
+
+class B {
+  x : int;
+  public this () { x = 42; }
+  public foo () : void { print ("$x\n") }
+}
+
+class C {
+  x : int;
+  public this (x : int) { this.x = x }
+  public foo () : void { print ("$x\n") }
+}
+
+module M {
+  run['a] (f : 'a -> int, x : 'a) : int { f (x) }
+
+  fst1 (a : int, _ : int) : int { a }
+  fst2 (p : int * int) : int { def (a, _) = p; a }
+  snd1 (_ : int, b : int) : int { b }
+  snd2 (p : int * int) : int { def (_, b) = p; b }
+
+  print_int (x : int) : void { printf ("%d", x) }
+
+  test1 () : void
+  {
+    def f (a) {
+      def (x, y) = a;
+      if (x > 3)
+        f (x - 3, y)
+      else Nemerle.IO.printf ("%d %d\n", x, y)
+    }
+
+    f (5, 1);
+    f (13, 33);
+  }
+
+  test2 () : void
+  {
+    def f (a) {
+      def (x, y) = a;
+      if (x > 3)
+        f (x - 3, y)
+      else Nemerle.IO.printf ("%d %d\n", x, y)
+    }
+
+    f (5, 1);
+  }
+
+  test3 () : void
+  {
+    def f (a) {
+      def (x, y) = a;
+      if (x > 3) {
+        f (x - 2, y);
+        f (x - 3, y)
+      } else Nemerle.IO.printf ("%d %d\n", x, y)
+    }
+
+    f (5, 1);
+  }
+
+  
+  Main () : void {
+    def fst3 (a : int, _ : int) : int { a };
+    def fst4 (p : int * int) : int { def (a, _) = p; a };
+    def snd3 (_ : int, b : int) : int { b };
+    def snd4 (p : int * int) : int { def (_, b) = p; b };
+  
+    print_int (run (fst1, (1, 10)));
+    print_int (run (fst2, (2, 10)));
+    print_int (run (fst3, (3, 10)));
+    print_int (run (fst4, (4, 10)));
+    print_int (run (snd1, (10, 5)));
+    print_int (run (snd2, (10, 6)));
+    print_int (run (snd3, (10, 7)));
+    print_int (run (snd4, (10, 8)));
+    printf ("\n");
+    print_int (fst1 (1, 10));
+    print_int (fst2 (2, 10));
+    print_int (fst3 (3, 10));
+    print_int (fst4 (4, 10));
+    print_int (snd1 (10, 5));
+    print_int (snd2 (10, 6));
+    print_int (snd3 (10, 7));
+    print_int (snd4 (10, 8));
+    printf ("\n");
+    print_int (fst1 ((1, 10)));
+    print_int (fst2 ((2, 10)));
+    print_int (fst3 ((3, 10)));
+    print_int (fst4 ((4, 10)));
+    print_int (snd1 ((10, 5)));
+    print_int (snd2 ((10, 6)));
+    print_int (snd3 ((10, 7)));
+    print_int (snd4 ((10, 8)));
+    printf ("\n");
+    
+    def _ = foo.A(1,2);
+    match (foo.A((1,2))) {
+      | foo.A((b,a)) => 
+        print_int (a+b);
+        printf ("\n");
+    }
+
+    test1 ();
+    test2 ();
+    test3 ();
+
+    def b = B;
+    b ().foo ();
+    def b = C;
+    b (77).foo ();
+  }
+}
+
+/*
+BEGIN-OUTPUT
+12345678
+12345678
+12345678
+3
+2 1
+1 33
+2 1
+3 1
+2 1
+42
+77
+END-OUTPUT
+*/

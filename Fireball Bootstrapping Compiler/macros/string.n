@@ -1,0 +1,877 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+#if DEBUG_StringTemplate
+using StringTemplate2;
+#else
+using StringTemplate;
+#endif
+
+using Nemerle.Collections;
+using Nemerle.Compiler.NemerleModifiers;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Compiler;
+using Nemerle.Imperative;
+using Nemerle.Utility;
+using Nemerle; 
+using System.Diagnostics.Trace;
+using System.Reflection;
+using System.Text;
+using System;
+
+using BF = System.Reflection.BindingFlags;
+using Debug = System.Diagnostics.Debug;
+using PT = Nemerle.Compiler.Parsetree;
+using SB = Nemerle.Utility.NStringBuilderExtensions;
+using SCG = System.Collections.Generic;
+using TExpr = Nemerle.Compiler.Typedtree.TExpr;
+using TT = Nemerle.Compiler.Typedtree;
+using NC = Nemerle.Compiler;
+
+
+#if DEBUG_StringTemplate
+namespace StringTemplate2
+#else
+namespace StringTemplate
+#endif
+{
+#if DEBUG_StringTemplate
+  using StringTemplate2.Helper;
+#else
+  using StringTemplate.Helper;
+#endif
+
+  public enum StringType { | Error | C | Monkey | Recursive }
+
+  macro @s(str)
+  syntax ("s", str)
+  {
+    Helper.SprintImpl(str, true, expr => expr, Macros.ImplicitCTX().Env)
+  }
+
+  [MacroUsage(MacroPhase.BeforeInheritance, MacroTargets.Class, Inherited = true)]
+#if DEBUG_StringTemplate
+  macro StringTemplateGroupDebug(tb : TypeBuilder)
+#else
+  macro StringTemplateGroup(tb : TypeBuilder)
+#endif
+  {
+    Helper2.StringTemplateGroupBeforeInheritance(tb, Nemerle.Macros.ImplicitCTX());
+  }
+
+  [MacroUsage(MacroPhase.BeforeTypedMembers, MacroTargets.Class, Inherited = true)]
+#if DEBUG_StringTemplate
+  macro StringTemplateGroupDebug(tb : TypeBuilder)
+#else
+  macro StringTemplateGroup(tb : TypeBuilder)
+#endif
+  {
+    Helper2.StringTemplateGroupBeforeTypedMembers(tb, Nemerle.Macros.ImplicitCTX());
+  }
+
+  [MacroUsage(MacroPhase.WithTypedMembers, MacroTargets.Class, Inherited = true)]
+#if DEBUG_StringTemplate
+  macro StringTemplateGroupDebug(tb : TypeBuilder)
+#else
+  macro StringTemplateGroup(tb : TypeBuilder)
+#endif
+  {
+    Helper2.StringTemplateGroupWithTypedMembers(tb, Nemerle.Macros.ImplicitCTX());
+  }
+
+  internal module Helper2
+  {
+    StSuffix = "__StImpl";
+    mutable _inherMap : Set[NC.TypeInfo] = Set();
+    _sync : object = object();
+
+    internal StringTemplateGroupBeforeInheritance(tb : TypeBuilder, _ctx : Typer) : void
+    {
+      lock (_sync)
+        _inherMap = _inherMap.Replace(tb);
+    }
+
+    internal StringTemplateGroupBeforeTypedMembers(tb : TypeBuilder, ctx : Typer) : void
+    {
+      def isDerived = _inherMap.Contains(tb.BaseType);
+      //TODO: Добавить распознование StringTemplateGroup-классов из внешних сборок.
+      ctx.Manager.MacroColors.PushUseSiteColor();
+      try
+      {
+        if (tb.IsAbstract) _ = tb.DefineWithSource(<[ decl: 
+          public abstract CreateInstance() : object; ]>);
+        else if (isDerived) _ = tb.DefineWithSource(<[ decl: 
+            public override CreateInstance() : object { $(tb.ParsedTypeName)() } ]>);
+        else if (tb.IsSealed) _ = tb.DefineWithSource(<[ decl: 
+            public CreateInstance() : object { $(tb.ParsedTypeName)() } ]>);
+        else _ = tb.DefineWithSource(<[ decl: 
+            public virtual  CreateInstance() : object { $(tb.ParsedTypeName)() } ]>);
+
+        // Add <MethodName>__StImpl method into STG.
+        
+        def members1 = tb.GetParsedMembers(true);
+        def testAbstract(m) { m.Attributes %&& Abstract && m.Name != "CreateInstance" }
+        def ideTest      = m => testAbstract(m) || m.Tokens != null // BUG in compiler! Workaround!
+          && m.Tokens is Token.BracesGroup(Token.LooseGroup(Token.StringLiteral(_, _)), _, _, _);
+        def compilerTest = m => testAbstract(m) || m.Body is PExpr.Sequence([PExpr.Literal(Literal.String(_))]);
+        def test = if (ctx.Manager.IsIntelliSenseMode) ideTest else compilerTest;
+        def members2 = members1.Filter(_ => { | m is ClassMember.Function when test(m) => true | _ => false});
+        
+        foreach (method is ClassMember.Function in members2)
+        {
+          def mods               = method.modifiers;
+          def attrs              = mods.Attributes;
+          def newMods            = AttributesAndModifiers(Public | (attrs & (Virtual | Override | Abstract)), //Protected
+                                   mods.GetCustomAttributes());
+          def h                  = method.header;
+          def workMethParsedName = MakeWorkMethParsedName(method);
+          def newMethodAst = <[ decl:
+             ..$newMods $(workMethParsedName : name)[..$(h.TypeParameters.tyvars)] (..$(h.Parameters)) : void
+              where ..$(h.TypeParameters.constraints)
+            {
+            }]>;
+          _ = tb.DefineWithSource(newMethodAst);
+          method.UserData = newMethodAst;
+          method.Attributes = method.Attributes %| Public; // & ~(Virtual %| Override) %| Static  %| New
+        }
+      }
+      finally { ctx.Manager.MacroColors.PopColor(); }
+    }
+
+    internal StringTemplateGroupWithTypedMembers(tb : TypeBuilder, ctx : Typer) : void
+    {
+      def isDerived = _inherMap.Contains(tb.BaseType);
+
+      ctx.Manager.MacroColors.PushUseSiteColor();
+      try
+      {
+        unless (isDerived)
+        {
+          tb.Define(<[ decl: protected         _builder : StringBuilder = StringBuilder(1024); ]>);
+          tb.Define(<[ decl: protected mutable _indent : string = "\n"; ]>);
+          tb.Define(<[ decl: protected         _indentLenStack : Stack[int] = Stack(); ]>);
+          def isTypeString(ty : FixedType)
+          {
+            | FixedType.Class(ty, []) => ty.Equals(ctx.Manager.InternalType.String_tc)
+            | _ => false
+          }
+          def isToStringExists = tb.GetMethods().Exists(fun(m) {
+                 m.Name == "ToString" 
+              && m.GetParameters().Length == 1 
+              && m.GetParameters().Head.ty is FixedType.StaticTypeVarRef
+              && isTypeString(m.ReturnType.Fix()) 
+            });
+
+          unless (isToStringExists)
+          {
+            def t = Macros.NewSymbol("T");
+            def ts = [Splicable.Name(t)];
+            if (tb.IsSealed)
+              _ = tb.DefineWithSource(<[ decl: public ToString[..$ts](value : $(t : name)) : string { value.ToString() } ]>);
+            else
+              _ = tb.DefineWithSource(<[ decl: public virtual ToString[..$ts](value : $(t : name)) : string { value.ToString() } ]>);
+          }
+          
+          _ = tb.DefineWithSource(<[ decl: 
+            protected AddIndent(indent : string) : void
+            {
+              _indentLenStack.Add(indent.Length);
+              _indent += indent;
+            }
+           ]>);
+          _ = tb.DefineWithSource(<[ decl: 
+            protected RemoveLastIndent() : void
+            {
+              _indent = _indent.Substring(0, _indent.Length - _indentLenStack.Pop());
+            }
+           ]>);
+          _ = tb.DefineWithSource(<[ decl: 
+            protected PrintNewLineAndIndent() : void
+            {
+              _ = _builder.Append(_indent);
+            }
+           ]>);
+          _ = tb.DefineWithSource(<[ decl: 
+            public override ToString() : string
+            {
+              _builder.ToString()
+            }
+           ]>);
+        }
+
+        def beforeBodyTypingHandler(mb : MethodBuilder, pBody) : PExpr
+        {
+          def pBody = pBody;
+          
+          match (pBody)
+          {
+            | PExpr.Sequence([PExpr.Literal(Literal.String) as lit]) =>
+            
+              // 1. Сгенерировать и подставить тело для х__StImpl-метода.
+              // 2. В тело данного метода подставить код вызова этого метода.
+              
+              def findCorrespondMethod()
+              {
+                def stAst = mb.Ast.UserData;
+                def stMethods = tb.GetMethods(BF.DeclaredOnly | BF.Instance | BF.Public).FindAll(
+                  _ => { | m is MethodBuilder when m.Ast == stAst => true | _ => false });
+                  
+                match (stMethods)
+                {
+                  | [m is MethodBuilder] => m
+                  | _ => Util.ice($"Found to many correspond 'string template' methods: ..$stMethods");
+                }
+              }
+              
+              def expr         = MakeStringTemplateExpr(mb, lit.val.RawString, lit.Location, ctx);
+              def m            = findCorrespondMethod();
+              
+              m.Body = expr;
+              mb.Related = RefTo.Method(m);
+              
+              def h                  = mb.Ast.header;
+              def workMethParsedName = MakeWorkMethParsedName(mb);
+              <[  def instance = CreateInstance() :> $(tb.ParsedTypeName);
+                  //Console.WriteLine(instance.GetType().FullName);
+                  instance.$(workMethParsedName : name)(..$(h.ParametersReferences));
+                  instance._builder.ToString() ]>
+
+            | _ => pBody
+          }
+        }
+
+        foreach (mb is MethodBuilder in tb.GetMethods(BF.DeclaredOnly | BF.Public | BF.Instance))
+          when (mb.Ast.UserData is ClassMember.Function && !(mb.Attributes %&& Abstract))
+            mb.AddBeforeBodyTypingHandler(beforeBodyTypingHandler);
+      }
+      finally { ctx.Manager.MacroColors.PopColor(); }
+    }
+    
+    MakeStringTemplateExpr(mb : MethodBuilder, templateRawStr : string, location : Location, ctx : Typer) : PExpr
+    {
+      def (template1, loc1, strType) = ExtractStringBody(templateRawStr, location);
+      def (template, loc, offset) = Helper.SquareString(template1, loc1);
+      def makeEllipsisSplaceExpr(env : GlobalEnv, expr : string, isComplexExpr : bool, startLoc : Location) : PT.PExpr
+      {
+        Util.locate(startLoc,
+          if (isComplexExpr || env.Manager.IsCompletionInProgress)
+          {
+            def pExpr = MainParser.ParseExpr(env, expr, startLoc);
+            match (pExpr)
+            {
+              | <[ $seqExpr; $sep; $cnvFuncExpr; ]> =>
+                // If cnvFuncExpr is a StrinTemplete reference,
+                // replace it by <methodName>__StImpl-method.
+
+                def mb = mb;
+                // Find __StImpl-method corresponding to mb.
+                def corespStImplMethod = (mb.Ast.UserData :> ClassMember.Function).Builder;
+                // Type fake expression to determinate what is cnvFuncExpr (it type).
+                def expr = <[ NCollectionsExtensions.MapLazy($seqExpr, $cnvFuncExpr) ]>;
+                def typer = Typer(corespStImplMethod);
+                  
+                _ = typer.TypeExpr(expr);
+
+                match (cnvFuncExpr.TypedObject)
+                {
+                  | TExpr.StaticRef(_, m is MethodBuilder, _) 
+                    when m.DeclaringType.Equals(mb.DeclaringType) =>
+                    match (m.Ast.UserData) 
+                    {
+                      | workMeth is ClassMember.Function =>
+                        def cnvFunc = <[ this.$(workMeth.PName : name) ]>;
+                        cnvFunc.member.Location = cnvFuncExpr.Location;
+                        <[ SB.AppendSeqByConvert(_builder, $seqExpr, $sep, _indent, $cnvFunc); ]>
+                      | _ => <[ SB.AppendSeq(_builder, $seqExpr, $sep, _indent, $cnvFuncExpr); ]>
+                    }
+                  | _ => <[ SB.AppendSeq(_builder, $seqExpr, $sep, _indent, $cnvFuncExpr); ]>
+                }
+                
+              | <[ $seqExpr; $sep; ]> 
+              | _ with (sep = <[ ", " ]>, seqExpr = pExpr) => 
+                <[ SB.AppendSeq(_builder, $seqExpr, $sep, _indent, ToString); ]>
+            }
+          }
+          else 
+          {
+            def pExpr = if (expr == "this") <[ this ]> else <[ $(expr : usesite) ]>;
+            pExpr.Location = startLoc; // Mark expression as parsed (remove IsGenerated flag).
+            <[ SB.AppendSeq(_builder, $pExpr, ", ", _indent, ToString); ]>
+          })
+      }
+      def makeSplaceExpr(env : GlobalEnv, expr : string, isComplexExpr : bool, startLoc : Location) : PT.PExpr
+      {
+        def makeExpr(pExpr)
+        {
+          assert2(startLoc.Contains(pExpr.Location)); // Generated flag is ignored
+          pExpr.Location = startLoc; // Mark expression as parsed (remove IsGenerated flag if it set).
+          <[ 
+              if (_indent.Length > 1)
+              {
+                def pos = _builder.Length;
+                _ = _builder.Append(ToString($pExpr));
+                _ = _builder.Replace("\n", _indent, pos, _builder.Length - pos);
+              }
+              else
+                _ = _builder.Append(ToString($pExpr));
+          ]>
+        }
+        Util.locate(startLoc,
+          if (isComplexExpr || env.Manager.IsCompletionInProgress)
+          {
+            env.Manager.MacroColors.PushUseSiteColor ();
+            try
+            {
+              def _builder = StringBuilder();
+              def pExpr = MainParser.ParseExpr(env, expr, startLoc);
+              makeExpr(pExpr);
+            }
+            finally { env.Manager.MacroColors.PopColor (); }
+          } 
+          else if (expr == "this") makeExpr(<[ this ]>);
+          else                     makeExpr(<[ $(expr : usesite) ]>))
+      }
+
+      def exprs = Helper.make_splice_distribution2(template, loc, strType, 
+        ctx.Env, makeSplaceExpr, makeEllipsisSplaceExpr);
+        
+      when (loc1 != loc)
+      {
+        def relInf = RelocationInfo(loc.FileIndex, TextPoint(loc.Line + 1, 1), TextPoint(loc.Line + 1, 1), TextPoint(loc.Line + 1, 1 + offset));
+        
+        foreach (part in exprs)
+        {
+          | Expr(pExpr) | IndentedExpr(_, pExpr) => 
+            (pExpr : ISupportRelocation).RelocateImpl(relInf);
+            
+          | Lit | NewLine => ()
+        }
+      }
+        
+      //def isNeedOptimize(_ : list[StrPart])
+      //{
+        //| Lit(_) :: Lit(_) :: _    => true
+        //| _                :: tail => isNeedOptimize(tail)
+        //| []                       => false
+      //}
+      //def optimize(_ : list[StrPart])
+      //{
+        //| Lit(s1) :: Lit(s2) :: tail => optimize(StrPart.Lit(s2 + s1) :: tail)
+        //| x                  :: tail => x :: optimize(tail)
+        //| []                         => []
+      //}
+      //def exprs = if (isNeedOptimize(exprs)) optimize(exprs) else exprs;
+      def res = exprs.RevMap(e => 
+        match (e : StrPart)
+        {
+          | Lit(str)    => <[ _ = _builder.Append($(str : string)); ]>
+          | NewLine     => <[ _ = PrintNewLineAndIndent(); ]>
+          | Expr(expr)  => expr
+          | IndentedExpr(indent, expr) => <[ 
+            def indent = $(indent : string);
+            _ = _builder.Append(indent);
+            AddIndent(indent);
+            try { $expr; } 
+            finally { RemoveLastIndent() } ]>
+        });
+      
+      <[ { ..$res } ]>
+    }
+    
+    MakeWorkMethParsedName(ast : PT.ClassMember) : PT.Name
+    {
+      def workMethName            = ast.Name + StSuffix;
+      def workMethParsedName      = Macros.UseSiteSymbol(workMethName);
+      workMethParsedName.Location = ast.PName.Location; // this allow rename refactoring
+      workMethParsedName
+    }
+
+    MakeWorkMethParsedName(mb : MethodBuilder) : PT.Name
+    {
+      MakeWorkMethParsedName(mb.Ast)
+    }
+  }
+
+  public variant StrPart
+  {
+    | Lit           { str    : string; }
+    | Expr          { expr   : PT.PExpr; }
+    | NewLine
+    | IndentedExpr  { indent : string; expr : PT.PExpr; }
+    
+    public override ToString() : string
+    {
+      match (this)
+      {
+        | Lit(str)                   => $"Lit: '$str'"
+        | Expr(expr)                 => $"Expr: $expr"
+        | NewLine                    => "<\n>"
+        | IndentedExpr(indent, expr) => $"IndentedExpr: '$expr' ('$indent')"
+      }
+    }
+  }
+
+  public module Helper
+  {
+    public SprintImpl (
+      @string : PT.PExpr, 
+      warnIfFormatStrIsEmpty : bool, 
+      envelopExpr : PT.PExpr -> PT.PExpr, 
+      env : GlobalEnv
+    )
+      : PT.PExpr
+    {
+      def (str, loc, strType) = match (@string)
+      {
+        | Literal(Literal.String(_)) as lit => ExtractStringBody(lit)
+        | _ => 
+          Message.Error(@string.Location, "The $ or sprint macro expect string literal.");
+          (null, @string.Location, StringType.Error)
+      }
+
+      if (string.IsNullOrEmpty (str))
+      {
+        when (strType != StringType.Error)
+          Message.Warning ("empty spliced string");
+          
+        envelopExpr(<[ $(@string.ToString() : string) ]>)
+      }
+      else
+      {
+        def seq = make_splice_distribution (str, loc, strType, env).Rev();
+
+        match (seq)
+        {
+          | [StrPart.Lit(val)] =>
+            when (warnIfFormatStrIsEmpty)
+              Message.Warning ($"spliced string without splices: '$str'");
+            envelopExpr(<[ $(val : string) ]>);
+
+          | _ => 
+            //def indentPresent = seq.Exists(_ is StrPart.IndentedExpr);
+            //def seq = if (indentPresent) StrPart.Expr(<[ def ident = ""; ]>) :: seq;
+            //mutable curIndent = "";
+            def seq = seq;
+            
+            def res = seq.Map(e => 
+              match (e : StrPart)
+              {
+                | Lit(str)    => <[ $(str : string) ]>
+                | NewLine     =>   <[ Environment.NewLine ]>
+                | Expr(expr)  => expr
+                | IndentedExpr(indent, expr) => // TODO: Try add support of identation.
+                  <[ def indent = $(indent : string);
+                     indent + (System.Convert.ToString($expr) : string) ]>
+              });
+              
+            envelopExpr(<[ string.Concat (..$res) ]>);
+        }
+      }
+    }
+    
+    public ExtractStringBody(literal : PExpr.Literal) : string * Location * StringType
+    {
+      assert2(literal.val is Nemerle.Compiler.Literal.String);
+      // TODO: VladD2: Add filing of RawString in string literal embeded in quasi-quotation extressins.
+      if (literal.val.RawString == null)
+        ((literal.val :> Nemerle.Compiler.Literal.String).val, literal.Location, StringType.Monkey)
+      else
+        ExtractStringBody(literal.val.RawString, literal.Location)
+    }
+    
+    public ExtractStringBody(rawString : string, location : Location) 
+      : string * Location * StringType
+    {
+      /// Calc string value and location from raw literal data
+      def calcStrBounds(firstLen, lastLen, strType)
+      {
+        def x = location;
+        def quotasLen = firstLen + lastLen;
+        (rawString.Substring(firstLen, rawString.Length - quotasLen), 
+         Location(x.FileIndex, x.Line,    x.Column + firstLen,
+                               x.EndLine, x.EndColumn - lastLen),
+         strType)
+      }
+      
+      match (rawString[0])
+      {
+        | '<' => assert(rawString[1] == '#'); calcStrBounds(2, 2, StringType.Recursive)
+        | '@' => assert(rawString[1] == '"'); calcStrBounds(2, 1, StringType.Monkey)
+        | n   => assert(n == '"');            calcStrBounds(1, 1, StringType.C)
+      }
+    }
+
+    /// If we have string like this
+    ///     &lt;#
+    ///   SomeText1
+    ///   SomeText2
+    ///   #&gt;
+    /// this function convert it to
+    /// "SomeText1\nSomeText2"   
+    /// string - convertrd string
+    /// Location - changed location
+    /// int - indent (in chars) from begin of line which was deleted.
+    public SquareString(str : string, loc : Location) : string * Location * int
+    {
+      match (str.LastIndexOfAny(array['\r', '\n']))
+      {
+        | -1 => (str, Location(loc.FileIndex, loc.Line,    loc.Column,
+                                              loc.EndLine, loc.EndColumn), 0)
+        | _ => 
+          def rows = str.Split(array["\r\n", "\n", "\r"], StringSplitOptions.None);
+          when (rows.Length <= 2)
+              Message.Error(loc, "The multiline String Template should contain 3 and more row. "
+                                 "(First and last line in multiline String Template ignored.)");
+          def prefix = rows.NLast ();
+          def prefixLen = prefix.NCount ();
+          def firstIndex = if (rows[0].ForAll(char.IsWhiteSpace)) 1 else 0;
+          def sb = StringBuilder(str.Length - prefixLen 
+                                 - if (firstIndex == 1) rows[0].Length else 0);
+          def len = rows.Length - 1;
+          mutable isIndentMismatch = false;
+          for (mutable i = firstIndex; i < len; i++)
+          {
+            def row = rows[i];
+            if (row.StartsWith(prefix, StringComparison.InvariantCulture))
+              _ = sb.AppendLine(row.Substring(prefixLen, row.Length - prefixLen));
+            else
+            {
+              Message.Error(Location(loc, loc.Line + i, 1, loc.Line + i, row.Length + 1),
+                "Mismatch of the string template strBuilder characters.");
+              isIndentMismatch = true;
+              _ = sb.AppendLine(row);
+            }
+          }
+          
+          when (sb.Length > Environment.NewLine.Length)
+            sb.Length -= Environment.NewLine.Length;
+
+          when (isIndentMismatch)
+            Message.Hint(Location(loc, loc.EndLine, 1, loc.EndLine, loc.EndColumn),
+              "Please, make sure that all of the strBuilder characters of your "
+              "string template match the last line indentation.");
+            // TODO: Локейшон вычисляется неверно. Переделать.
+          (sb.ToString(), Location(loc.FileIndex, 
+            loc.Line    + firstIndex, prefixLen + 1,
+            loc.EndLine - firstIndex, rows[len - 1].Length + 1),  // + 1 => Location coordinates 1 bound
+            prefixLen);
+      }
+    }
+
+    public make_splice_distribution (
+      str     : string,
+      loc     : Location,
+      strType : StringType,
+      env     : GlobalEnv
+    ) 
+      : list [StrPart]
+    {
+      def makeEllipsisSplaceExpr(env : GlobalEnv, expr : string, isComplexExpr : bool, startLoc : Location) : PT.PExpr
+      {
+        // TODO: Find a real bug
+        // Force create function in .Net, otherwise we get error
+        // Possibly it is realated to the bug that
+        // _ -> string doesn't use the right type but uses always object.
+        def convertToString = <[ x => System.Convert.ToString(x) ]>;
+      
+        Util.locate(startLoc,
+          if (isComplexExpr || env.Manager.IsCompletionInProgress)
+          {
+            env.Manager.MacroColors.PushUseSiteColor ();
+            try
+            {
+              def pExpr = MainParser.ParseExpr (env, expr);
+              def makeSeqExpr(seqExpr, sepExpr, cnvFuncExpr)
+              {
+                <[ string.Join($sepExpr, NCollectionsExtensions.MapToArray.[_, string]($seqExpr : SCG.IEnumerable[_], $cnvFuncExpr)) ]>
+              }
+              match (pExpr)
+              {
+                | <[ $seqExpr; $sepExpr; $cnvFuncExpr; ]> => makeSeqExpr(seqExpr, sepExpr, cnvFuncExpr)
+                | <[ $seqExpr; $sepExpr; ]> => makeSeqExpr(seqExpr, sepExpr, convertToString)
+                | _ => makeSeqExpr(pExpr, <[ ", " ]>, convertToString)
+              }
+            }
+            finally { env.Manager.MacroColors.PopColor (); }
+          }
+          else 
+          {
+            def pExpr = if (expr == "this") <[ this ]> else <[ $(expr : usesite) ]>;
+            pExpr.Location = startLoc; // Mark expression as parsed (remove IsGenerated flag).
+            <[ string.Join(", ", NCollectionsExtensions.MapToArray.[_, string]($pExpr : SCG.IEnumerable[_], $convertToString)) ]>
+          })
+      }
+      
+      def makeSplaceExpr(env : GlobalEnv, expr : string, isComplexExpr : bool, startLoc : Location) : PT.PExpr
+      {
+        Util.locate(startLoc, {
+          def pExpr = if (isComplexExpr || env.Manager.IsCompletionInProgress)
+          {
+            env.Manager.MacroColors.PushUseSiteColor();
+            try { MainParser.ParseExpr(env, expr) }
+            finally { env.Manager.MacroColors.PopColor(); }
+          }
+          else 
+          {
+            def pExpr = if (expr == "this") <[ this ]> else <[ $(expr : usesite) ]>;
+            pExpr.Location = startLoc; // Mark expression as parsed (remove IsGenerated flag).
+            pExpr
+          }
+          <[ Convert.ToString($pExpr) : string ]>})
+      }
+      
+      make_splice_distribution2(str, loc, strType, env, makeSplaceExpr, makeEllipsisSplaceExpr)
+    }
+
+    public static IsEndOfLine(ch : char) : bool
+    {
+      | '\n' | '\u2028' | '\u2029' | '\u0085' => true
+      | _ => false
+    }
+
+    /** for $(...) and ..$(...) expressions:
+        - first evaluate expressions
+        - store intermediate results in variables
+        - return list of evaluators and reference variables in reverse order
+     */
+    public make_splice_distribution2 (
+      @string                : string,
+      loc                    : Location,
+      strType                : StringType,
+      env                    : GlobalEnv,
+      makeSplaceExpr         : GlobalEnv * string * bool * Location -> PT.PExpr, // env * strExpr * isComplexExpr
+      makeEllipsisSplaceExpr : GlobalEnv * string * bool * Location -> PT.PExpr  // env * strExpr * isComplexExpr
+    )
+      : list [StrPart]
+    {
+      def str = @string;
+      mutable index     = -1;
+      mutable curCol    = loc.Column;
+      mutable curLine   = loc.Line;
+      mutable ch = if (str.Length > 0) str[0] else '\0';
+      def strBuilder = StringBuilder();
+      def peekN(n) { def next = index + n; if (next < str.Length) str[next] else '\0' }
+      def peek() { peekN(1) }
+      def next()
+      {
+        ch = peek();
+        index++;
+        
+        if (IsEndOfLine(ch))
+        {
+          curLine++;
+          curCol = 1;
+        }
+        else curCol++;
+        
+        ch
+      }
+      def error = Message.Error (loc, _); //TODO: Вычислять локешон более точно
+      def getEscapeValue : char -> char = LexerBase.EscapeValue(_, null,
+        LexerBase.GetCharFromHex(_, _, peek, next, error), error);
+      def getStrFromBuilder() { def res = strBuilder.ToString(); strBuilder.Length = 0; res }
+      def appendToBuilder(chr) { _ = strBuilder.Append(chr) }
+      def tryUnescape(ch)
+      {
+        def p = peek();
+        _ = p;
+        if (ch == '\\' && strType == StringType.C)
+          getEscapeValue(next())
+        else if (ch == '"' && strType == StringType.Monkey && peek() == '"')
+          next()
+        else ch;
+      }
+      def currLoc(exprStr) //TODO: Надо учитывать концы строк в многострочных строках.
+      { // Данная реализация некуда не годится. Видимо надо завести "текущий локешон".
+        def loc = loc;
+        Location(loc, curLine, curCol - exprStr.Length, curLine, curCol)
+      }
+      /// ~~~Parse expression based on nested brackets.
+      /// Разбирает строку производя поиск закрывающей скобки.
+      /// Вложенные скобки игнорируются. В итоге получается строка содержащая
+      /// выражение заключенное в скбоки (которое так же может содержать вложенные скобки)
+      /// и булево значение говорящее, содержится ли в строке простой идентификатор или варажение.
+      /// Returns pare of (exprStr * isIdentifier)
+      def parseExpressionStr() : string * bool * Location
+      {
+        Assert(strBuilder.Length == 0, "strBuilder.Length == 0");
+        Assert(ch == '(', "ch == '('");
+        def startCol  = curCol;
+        def startLine = curLine;
+        /// exprStr * allIsAlphNum
+        def loop(balance, allIsAlphNum) : string * bool
+        {
+          def ch2 = tryUnescape(next()); //TODO: Скорее всего строку для парсера Unescape-ить не надо!
+          match (ch2)
+          {
+            // TODO: Обработать ситуацию когда скобка не закрыта! См. файл:
+            // C:\MyProjects\Nemerle\nemerle\ncc\testsuite\negative\tyenf.n
+            | '\0'
+            | ')' when balance == 1 => (getStrFromBuilder(), allIsAlphNum)
+            | ')'                   => appendToBuilder(ch2); loop(balance - 1, false)
+            | '('                   => appendToBuilder(ch2); loop(balance + 1, false)
+            | curCh                 =>
+              appendToBuilder(ch2);
+              loop(balance, allIsAlphNum && (char.IsLetterOrDigit(curCh) || curCh == '_'))
+          }
+        }
+        
+        def (expr, allIsAlphNum) = loop(1, true);
+        (expr, 
+         allIsAlphNum && expr.Length != 0 && expr != "_" && char.IsLetter(expr[0]),
+         Location(loc, startLine, startCol, curLine, curCol - 1))
+      }
+      def parseIdentifier()
+      {
+        Assert(strBuilder.Length == 0, "strBuilder.Length == 0");
+
+        def loop()
+        {
+          def curCh = peek();
+          match (curCh)
+          {
+            | '_'
+            | _ when char.IsLetterOrDigit(curCh) => appendToBuilder(next()); loop()
+            | _ => getStrFromBuilder()
+          }
+        }
+        
+        if (ch == '_' || char.IsLetter(ch)) 
+        {
+          appendToBuilder(ch);
+          loop()
+        }
+        else ""
+      }
+
+      def loop (res : list[StrPart]) : list[StrPart]
+      {
+        // Завершает акомуляцию сиволов литерала и создает соотвествующую 
+        // лексему добавляя ее к началу списка лексем
+        def endLiteral()
+        {
+          if (strBuilder.Length == 0)
+            res
+          else
+            StrPart.Lit(getStrFromBuilder()) :: res
+        }
+        def isNextDollar(n)
+        {
+          def ch1 = peekN(n);
+          if (char.IsWhiteSpace(ch1)) isNextDollar(n + 1)
+          else ch1 == '$' && peekN(n + 1) != '$'
+        }
+        def isElipse() { peek() == '.' && isNextDollar(2) }
+        def processNewLine() { loop (StrPart.NewLine() :: endLiteral()) }
+        def isNextNewLine()
+        {
+          if (strType == StringType.C)
+            peek() == '\\' && peekN(2) == 'n'
+          else
+            IsEndOfLine(peek())
+        }
+ 
+        def ch2 = tryUnescape(next());
+        match (ch2)
+        {
+          | '\0'                      => endLiteral()
+          | '$' when peek() == '$'    => _ = next(); appendToBuilder('$'); loop(res) // $$ => $
+          | '$'                       => parceSpliceEx(endLiteral(), true)
+          | '.'  when isElipse()      => while (next() != '$') { } // '..$'
+                                         parceSpliceEx(endLiteral(), false);
+          | '\r' when isNextNewLine() => _ = tryUnescape(next()); processNewLine()
+          | '\n' | '\r' | '\u2028' | '\u2029' | '\u0085' => processNewLine()
+          | x                         => appendToBuilder(x); loop(res)
+        }
+      }
+      and parceSpliceEx(res, isSimple)
+      {
+        when (next() == '\0')
+        {
+          //Diagnostics.Trace.Assert(false);
+          Message.Error ("lone `$' at the end of the format string");
+          return [StrPart.Lit("$")];
+        }
+        
+        def rtyIndent(res : list[StrPart], expr)
+        {
+          match (res)
+          {
+            | Lit(str) :: NewLine :: tail when str.ForAll(char.IsWhiteSpace) => 
+              StrPart.IndentedExpr(str, expr)  :: StrPart.NewLine() :: tail
+            | _ => StrPart.Expr(expr) :: res
+          }
+        }
+        
+        def str = str; _ = str;
+        
+        if (ch == '(')
+        {
+          def (exprStr, isIdentifier, exprLoc) = parseExpressionStr();
+          
+          if (ch == '\0') // скобка не закрыта
+          {
+            def exprStr = "(" + exprStr;
+            Message.Error($"no closing bracket found in `$(exprStr)' "
+                           "(the closing bracket in format string is probably missing)");
+          }
+          else when (exprStr.Trim().Length == 0)
+            Message.Error("expression without content");
+
+          def expr = if (isSimple) makeSplaceExpr(env, exprStr, !isIdentifier, exprLoc) 
+                     else  makeEllipsisSplaceExpr(env, exprStr, !isIdentifier, exprLoc);
+          loop (rtyIndent(res, expr))
+        }
+        else if (ch == '$')
+          loop (StrPart.Lit("$") :: res)
+        else
+        {
+          def variableName = parseIdentifier();
+          def startLoc = currLoc(variableName);
+          def index3 = index; _ = index3;
+          
+          if (variableName == "")
+          {
+            appendToBuilder(ch);
+            Message.Warning ("expected variable name or expression enclosed with (..) after $ in splice string");
+            loop (StrPart.Lit("$") :: res)
+          }
+          else
+          {
+            def expr = if (isSimple) makeSplaceExpr(env, variableName, false, startLoc) 
+                       else  makeEllipsisSplaceExpr(env, variableName, false, startLoc);
+            //def index1 = index; _ = index1;
+            loop (rtyIndent(res, expr))
+          }
+        }
+      }
+
+      loop ([])
+    }
+  }
+}

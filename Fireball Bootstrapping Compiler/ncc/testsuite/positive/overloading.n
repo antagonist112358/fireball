@@ -1,0 +1,380 @@
+using Bug1054;
+
+using Nemerle.Collections;
+using Nemerle.IO;
+using Nemerle.Extensions;
+using Nemerle.Utility;
+
+using System.Console;
+
+using SCG = System.Collections.Generic;
+
+module Bug_1102_A
+{
+  public f[T] (x : T, f : T * int -> bool) : bool { f (x, 0) } //1
+  public f[T] (x : T, f : T -> bool) : bool { f (x) } //2
+  public Test() : void
+  {
+    def y = f((1, 0.0), p => p[0] == 1);
+    System.Console.WriteLine($"$y");
+  }
+}
+
+module Bug_1102_B
+{
+  public f[T] (x : T, f : T -> bool) : bool { f (x) } //2
+  public f[T] (x : T, f : T * int -> bool) : bool { f (x, 0) } //1
+  public Test() : void
+  {
+    def y = f((1, 0.0), p => p[0] == 1);
+    System.Console.WriteLine($"$y");
+  }
+}
+
+class A {}
+class B : A {}
+class C : B { public this () {} }
+
+class StaticOverride {
+    static new ToString () : string {
+        "bla"
+    }
+
+    public static Run () : void { 
+        System.Console.WriteLine (StaticOverride.ToString ());
+//        def x = StaticOverride ();
+//        printf ("%s\n", x.ToString ());
+    }
+}
+
+namespace CtorVsMethodOut {
+  using System;
+
+  enum AEnum { | a | b }
+
+  public class T {
+       private static Convert ( a : out AEnum) : void
+        {
+                a = AEnum.a;
+                printf ("called Convert\n");
+        }
+        public static Run () : void
+        {
+                mutable a = ( 0 :> AEnum);
+                Convert (out a);
+        }
+  }
+}
+
+namespace PolymorphicPlusFunctionals
+{
+  module M
+  {
+    f (x : int) : int { x }
+    f (_x : string) : int { 1 }
+    g['a] (l : list['a], f : 'a -> int) : void
+    {
+      Nemerle.IO.printf ("%s\n", NList.Map (l, f).ToString ())
+    }
+
+    public Run () : void
+    {
+      def l = [1,2,3];
+      g (l, f);
+      def l = ["a","b","c"];
+      g (l, f)
+    }
+  }
+}
+
+namespace AssignmentLValue
+{
+  using System;
+
+  class X
+  {
+      static mutable Int32 : Int32;
+
+      public static Run () : void
+      {
+         Int32 = ( 0 : Int32);
+      }
+  }
+}
+
+
+public class Bug743
+{
+  public this (_ : string) { printf("743.string\n"); }
+  public this (_ : object, _ = "a") { printf("743.object\n"); }
+}
+
+public class Bug743x
+{
+  public this (_ : string, _ = "a") { printf("743x.string\n"); }
+  public this (_ : object) { printf("743x.object\n"); }
+}
+
+namespace Bug723
+{
+  class X1
+  {
+    public M() : void {}
+  }
+
+  class X2
+  {
+    public X1 : X1 = X1();
+    public K() : void
+    {
+      X1.M()
+    }
+  }
+}
+
+module Bug770 {
+    test(_ : object) : void { }
+    test(_ : array[object]) : void { }
+    foo() : void {
+        def z(x,y){x+y}
+        test(z(1,2));
+    }
+}
+
+class Bug1054
+{
+ public static Last[T] (this _ : list[T]) : list[string] {
+  ["hello"]
+ }
+}
+
+module Bug1154
+{
+  public Test() : void 
+  { 
+    System.Console.WriteLine(BB().Foo(""));
+    System.Console.WriteLine(BB().Foo(1));
+  }
+}
+
+class  BB { public Foo[T](             _ : T)      : int where T : struct { 1   } }
+module CC { public Foo   (this _ : BB, _ : string) : string               { "A" } }
+
+public module DelayedOverloadResolution
+{
+  public Select[From, To](this seq : SCG.IEnumerable[From], f : From -> To) : SCG.IEnumerable[To]
+  {
+    seq.MapLazy(f)
+  }
+
+  public Select[From, To](this seq : SCG.IEnumerable[From], convert : From * int -> To) : SCG.IEnumerable[To]
+  {
+    mutable i = 0;
+    foreach(elem in seq)
+    {
+      yield convert(elem, i);
+      i++;
+    }
+  }
+  
+  public Sum[T](this seq : SCG.IEnumerable[T], f : T -> int) : int 
+  {
+    seq.FoldLeft(0, (x, acc) => acc + f(x));
+  }
+
+  public Sum[T](this seq : SCG.IEnumerable[T], f : T -> double) : double 
+  {
+    seq.FoldLeft(0D, (x, acc) => acc + f(x));
+  }
+
+  public Test() : void
+  {
+    WriteLine("Select overload by parameters count Begin");
+
+    def xs = [(1.2, "a"), (23d, "b")];
+
+    def res1 = xs.Select(fun((o, t)) { (t, o) });
+    WriteLine($"..$res1");
+
+    def res1 = xs.Select(fun(o, t) { (t, o) });
+    WriteLine($"..$res1");
+    
+    WriteLine("Select overload by parameters count End");
+    
+    WriteLine("DelayedOverloadResolution Begin");
+
+    def f(d) { d.UnitPrice * (d.Quantity :> double) };
+    WriteLine(f(DelayedOverloadResolution.Detail));
+
+    def f(d) { d.UnitPrice * d.Quantity }
+    WriteLine(f(DelayedOverloadResolution.Detail));
+ 
+    def f(d) { (d.UnitPrice :> long) * d.Quantity }
+    WriteLine(f(DelayedOverloadResolution.Detail));
+
+    def res = Details.Sum(d => d.UnitPrice * (d.Quantity :> double));
+    WriteLine(res);
+    def res = Details.Sum(d => d.UnitPrice * d.Quantity);
+    WriteLine(res);
+    
+    def res = Orders.Select(o => (o.OrderID, o.Details.Sum(d => d.UnitPrice * d.Quantity)));
+    WriteLine($"..$res");
+    
+    def res = Orders.Select((o, i) => (o.OrderID, i, o.Details.Sum(d => d.UnitPrice * d.Quantity)));
+    WriteLine($"..$res");
+    
+    WriteLine("DelayedOverloadResolution End");
+    //_ = ReadLine();
+  }
+  
+  Detail : Detail = Detail(1, 2, 10.2, 6, "no text");
+  Details : array[Detail] = array[Detail, Detail(1, 3, 20.4, 6, "no text")];
+  Orders : list[Order] = [Order(1, Details), Order(2, [Detail(2, 4, 123.02, 7, "no text")])];
+}
+
+[Record, StructuralEquality, StructuralHashCode]
+class Order
+{
+  [Accessor] _orderID    : int;
+  public Details : SCG.IEnumerable[Detail];
+}
+
+[Record, StructuralEquality, StructuralHashCode]
+class Detail
+{
+  [Accessor] _orderID    : int;
+  [Accessor] _productID  : int;
+  [Accessor] _unitPrice  : double;
+  [Accessor] _quantity   : int;
+  [Accessor] _text       : string;
+}
+
+public class Base
+{
+   public Bar[T]() : void{ WriteLine ("generic Bar " + typeof(T).ToString());}
+}
+
+
+public class Derived : Base
+{
+    public Bar() : void{ WriteLine("non-generic Bar");}  
+}
+
+class Foo : IFoo
+{
+   public Bar[T]() : void{ WriteLine ("generic Bar " + typeof(T).ToString());}
+   public Bar() : void{ WriteLine("non-generic Bar");}  
+}
+public interface IFoo
+{
+   Bar[T]() : void;
+   Bar() : void;
+}
+
+module M 
+{
+  foo (_ : array [string]) : void { }
+  foo (_ : array [object]) : void { assert(false) }
+
+  
+  quxx (_ : A) : void { printf ("A\n"); }
+  quxx[T] (_ : T) : void where T : A { printf ("poly\n"); }
+
+  bar (s : string, i : int) : void {
+    _ = s;
+    _ = i;
+  }
+  
+  bar (i : int, s : object) : void {
+    _ = s;
+    _ = i;
+    assert(false);
+  }
+  
+  f (_ : A, _ : B) : void {}
+  f (_ : B, _ : B) : void { printf ("OK\n") }
+
+  public Main () : void 
+  {
+    // Set InvariantCulture for same console output.
+    System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+
+    f (C (), C ());
+    StaticOverride.Run ();
+    CtorVsMethodOut.T.Run ();
+    PolymorphicPlusFunctionals.M.Run ();
+    AssignmentLValue.X.Run ();
+
+    bar (s = "foo", i = 42);
+    bar (i = 42, s = "foo");
+    foo (array ["foo"]);
+
+    quxx (A ());
+
+    _ = Bug743("");
+    _ = Bug743("", "");
+    _ = Bug743x("");
+    _ = Bug743x("", "");
+    System.Console.WriteLine ([(1, 2)].Last [0]); //Bug1054
+    def _r = Met(1, _ToStr);
+    Bug_1102_A.Test();
+    Bug_1102_B.Test();
+    Bug1154.Test();
+    
+    DelayedOverloadResolution.Test();
+    def foo : IFoo = Foo();
+    foo.Bar.[int]();
+    foo.Bar();
+    def b = Derived();
+    b.Bar.[int]();
+    b.Bar();
+  }
+
+  public Main (_args : string) : void // W: has the wrong signature to be an entry point
+  {  }
+
+  public _ToStr[T](x : T)      : string { WriteLine("_ToStr[T](x : T)"); x.ToString() }
+  public _ToStr[T](x : object) : string { WriteLine("_ToStr[T](x : object)"); x.ToString() }
+  public _ToStr(x : int)       : string { WriteLine("_ToStr(x : int)"); x.ToString() }
+  
+  public Met[T](value : T, _f : T -> string) : string { _ = _f(value); null }
+}
+
+
+/*
+BEGIN-OUTPUT
+OK
+bla
+called Convert
+[1, 2, 3]
+[1, 1, 1]
+A
+743.string
+743.object
+743x.string
+743x.string
+1
+_ToStr(x : int)
+True
+True
+A
+1
+Select overload by parameters count Begin
+(a, 1.2), (b, 23)
+(0, (1.2, a)), (1, (23, b))
+Select overload by parameters count End
+DelayedOverloadResolution Begin
+61.2
+61.2
+60
+183.6
+183.6
+(1, 183.6), (2, 861.14)
+(1, 0, 183.6), (2, 1, 861.14)
+DelayedOverloadResolution End
+generic Bar System.Int32
+non-generic Bar
+generic Bar System.Int32
+non-generic Bar
+END-OUTPUT
+*/

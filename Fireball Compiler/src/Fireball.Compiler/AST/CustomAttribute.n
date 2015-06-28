@@ -1,0 +1,34 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.AST
+{
+  /// <summary>
+  /// Description of CustomAttribute.
+  /// </summary>
+  [Record]
+  public variant CustomAttribute : AstNode
+  {
+    | Parsed {
+        Name : Named;
+        Arguments: list[ParserExpression];
+      }
+      
+    | Expression { Code : ParserExpression; }
+    
+    public override ToString() : String
+    {
+      match(this) {
+        | Parsed(name, _) => name.ToString()
+        | Expression(code) => $"$$($code)"
+      }
+    }
+    
+  }
+}

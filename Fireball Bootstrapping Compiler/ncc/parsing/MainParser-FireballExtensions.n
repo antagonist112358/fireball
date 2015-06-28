@@ -1,0 +1,130 @@
+﻿using SCG = System.Collections.Generic;
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Assertions;
+using Nemerle.Utility;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of MainParser_FireballExtensions.
+  /// </summary>
+  public partial class MainParser
+  {
+
+    private static CreateConstructorFor(loc: Location, h: PFunHeader, fun_name: Name, modifiers: AttributesAndModifiers, 
+        parameters: Seq[PParameter], baseCallArgs: Seq[PExpr]) : ClassMember.Function
+    {
+      def body = if (fun_name.Id == ".ctor") 
+          <[$(PExpr.This()) (..$baseCallArgs)]>;
+        else
+          <[$(fun_name : name) (..$baseCallArgs)]>;
+            
+      def parmsWithoutValue = parameters.MapToList(p => match(p.DefaultValue) {
+        | Some(_) => PParameter(p.Location, p.name, p.Type, p.modifiers, None(), p.PatternHack)
+        | None => p
+      });
+      
+      def newHeader = PFunHeader(h.Location, h.TypeParameters, h.ParsedSplicableName, h.ParsedReturnType, parmsWithoutValue, h._parsedParametersOpenLocation, h._parsedParametersCloseLocation);
+      
+      // Create the constructor with nothing specified
+      def ctor = ClassMember.Function(header = newHeader, name = newHeader.ParsedSplicableName,  modifiers = modifiers, loc = loc, body = FunBody.Parsed(body), implemented = []);
+      ctor.AddCustomAttribute(<[System.Runtime.CompilerServices.CompilerGenerated]>);
+      ctor
+    }
+    
+    static generateParameters(parms: list[PParameter]) : list[list[PParameter]] {
+      mutable output = [];
+      def stack = Nemerle.Collections.Stack(parms.Reverse());
+      
+      while(stack.Count > 0) {
+        output ::= stack.ToListRev();
+        _ = stack.Pop();
+      }
+      
+      output.Reverse() + [[]]
+    }
+    
+    static generateParameterPermutations(parms: list[PParameter]) : list[list[PParameter]] {
+      def output = System.Collections.Generic.HashSet( EqualityComparer( (a,b) => NList.Equals(a,b) ) );
+      def stack = Nemerle.Collections.Stack([parms.Reverse()]);
+            
+      def createOrderedSubsets(lst: list[PParameter]) : Seq[list[PParameter]] {
+          lst.Map(parm => lst.Filter(p => !p.Equals(parm)))
+      }
+      
+      while(stack.Count > 0) {
+        def currSet = stack.Pop();
+        when (!output.Contains(currSet)) { _ = output.Add(currSet) }
+        createOrderedSubsets(currSet).Iter(i => stack.Add(i))
+      }
+      
+      output.NToList().Sort((left, right) => if (left.Length < right.Length) 1 else if (left.Length == right.Length) 0 else -1)
+    }
+    
+    // Generate method perutations from default valued arguments
+    generateMethodPerutations(loc: Location, h : PFunHeader, modifiers : AttributesAndModifiers, body: FunBody, impl: list[PExpr], gen_subsets: bool = false) : list[ClassMember.Function] {
+      mutable parms_with_default_value = [];
+      mutable parms_without_default_value = [];
+      
+      // The function name
+      def fun_name = h.ParsedSplicableName;
+      
+      // Any implements details
+      def impl_int = if (impl == null) [] else impl;
+      
+      // Creates a list of arguments to specify to the overloaded method
+      def createBaseCallArgs(specified : list[PParameter], allParms: list[PParameter]) : list[PExpr] {
+        allParms.Map(parm => {
+          if (!specified.Contains(parm)) {
+            parm.DefaultValue.Value
+          } else {
+            <[$(parm.ParsedSplicableName.GetName() : name)]>
+          }          
+        })
+      }     
+      
+      // All of the parameters
+      def allParms = h.Parameters;
+      
+      // Split the parameters list into non-valued and valued
+      allParms.Iter(p => match(p.DefaultValue) {
+        | Some(_) => parms_with_default_value ::= p
+        | None => parms_without_default_value ::= p
+      });     
+      
+      // If there are no default-valued parameters
+      if (parms_with_default_value.IsEmpty()) {
+        // Done
+        def ctor = ClassMember.Function(header = h, name = fun_name,  modifiers = modifiers, loc = loc, body = body, implemented = impl_int);
+        ctor.AddCustomAttribute(<[System.Runtime.CompilerServices.CompilerGenerated]>);
+        [ctor]
+      } else {        
+        // Create the parameter permutations
+        def permutations = if (!gen_subsets) { generateParameters(parms_with_default_value) } else { generateParameterPermutations(parms_with_default_value) }
+        def all_permutations = permutations.Map(subset => parms_without_default_value + subset);        
+        
+        // Iterate through all the permutations
+        all_permutations.Map(specifiedParms => {
+          // Do we have all parms specified?
+          if (specifiedParms.Length == allParms.Length) {
+            // Transform all the parameters to parameters without default values
+            def fixedParms = specifiedParms.Map(p => match(p.DefaultValue) {
+              | Some(_) => PParameter(p.Location, p.name, p.Type, p.modifiers, None(), p.PatternHack)
+              | None => p
+            });
+            def freshMods = AttributesAndModifiers(modifiers.mods, modifiers.custom_attrs);
+            def newHeader = PFunHeader(h.Location, h.TypeParameters, h.ParsedSplicableName, h.ParsedReturnType, fixedParms, h._parsedParametersOpenLocation, h._parsedParametersCloseLocation);
+            ClassMember.Function(header = newHeader, name = newHeader.ParsedSplicableName,  modifiers = freshMods, loc = loc, body = body, implemented = impl_int);
+          } else {
+            // At least one parameter was excluded from the method signature
+            def callArgs = createBaseCallArgs(specifiedParms, allParms);
+            CreateConstructorFor(loc, h, fun_name.GetName(), modifiers, specifiedParms, callArgs)
+          }
+        })
+      }            
+    }
+    
+    
+  }
+}

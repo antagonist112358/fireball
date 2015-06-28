@@ -1,0 +1,36 @@
+using Nemerle.Collections;
+using System.Collections.Generic;
+
+class SchemePointBase {}
+class SchemePoint : SchemePointBase {}
+
+interface ISchemeGlyph
+{
+  Points : IEnumerable[SchemePointBase] {get;}
+}
+
+class SchemeItemList[T] : List[T] {}
+
+class PointList : SchemeItemList[SchemePoint] {}
+class GlyphList : SchemeItemList[ISchemeGlyph] {}
+
+class Scheme
+{
+  public Glyphs : GlyphList { get; set; }
+  public Points : PointList { get; set; }
+}
+
+module Program
+{
+  Concat[TSource](_seq1 : List[TSource], _seq2 : IEnumerable[TSource]) : IEnumerable[TSource]
+  {
+    null
+  }
+
+  Main() : void
+  {
+    def scheme = Scheme();
+    
+    _ = Concat(scheme.Points, scheme.Glyphs.Map(_.Points).Flatten()); // E: types SchemePointBase and SchemePoint are not compatible
+  }
+}

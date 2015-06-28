@@ -1,0 +1,54 @@
+
+using Nemerle.IO;
+using Nemerle.Collections;
+
+public class NArrayTest
+{
+  public static Main () : void 
+  {
+    printf ("Nemerle.Collections.NCollectionsExtensions test.\n");
+
+    mutable a = array ["a", "b", "abcde", "d", "e"];
+
+#if TODO_FIX_A_BOXING_BUG
+    mutable b = array [4, 6, 8, 10, 12, 14, 16, 18];
+#endif
+
+    if (a.Exists(x => x.Length > 1))
+      printf ("Exists!\n")
+    else
+      printf ("Does not exist!\n");
+
+    if (a.Exists(fun (x : string) { x.Length > 12 }))
+      printf ("Exists!\n")
+    else
+      printf ("Does not exist!\n");
+
+#if TODO_FIX_A_BOXING_BUG
+    if (b.ForAll(fun (x : int) { x % 2 == 0 }))
+      printf ("For all!\n")
+    else
+      printf ("Not quite for all!\n");
+
+    if (b.ForAll(fun (x : int) { x % 2 == 1 }))
+      printf ("For all!\n")
+    else
+      printf ("Not quite for all!\n")
+#endif
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Nemerle.Collections.NCollectionsExtensions test.
+Exists!
+Does not exist!
+END-OUTPUT
+*/
+
+#if TODO_FIX_A_BOXING_BUG
+/*
+For all!
+Not quite for all!
+*/
+#endif

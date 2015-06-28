@@ -1,0 +1,93 @@
+abstract class C1 {
+  abstract public m1 () : void;
+  public m2 () : void
+  {
+    m1 ();
+  }
+}
+
+class C2 : C1 {
+  /// <summary>
+  /// <summary>
+  public override m1 () : void // W: Cannot parse XML in comment
+  {
+    System.Console.WriteLine ("C2.m1");
+  }
+
+  public this () {}
+}
+
+interface I {
+  mi () : void;
+}
+
+class CI1 : I {
+  
+  public virtual mi () : void
+  { 
+    System.Console.WriteLine ("CI1.mi");
+  }
+
+  public this () {}
+}
+
+class CI2 : CI1 {
+  public override mi () : void
+  { 
+    System.Console.WriteLine ("CI2.mi");
+  }
+  
+  public this () {}
+}
+
+interface IWithProperty {
+  hoo : int { get; set; }
+  joo () : void;
+}
+
+abstract class WithAbstractProperty : IWithProperty {
+  public abstract hoo : int { get; set; }
+  public abstract joo () : void;
+}
+
+module M {
+  Main () : void 
+  {
+    def c = C2 ();
+    c.m1 ();
+    (c : C1).m1 ();
+    c.m2 ();
+    (c : C1).m2 ();
+
+    (CI1 () : I).mi ();
+    (CI2 () : I).mi ();
+  }
+}
+
+namespace AbstractOverride {
+class Base {
+   public virtual Foo() : void {}
+}
+
+abstract class Derived : Base {
+   public abstract override Foo() : void; 
+}
+class Concrete : Derived { 
+   public override Foo() : void { 
+     System.Console.WriteLine ("foo");
+   }  
+}
+}
+
+/*
+OPTIONS: -doc:abstract.xml
+
+BEGIN-OUTPUT
+C2.m1
+C2.m1
+C2.m1
+C2.m1
+CI1.mi
+CI2.mi
+END-OUTPUT
+*/

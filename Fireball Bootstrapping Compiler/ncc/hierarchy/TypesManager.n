@@ -1,0 +1,483 @@
+/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Imperative;
+using System;
+using System.IO.File;
+using System.IO.Path;
+using SCG = System.Collections.Generic;
+
+namespace Nemerle.Compiler 
+{
+  /* ---------------------------------------------------------------------- */
+  /* -- GLOBAL PROCESSING OF ALL TYPEBUILDERS------------------------------ */
+  /* ---------------------------------------------------------------------- */
+  public partial class TypesManager 
+  {
+    public mutable infos : list [TypeBuilder] = [];
+    mutable assembly_attributes : SCG.List [GlobalEnv * Parsetree.PExpr] = SCG.List();
+    internal mutable run_phase : int;
+
+    // used to create fake source code for macro generated expressions
+    mutable _codeWriter : LocatingTextWriter;
+    //mutable generatedSourceLocation : Location;
+    
+    attribute_macros_queue : Nemerle.Collections.Heap [AttributeMacroExpansion] = Nemerle.Collections.Heap (100);
+
+    public Init() : void
+    {
+      RemoveProgramTypes();
+      infos = [];
+      assembly_attributes.Clear();
+      run_phase = 0;
+      _codeWriter = null;
+    }
+
+    [Record (Exclude = [AddedNr])]
+    internal protected class AttributeMacroExpansion : System.IComparable [AttributeMacroExpansion] 
+    {
+      public Target : MacroTargets;
+      public Phase : MacroPhase;
+      public Expression : Parsetree.PExpr;
+      InitialParms : list [Parsetree.SyntaxElement];
+      TBuilder : TypeBuilder;
+      CurrentMethod : MethodBuilder;
+      internal mutable AddedNr : int;
+    
+      /// we need the earlier expanded macros to get the highest values, as heap is returning max values first
+      public CompareTo (other : AttributeMacroExpansion) : int 
+      {
+        // larger phase values should be expanded later
+        if (Phase != other.Phase) (other.Phase :> int) - (Phase :> int)
+        else if (Target != other.Target) (other.Target :> int) - (Target :> int)
+        else other.AddedNr - AddedNr;
+      }
+
+      protected virtual GEnv : GlobalEnv {
+        get { TBuilder.GlobalEnv }
+      }
+
+      protected virtual TEnv : TypeVarEnv {
+        get { TBuilder.Tenv; }
+      }
+      
+      public override ToString () : string
+      {
+        def tb = if (TBuilder != null) TBuilder.ToString () else "";
+         $"$tb: $Expression - ($AddedNr) - $Target $Phase";
+      }
+      
+      public Expand () : bool
+      {
+        match (MacroRegistry.lookup_macro (GEnv, Expression, Suffix (Target, Phase))) {
+          | None => false
+          | Some ((name, imacro, exprs)) =>
+            def parms = InitialParms + exprs;
+
+            def tenv = if (CurrentMethod == null) TEnv else CurrentMethod.Header.tenv;
+            def env = name.GetEnv (GEnv);
+            
+            try {
+              GEnv.Manager.MacroColors.PushNewColor (name.color, env);
+              def res = Util.locate (Expression.Location,
+                                     imacro.Run (GEnv.Manager.ComponentsFactory.CreateTyper (TBuilder, tenv, CurrentMethod, env), parms));
+              assert(res == null);
+            } finally {
+              GEnv.Manager.MacroColors.PopColor ();
+            }
+            true
+        }
+      }
+
+      public static Suffix (target : MacroTargets, stage : MacroPhase) : string
+      {
+        def targetStr = match (target) {
+          | Assembly => ":assembly"
+          | Class => ":type"
+          | Event => ":event"
+          | Field => ":field"
+          | Method => ":method"
+          | Parameter => ":param"
+          | Property => ":property"
+          | _ => throw System.ArgumentException ($"macro target $target is not allowed");
+        }
+        def stageStr = match (stage) {
+          | BeforeInheritance => ":postscan"
+          | BeforeTypedMembers => ":preadd"
+          | WithTypedMembers => ":postadd"
+          | _ => throw System.ArgumentException ($"not allowed $stage stage of macro")
+        }
+        targetStr + stageStr
+      }
+    }
+
+    [Record]
+    internal protected class AssemblyAttributeMacroExpansion : AttributeMacroExpansion
+    {
+      genv : GlobalEnv;
+
+      protected override GEnv : GlobalEnv { get { genv } }
+      protected override TEnv : TypeVarEnv
+      {
+        get { if (GEnv == null) null else GEnv.Manager.emptyTEnv }
+      }
+    }
+    
+    internal AddMacroExpansion (exp : AttributeMacroExpansion) : void
+    {
+      // set ordering
+      exp.AddedNr = Manager.AttributeMacroExpansion_global_nr;
+      unchecked (Manager.AttributeMacroExpansion_global_nr++);
+      
+      //Message.Debug ($"adding $exp");      
+      attribute_macros_queue.Add (exp);
+    }
+
+    private mutable is_expanding : bool = false;
+
+    internal ExpandMacros () : void
+    {
+      when (is_expanding)
+        return;      
+      
+      def stage = current_macro_phase;
+      is_expanding = true;
+
+      try
+      {
+        while (!attribute_macros_queue.IsEmpty)
+        {
+          def first = attribute_macros_queue.Top();
+
+          when (first.Phase :> int > stage :> int) 
+            break;
+           
+          //Message.Debug ($"expanding $first");
+          _ = attribute_macros_queue.ExtractFirst().Expand();
+        }
+      }
+      finally { is_expanding = false; }
+    }
+    
+    current_macro_phase : MacroPhase
+    {
+      get
+      {
+        match (run_phase)
+        {
+          | 0 | 1 | 2 | 3 | 4 =>  MacroPhase.BeforeInheritance
+          | 5 | 6 => MacroPhase.BeforeTypedMembers
+          | 7 | _ => MacroPhase.WithTypedMembers
+        }
+      }
+    }
+    
+    public CreateTypeBuilder (par : TypeBuilder, td : Parsetree.TopDeclaration, 
+                              ns_node : NamespaceTree.Node) : TypeBuilder
+    {                          
+      def tb = TypeBuilder (this, par, td, ns_node);
+      infos ::= tb;
+      tb
+    }
+
+    /**
+     * Clears the type tree from classes defined in currently analyzed program
+     */
+    public RemoveProgramTypes () : void
+    {
+      foreach (tb in infos)
+        tb.NamespaceNode.CleanUp ();
+    }
+    
+    /**
+     * Construct datastructures we use to check subtyping relations.
+     *
+     * <remarks>
+     *   This probably the hardest part of processing type declarations.
+     *
+     *   Each type directly subtypes types it extends or implements.  This
+     *   pass computes transitive closure of direct subtyping relation
+     *   and stores it [TypeBuilder.supertypes] map.  .NET generics doesn't allow
+     *   same type to be subtyped under different instantiations, so we
+     *   use map from (id of) subtyped TypeBuilder object to actual parameters
+     *   of subtyped type.
+     * </remarks>
+     */
+    determine_subtyping () : void
+    {
+      Iter(typeBuilder => typeBuilder.construct_subtyping_map());
+    }
+
+    Iter(builders : list [TypeBuilder], f : TypeBuilder -> void) : void
+    {
+      def working_on = Manager.GetNewId();
+      def done       = Manager.GetNewId();
+
+      def maybe_f(ti : TypeBuilder)
+      {
+        def ti = ti;
+        if (ti.phase == done) ()
+        else if (ti.phase == working_on)
+        {
+          ti.parent_type = null; // prevent crash the IntelliSense Engine
+          // TODO: Create and report cycle path.
+          Message.Error(ti.Location, "type definition for `" + ti.FullName + "' is cyclic")
+        }
+        else
+        {
+          ti.phase = working_on;
+          Util.locate(ti.Location,
+            {
+              when (ti.iterate_first != null)
+                foreach (x in ti.iterate_first)
+                  maybe_f(x);
+              f(ti)
+            });
+
+          ti.phase = done
+        }
+      }
+
+      builders.Iter(maybe_f)
+    }
+
+    /**
+     * Iterate over all types defined in source code.
+     *
+     * Supertypes are always processed before subtypes otherwise
+     * source code order is retained.
+     */
+    public Iter(f : TypeBuilder -> void) : void
+    {
+      Iter(infos.Reverse (), f);
+    }
+
+    public IterConditionally (f : TypeBuilder -> void, cond : TypeBuilder -> bool) : void
+    {
+      Iter(infos.Reverse (), b => 
+        when (cond (b)) 
+          f (b) 
+      );
+    }
+
+    public TopTypeBuilders() : list[TypeBuilder]
+    {
+      infos.RevFilter(x => x.DeclaringType == null)
+    }
+
+    /// Iterate over top level types in inheritance order.
+    public TopIter (f : TypeBuilder -> void) : void
+    {
+      def wrap (x : TypeBuilder) : void
+      {
+        when (x.DeclaringType == null)
+          Util.locate (x.Location, f (x))
+      };
+
+      Iter(wrap);
+    }
+
+    /**
+     * Main function of type declaration handling pass.
+     *
+     * <remarks>
+     *   - constructing typing environments [TypeBuilder.make_tyenvs]
+     *   - binding types [TypeBuilder.bind_types]
+     *   - determining subtyping relations [TypeBuilder.determine_subtyping]
+     *   - checking subtyping constraints on types that are already bound
+     *     [TypeBuilder.check_bound_types]
+     *   - adding members [TypeBuilder.add_members]
+     *   - adding the variant/variant option special matching methods
+     * </remarks>
+     */
+    public Run() : void
+    {
+      foreach (typeBuilder in infos.Reverse())
+        typeBuilder.CalcAccessibility();
+
+      ExpandMacros();
+
+      foreach (x in infos.Reverse())
+        Util.locate(x.Location, x.process_macro_attributes(MacroPhase.BeforeInheritance));
+
+      run_phase = 1;
+      foreach (x in TopTypeBuilders())
+        Util.locate(x.Location, x.make_tyenvs());
+
+      run_phase = 2;
+      // We can't call bind_types() recursively, because we yet not receive a list of super-types for top-level types.
+      // Do it iterative...
+      mutable types = SCG.List(TopTypeBuilders());
+
+      while (types.Count > 0)
+      {
+        foreach (x in types)
+          Util.locate(x.Location, x.bind_types());
+
+        def nestedTypes = SCG.List();
+
+        foreach (x in types)
+          nestedTypes.AddRange(x.DeclaredNestedTypes);
+
+        types = nestedTypes;
+      }
+
+      // add the _N_GetVariantCode methods to variants and variant options
+      Iter(fun(x : TypeBuilder) { x.add_special_variant_methods() });
+
+      run_phase = 3;
+      determine_subtyping();
+
+      run_phase = 4;
+      Iter(fun(x : TypeBuilder) { x.check_bound_types() });
+
+      run_phase = 5;
+      ExpandMacros ();
+      Iter(fun(x : TypeBuilder) { x.process_macro_attributes(MacroPhase.BeforeTypedMembers) });
+
+      Manager.OnBeforeAddMembers();
+
+      run_phase = 6;
+      Iter(fun(x : TypeBuilder) { x.AddEnumMembers() });
+      Iter(fun(x : TypeBuilder) { x.add_members() });
+
+      Manager.OnBeforeWithTypedMembers();
+      
+      run_phase = 7;
+      ExpandMacros ();
+      Iter(fun(x : TypeBuilder) { x.process_macro_attributes(MacroPhase.WithTypedMembers) });
+
+      // add constant object constructors for constant variant options
+      Iter(fun(x : TypeBuilder) { x.add_constant_variant_ctors() });
+
+      // propagate the SpecialName attribute if needed
+      Iter(fun(x : TypeBuilder) { 
+        when (x.Attributes %&& NemerleModifiers.SpecialName)
+          x.mark_members_with_special_name()
+      });
+
+      def check_method_implements (ti : TypeBuilder)
+      {
+        unless (ti.IsInterface)
+          ti.resolve_method_implements ();
+      };
+
+      Iter(check_method_implements);
+
+      Iter(fun (x : TypeBuilder) { x.check_ctor_constraints () });
+      
+      SaveGeneratedSourceFile();
+    }
+
+    private SaveGeneratedSourceFile() : void
+    {
+      when (_codeWriter != null)
+      {
+        try
+        {
+          def path = GetNameForGeneratedSourceFile();
+          def code = _codeWriter.ToString();
+
+          if (IO.File.Exists(path))
+          {
+            IO.File.SetAttributes(path, IO.FileAttributes.Normal);
+            IO.File.Delete(path);
+          }
+          else
+          {
+            def directory = IO.Path.GetDirectoryName(path);
+            unless (string.IsNullOrEmpty(directory))
+            unless (IO.Directory.Exists(directory))
+              _ = IO.Directory.CreateDirectory(directory);
+          }
+
+          WriteAllText(path, code, Text.Encoding.UTF8);
+          SetAttributes(path, IO.FileAttributes.ReadOnly);
+        }
+        catch { | e => Message.Warning("could not save generated source code file: " + e.Message) }
+      }
+    }
+
+    private GetNameForGeneratedSourceFile() : string
+    {
+      def outputFileName = Manager.Options.OutputFileName;
+      def dir = 
+        if (IsPathRooted(outputFileName))
+          GetFullPath(GetDirectoryName(outputFileName))
+        else
+          GetTempPath();
+          
+      def dir2 = 
+        if (Manager.IsIntelliSenseMode)
+          Combine(dir, "IDE")
+        else 
+          dir;
+      
+      Combine(dir2, "_N_GeneratedSource_" + GetFileNameWithoutExtension(outputFileName) + ".n")
+    }
+    
+    /** Called at the end of the finialization. */
+    internal CheckFinalization () : void
+    {
+        Iter(fun (x : TypeBuilder) {
+            when (x.type_builder != null)
+            if (x.CannotFinalize)
+                Message.FatalError ($ "the type $(x) was not finalized, forgot the "
+                                    "TypeBuilder.Compile () on it?")
+            else
+                x.FinalizeType ();
+        });
+    }
+
+    /**
+    * This method iterates through all the known type builders,
+    * looking for unused global symbols.
+    */
+    internal CheckForUnusedGlobalSymbols () : void
+    {
+      when (Manager.Options.Warnings.IsEnabled(10003) || Manager.Options.Warnings.IsEnabled(649))
+        Iter(_.check_for_unused_global_symbols())
+    }
+    
+    public GenerateFakeSourceCode(owner : TypeBuilder, member : Parsetree.ClassMember) : void
+    {
+      when (_codeWriter == null)
+        _codeWriter = LocatingTextWriter(System.Text.StringBuilder(),
+          Location(GetNameForGeneratedSourceFile(), 1, 1, 1, 1).AsFakeSorceAvailable());
+          
+      def begin_loc = _codeWriter.Loc;
+
+      when(null != owner)
+        _codeWriter.Write("// " + owner.ToString() + "\n");
+      _codeWriter.Write(member.HeaderToString());
+      _codeWriter.FetchUpdatedLocation(member, begin_loc);
+      member.PrintBody(_codeWriter);
+      _codeWriter.Write("\n\n");
+    }
+  }
+}

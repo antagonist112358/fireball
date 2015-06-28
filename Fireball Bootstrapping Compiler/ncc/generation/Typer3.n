@@ -1,0 +1,2625 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Utility;
+
+using Nemerle.Compiler;
+using PT = Nemerle.Compiler.Parsetree;
+using PExpr = Nemerle.Compiler.Parsetree.PExpr;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Compiler.SolverMacros;
+
+namespace Nemerle.Compiler
+{
+  public class Typer3 : TyperBase
+  {
+    #region Top typer
+    // one instance is created for every source top level method
+    // each nested typer3 has a reference to it later
+    class TopTyper {
+      // some variables are moved to other locations, this is used
+      // to locate them
+      internal redirects : Hashtable [LocalValue, LocalValue] = Hashtable ();
+
+      // If given global static function is used as a first class
+      // value a special proxy is created. These proxies can be shared
+      // inside a class so we reuse them.
+      internal static_proxies : Hashtable [IMethod, IField] = Hashtable ();
+
+      // the type we're sitting in, it's the same for a method
+      // and all its local functions
+      internal current_type : TypeBuilder;
+
+      internal this (t : TypeBuilder)
+      {
+        current_type = t;
+      }
+    }
+
+    top_typer : TopTyper;
+
+    Redirects : Hashtable [LocalValue, LocalValue]
+    {
+      get { top_typer.redirects }
+    }
+
+    StaticProxies : Hashtable [IMethod, IField]
+    {
+      get { top_typer.static_proxies }
+    }
+
+    CurrentType : TypeBuilder
+    {
+      get { top_typer.current_type }
+    }
+    #endregion
+
+    #region Private fields
+    // this is either CurrentType for toplevel method (or a local method
+    // translated to static method), or _N_lambda736393 kind of stuff
+    // for first class local functions
+    local_function_type : TypeBuilder;
+
+    // ID of the label marking beginning of the function, used in
+    // expansion of SelfTailCall.
+    mutable start_label : int;
+
+    // typer of our typer method or null for top-level methods
+    parent : Typer3;
+
+    ptyper : Typer;
+    ptyper2 : Typer2;
+    is_ctor : bool;
+    is_in_ctor : bool;
+
+    // current method we're working on
+    the_method : MethodBuilder;
+
+    // this can be PFunHeader of a function expanded to a loop:
+    current_local_fun : TFunHeader;
+    // and this not, this always corresponds to a method in IL:
+    current_method : TFunHeader;
+
+    // substitution applied to all types generated in a local function
+    // this is done with FixType
+    mutable current_subst : Subst;
+
+    // if we have a closure, how to call it?
+    mutable current_closure : LocalValue;
+
+    // how to get our parent's closures, at least one of these is null
+    // both are null if there are no parent closures
+    // shall we go through this:
+    mutable closure_fields : Hashtable [int, IField];
+    // or just through parms
+    mutable closure_parms : Hashtable [int, LocalValue];
+
+    /* Given:
+         static foo[A,B] () {
+           def bar[C,D] () {
+             def qux[E,F]() { }
+           }
+         }
+       for qux typer it will hold [E,F,C,D,A,B]
+     */
+    accumulated_typarms : list [StaticTypeVar];
+    #endregion
+
+
+    #region Entry points
+    public this (meth : MethodBuilder, pt : Typer = null, pt2 : Typer2 = null)
+    {
+      this (null, meth, pt, pt2);
+    }
+
+
+    this (parent : Typer3, meth : MethodBuilder, pt : Typer = null, pt2 : Typer2 = null)
+    {
+      ptyper = pt;
+      ptyper2 = pt2;
+      the_method = meth;
+      this (parent, meth.GetHeader ());
+      local_function_type = meth.DeclaringType;
+      current_method = meth.GetHeader ();
+    }
+
+    this (parent : Typer3, fn : TFunHeader)
+    {
+      base (fn.ReturnType.Manager);
+      current_local_fun = fn;
+
+      if (parent != null) {
+        local_function_type = parent.local_function_type;
+        current_method = parent.current_method;
+
+        if (fn.TypeParameters.IsEmpty)
+          accumulated_typarms = parent.accumulated_typarms;
+        else
+        {
+          // we have already copied all accumulated_typarms,
+          // so don't add copies
+          def additional_typarms_count =
+            fn.TypeParameters.Length - parent.accumulated_typarms.Length;
+          accumulated_typarms =
+            fn.TypeParameters.FirstN(additional_typarms_count) +
+            parent.accumulated_typarms;
+        }
+
+        top_typer = parent.top_typer;
+      } else {
+        current_method = current_local_fun;
+        accumulated_typarms = fn.TypeParameters;
+        top_typer = TopTyper (the_method.DeclaringType);
+      }
+
+      this.parent = parent;
+      is_ctor = current_local_fun.Name == ".ctor";
+      is_in_ctor = parent != null && (parent.is_ctor || parent.is_in_ctor);
+    }
+
+
+    public Run () : void
+    {
+      when (ptyper != null)
+        ptyper.RaiseBeforeStage3();
+      
+      Util.locate (current_local_fun.Location, {
+        //Message.Debug ($"T3::run: $(current_local_fun.name)");
+        start_label = Manager.GetNewId();
+
+        def initializers = PrepareProlog ();
+
+        match (current_local_fun.body) {
+          | FunBody.Typed (originalBody) =>
+            Util.locate (originalBody.Location, {
+            // FIXME?: Typed3
+            def body = BuildRevSequence (Walk(originalBody) :: initializers);
+            def expr = TExpr.Label (body.Type, start_label, body);
+            def expr =
+              if (current_subst == null || current_subst.IsEmpty)
+                expr
+              else
+                SubstExpr (expr);
+            unless (Message.SeenError)
+              expr.CheckAfterT3 ();
+            current_local_fun.body = FunBody.Typed (expr);
+            when (Manager.Options.ShouldDump (current_local_fun))
+              Message.Debug ($ "after T3: $CurrentType.$(current_local_fun.Name) "
+                               "-> $(current_local_fun.ReturnType) : $body\n");
+
+            // run this for toplevel methods
+            when (the_method != null) {
+              when (Manager.Options.Optimize != null)
+              {
+                // VladD2: We are need new the optimizer. The current implementation did not qualitative.
+                Optimizer(the_method).Run();
+              }
+              def t4 = Typer4 (the_method, ptyper);
+              t4.Run ();
+            }
+           })
+
+          | _ => assert(false)
+        }
+      })
+    }
+    #endregion
+
+
+    #region Utilities
+    // expects reversed list
+    internal BuildRevSequence (exprs : list [TExpr]) : TExpr
+    {
+      match (exprs) {
+        | [] =>
+          TExpr.Literal (InternalType.Void, Literal.Void ())
+        | x :: xs =>
+          def loop (acc, l) {
+            match (l) {
+              | [] => acc
+              | TExpr.DefValIn (name, val, null) :: xs =>
+                loop (TExpr.DefValIn (acc.Type, name, val, acc), xs)
+              | x :: xs =>
+                loop (TExpr.Sequence (acc.Type, x, acc), xs)
+            }
+          }
+          loop (x, xs)
+      }
+    }
+
+
+    static internal SingleMemberLookup (tb : TypeInfo, name : string) : IMember
+    {
+      match (tb.LookupMember (name)) {
+        | [mem] => mem
+        | [] => Util.ice ()
+        | lst =>
+          match (lst.Filter (fun (mem) { mem.DeclaringType.Equals (tb) })) {
+            | [mem] => mem
+            | lst => Util.ice ($ "mulitple members $name in $tb $lst")
+          }
+      }
+    }
+
+
+    IsTopLevelFun : bool
+    {
+      get { local_function_type.Equals (CurrentType) }
+    }
+
+
+    /** Just a shorthand for TExpr.LocalRef.  */
+    internal static PlainRef (decl : LocalValue) : TExpr
+    {
+      assert2 (decl != null);
+      TExpr.LocalRef (decl.Type, decl)
+    }
+
+
+    static internal StaticRef (mem : IMember) : TExpr
+    {
+      assert(mem is IMethod || mem is IField);
+      TExpr.StaticRef (mem.GetMemType (),
+                       mem.DeclaringType.GetMemType (),
+                       mem,
+                       [])
+    }
+
+
+    static internal CheckedConversion (expr : TExpr, target_type : TypeVar) : TExpr
+    {
+      TExpr.TypeConversion (target_type, expr, target_type,
+                            ConversionKind.IL (true));
+    }
+
+
+    /** Given a call with [parms] to [fh] return a list of parameters
+        that should be passed along with any initialization code.  */
+    TupleParms (fh : TFunHeader, parms : list [Parm], closure_parm_count = 0)
+               : list [Parm] * list [TExpr]
+    {
+      def fh_len = fh.Parameters.Length - closure_parm_count;
+      if (parms.Length == 1 && fh_len > 1)
+      {
+        def tupled = parms.Head.expr;
+        def cache =
+          LocalValue (current_local_fun, Util.tmpname ("tupl_cache"),
+                      tupled.Type, LocalValue.Kind.Plain (),
+                      is_mutable = false);
+        cache.Register ();
+        cache.UseFrom (current_local_fun);
+
+        def types =
+          match (tupled.FixedType()) {
+            | Tuple (lst) => lst
+            | _ => Util.ice ()
+          }
+
+        def len = types.Length;
+        Util.cassert (fh_len == len);
+        mutable pos = -1;
+        def parms = types.Map (fun (ty) {
+          pos++;
+          Parm (TExpr.TupleIndexer (ty, PlainRef (cache), pos, len))
+        });
+
+        (parms,
+         [TExpr.DefValIn (cache, tupled, null)])
+
+      } else if (parms.Length > 1 && fh_len == 1) {
+        def types = parms.Map (fun (fp) {
+          assert(fp.required_type != null);
+          fp.required_type
+        });
+        def exprs = parms.Map (fun (fp) {
+          Typer.ImplicitCast (fp.expr, fp.required_type)
+        });
+        def parm = TExpr.Tuple (FixedType.Tuple (types), exprs);
+        ([Parm (parm)], [])
+
+      }
+      else
+      {
+        assert2(parms.Length == fh_len);
+        Util.cassert(parms.Length == fh_len, $"parms length mismatch, $(fh.Name) $parms $(fh.Parameters)");
+        (parms, [])
+      }
+    }
+
+
+    internal WithCached (e : TExpr, f : TExpr -> TExpr) : TExpr
+    {
+      def needs_cache =
+        match (e) {
+          | TExpr.LocalRef
+          | TExpr.StaticRef
+          | TExpr.ConstantObjectRef
+          | TExpr.Literal
+          | TExpr.This => false
+          | _ => true
+        }
+
+      if (needs_cache) {
+        def cache =
+          LocalValue (current_local_fun, Util.tmpname ("cache"),
+                      e.Type, LocalValue.Kind.Plain (),
+                      is_mutable = false);
+        cache.Register ();
+        cache.UseFrom (current_local_fun);
+        def body = f (PlainRef (cache));
+        TExpr.DefValIn (body.Type, cache, e, body)
+      } else f (e)
+    }
+
+
+    IsObject (t : TypeVar) : bool
+    {
+      t.Fix ().Equals (InternalType.Object)
+    }
+    #endregion
+
+
+    #region Typarms handling
+    CopyFunTyparms (add_class_tyvars = false) : list [StaticTypeVar] * Subst
+    {
+      mutable subst = null;
+      mutable new_tp = [];
+
+      def typarms =
+        if (add_class_tyvars)
+          CurrentType.GetTyparms () + accumulated_typarms
+        else
+          accumulated_typarms;
+
+      when (! typarms.IsEmpty) {
+        (subst, new_tp) =
+          StaticTypeVar.CopyList (typarms);
+      }
+
+      def current_subst =
+        if (true || add_class_tyvars)
+          this.current_subst
+        else {
+          // skip any used-as-1st-class methods as they have additional
+          // subst on type's tyvars
+          def loop (typer) {
+            if (typer.current_method.usage == FunctionUsage.UsedAsFirstClass)
+              loop (typer.parent)
+            else
+              typer.current_subst
+          }
+          loop (this)
+        }
+
+      if (subst == null)
+        subst = current_subst;
+      else if (current_subst == null) {}
+      else {
+        when (!add_class_tyvars)
+          foreach (tv in CurrentType.GetTyparms ())
+            subst.Add (tv, FixedType.StaticTypeVarRef (tv));
+        //Message.Debug ($ "tp=$typarms -> $new_tp, subst=$subst,current_subst=$current_subst");
+        subst.Combine (current_subst);
+        //Message.Debug ($ "subst=$subst");
+      }
+
+      (new_tp, subst)
+    }
+
+
+    FunAndClassTyparmsRefs () : list [TypeVar]
+    {
+      def local_tp = CurrentType.GetTyparms () + accumulated_typarms;
+      local_tp.Map (fun (x) { SubstType (FixedType.StaticTypeVarRef (x)) })
+    }
+
+
+    internal static FixType (t : TypeVar, subst : Subst) : FixedType
+    {
+      if (subst == null)
+        t.DeepFix ()
+      else
+        subst.Apply (t.DeepFix ()).Fix ()
+    }
+    #endregion
+
+    GetMethodClosure(funcId : int) : LocalValue
+    {
+      assert2(funcId == current_method.id);
+
+      if (current_local_fun.id == funcId)
+        current_closure
+      else
+        parent.GetMethodClosure(funcId)
+    }
+
+    GetClosure(funcId : int) : LocalValue
+    {
+      def loopWithClosure = current_local_fun.ConvertToLoopWithClosure;
+
+      if (current_local_fun.id == funcId && loopWithClosure)
+        current_closure
+      else if (parent == null || !(loopWithClosure || current_local_fun.usage == FunctionUsage.UsedJustOnce))
+        null
+      else
+        parent.GetClosure(funcId)
+    }
+
+    #region Local reference through closures
+    /** Return code referencing closure of [hd].  */
+    ClosureRef (hd : TFunHeader) : TExpr
+    {
+      //Message.Debug ($"clo ref: $(hd.name)");
+      if (hd.usage == FunctionUsage.UsedJustOnce && !hd.ConvertToLoopWithClosure)
+        ClosureRef(hd.decl.DefinedIn)
+      else if (current_method.is_in_closure_of != 0)
+      {
+        //Message.Debug ($ "lookup $(hd.name) from $(current_method.name)");
+        TExpr.This (local_function_type.GetMemType ())
+      }
+      else if (hd.id == current_local_fun.id && hd.ConvertToLoopWithClosure)
+        PlainRef(current_closure)
+      else if (hd.id == current_method.id)
+        PlainRef(GetMethodClosure(hd.id))
+      else if (closure_fields == null)
+      {
+        def hd2 = if (hd.Name == "_N_yielding_function") hd.decl.DefinedIn else hd;
+
+        def closure = GetClosure(hd2.id);
+
+        if (closure != null)
+        {
+          PlainRef(closure)
+        }
+        else
+        {
+          //assert2(closure_parms != null);
+          //assert2(closure_parms.Contains (hd2.id), $ "no closure parameters for $(hd2.Name) function, clparms: $closure_parms");
+          def decl = closure_parms[hd2.id];
+          decl.UseFrom(current_local_fun);
+          PlainRef(decl)
+        }
+      }
+      else
+      {
+        def hd2 = if (hd.Name == "_N_yielding_function") hd.decl.DefinedIn else hd;
+        Util.cassert (closure_fields != null);
+        Util.cassert (closure_fields.Contains (hd2.id), $ "no closure for $(hd2.Name) from $(current_local_fun.Name)");
+        def field = closure_fields [hd2.id];
+        // Message.Debug ($"cloref: $(hd2.name) from $(current_local_fun.name) $(field.GetMemType()) $field");
+        TExpr.FieldMember (field.GetMemType (),
+                           TExpr.This (local_function_type.GetMemType ()),
+                           field)
+      }
+    }
+
+
+    LocalRef (decl : LocalValue, for_store : bool = false) : TExpr
+    {
+      // Message.Debug ($"local ref $decl $(decl.GetHashCode ()) $for_store");
+      def decl =
+        if (Redirects.Contains (decl))
+          Redirects [decl]
+        else decl;
+      def is_this = decl.ValKind is LocalValue.Kind.ClosurisedThisPointer;
+
+      def res =
+        if (decl.InClosure)
+          if (!for_store && is_this && IsTopLevelFun)
+            TExpr.This ()
+          else
+          {
+            when (current_local_fun.ConvertToLoopWithClosure && current_local_fun.usage != FunctionUsage.UsedJustOnce)
+              current_local_fun.ConvertToLoopWithClosure = false;
+
+            assert(decl.ClosureField != null);
+            def clo_ref = ClosureRef(decl.DefinedIn);
+
+            //assert2(!(current_local_fun.ToString().StartsWith("GetActiveEnv")));
+            //assert2(clo_ref.FixedType().TypeInfo.Equals((decl.ClosureField :> MemberBuilder).DeclaringType));
+            TExpr.FieldMember (clo_ref.FixedType().TypeOfMember (decl.ClosureField), clo_ref, decl.ClosureField)
+          }
+        else if (is_this)
+          TExpr.This ()
+        else
+         PlainRef (decl);
+
+      when (res.ty == null)
+        res.ty = decl.Type;
+      res
+    }
+    #endregion
+
+
+    #region Proxies
+    EmitCtorProxy (ctor : TExpr.ImplicitValueTypeCtor) : TExpr
+    {
+      def need_method_typarms =
+        ! (current_local_fun.TypeParameters.IsEmpty && CurrentType.typarms.IsEmpty);
+
+      def (new_tp, subst) =
+        if (need_method_typarms) CopyFunTyparms (add_class_tyvars = true)
+        else ([], null);
+
+      def fix_type (t) { FixType (t, subst) : TypeVar }
+
+      def (parm_types, ret_type) =
+        Option.UnSome (ctor.Type.Fix ().FunReturnTypeAndParms ());
+      assert(parm_types == []);
+
+      def fnty = FunctionType.Make (ctor.Type);
+
+      def name = Macros.NewSymbol ("static_proxy");
+
+      def builder =
+        CurrentType.DefineNestedType (<[ decl:
+          private sealed class $(name : name) : $(fix_type (fnty) : typed)
+          {
+          }
+        ]>, do_fixup = false);
+
+      builder.DisableImplicitConstructor ();
+      builder.forced_typarms = new_tp;
+      builder.FixupDefinedClass ();
+
+      builder.Define (<[ decl:
+        public static single_instance : $(builder.GetMemType () : typed) = $(name : name) ();
+      ]>);
+
+      builder.Define (<[ decl:
+        private this () { }
+      ]>);
+
+      def ctor = TExpr.ImplicitValueTypeCtor (
+        if (subst == null) ctor.Type else subst.Apply (ctor.Type.Fix ())
+      );
+
+      builder.Define (<[ decl:
+        public override sealed apply () : $(fix_type (ret_type) : typed)
+        {
+          $(ctor : typed)()
+        }
+      ]>);
+
+      builder.MarkWithSpecialName ();
+      builder.Compile ();
+
+      def field = SingleMemberLookup (builder, "single_instance");
+
+      if (need_method_typarms) {
+        def spt = FixedType.Class (builder, FunAndClassTyparmsRefs ());
+        TExpr.StaticRef (spt, spt, field, [])
+      } else {
+        StaticRef (field)
+      }
+    }
+
+    EmitStaticProxy (sr : TExpr.StaticRef) : TExpr
+    {
+      def meth = sr.mem :> IMethod;
+      def can_cache =
+        sr.type_parms.ForAll (IsObject) && sr.from.args.ForAll (IsObject);
+
+      // in fact we should look for occurrences of typarms refs in
+      // type_parms and from.args
+      def need_method_typarms =
+        ! (can_cache || (current_local_fun.TypeParameters.IsEmpty &&
+                         CurrentType.typarms.IsEmpty));
+
+      def need_new_type = ! can_cache || ! StaticProxies.Contains (meth);
+
+      mutable subst = null : Subst;
+      mutable builder = null;
+      mutable new_tp = [];
+
+      def fix_type (t) { FixType (t, subst) : TypeVar }
+
+      when (need_new_type) {
+        def (parm_types, ret_type) =
+          Option.UnSome (sr.Type.Fix ().FunReturnTypeAndParms ());
+        def fnty = FunctionType.Make (sr.Type);
+
+        when (need_method_typarms) {
+          (new_tp, subst) =
+            CopyFunTyparms (add_class_tyvars = true);
+        }
+
+        def name = Macros.NewSymbol ("static_proxy");
+
+        // Message.Debug ($"$name : $(current_method.typarms) $(sr.Type) -> $(fix_type (fnty))");
+
+        builder =
+          CurrentType.DefineNestedType (<[ decl:
+            private sealed class $(name : name) : $(fix_type (fnty) : typed)
+            {
+            }
+          ]>, do_fixup = false);
+
+        builder.DisableImplicitConstructor ();
+        builder.forced_typarms = new_tp;
+        builder.FixupDefinedClass ();
+        def sinst_type = builder.GetMemType ();
+
+        def sinst = builder.DefineAndReturn (<[ decl:
+          public static single_instance : $(sinst_type : typed);
+        ]>);
+
+        builder.Define (<[ decl:
+          private this () { }
+        ]>);
+
+        builder.Define (<[ decl:
+          static this ()
+          {
+            $(TExpr.StaticRef (sinst_type, sinst_type, sinst, []) : typed)
+              = $(name : name) ();
+          }
+        ]>);
+
+        def (formal_parms, parm_refs) =
+          NList.Split (parm_types.Map (fun (ty)
+            {
+              def name = Macros.NewSymbol("sp_parm");
+              (<[ parameter: $(name : name) : $(fix_type (ty) : typed) ]>, <[ $(name : name) ]>)
+            }));
+
+        def new_ref =
+          TExpr.StaticRef (fix_type (sr.Type),
+                           fix_type (sr.from) :> FixedType.Class,
+                           meth,
+                           sr.type_parms.Map (fix_type));
+
+        def apply_name =
+          if (ret_type.Fix () is FixedType.Void)
+            "apply_void" else "apply";
+
+        builder.Define (<[ decl:
+          public override sealed $(apply_name : dyn) (.. $formal_parms) : $(fix_type (ret_type) : typed)
+          {
+            $(new_ref : typed) (.. $parm_refs)
+          }
+        ]>);
+
+        builder.MarkWithSpecialName ();
+        builder.Compile ();
+
+        when (can_cache) {
+          StaticProxies [meth] =
+            SingleMemberLookup (builder, "single_instance") :> IField;
+        }
+      }
+
+      if (can_cache) {
+        def field = StaticProxies [meth];
+        StaticRef (field)
+      } else {
+        def field = SingleMemberLookup (builder, "single_instance");
+
+        if (need_method_typarms) {
+          def spt = FixedType.Class (builder, FunAndClassTyparmsRefs ());
+          TExpr.StaticRef (spt, spt, field, [])
+        } else {
+          StaticRef (field)
+        }
+      }
+    }
+    #endregion
+
+
+    #region Function prolog
+    PrepareClosureParms () : void
+    {
+      when (closure_parms != null &&
+            (parent == null || parent.closure_parms : object != closure_parms)) {
+        def len = current_local_fun.used_closures.Length;
+        NList.Iter2 (current_local_fun.Parameters.FirstN (len), current_local_fun.used_closures,
+          fun (parm, header) { closure_parms [header.id] = parm.decl })
+      }
+    }
+
+
+    static PrepareEnumeratorObject (yield_type : TypeVar) : Parsetree.ClassMember.TypeDeclaration
+    {
+      <[ decl:
+        class $(Macros.NewSymbol ("Enumerator") : name) :
+          System.Collections.IEnumerator,
+          System.Collections.Generic.IEnumerator [$(yield_type : typed)],
+          System.IDisposable
+        {
+          public Current : $(yield_type : typed)
+          {
+            get { this._N_current }
+          }
+
+          public Dispose () : void
+          {
+            foobar
+          }
+
+          public Reset () : void
+          {
+            throw System.NotSupportedException ();
+          }
+
+          public MoveNext () : bool
+          {
+            foobar
+          }
+        }
+      ]>
+    }
+
+    PrepareEnumerableObject (yield_type : TypeVar) : Parsetree.ClassMember.TypeDeclaration
+    {
+      def name = Macros.NewSymbol ("Enumerable");
+
+      def has_mutable_parm = current_local_fun.Parameters.Exists (fun (fp) { fp.decl.IsMutable });
+
+      def getEnumeratorBody =
+      {
+        def body =
+        <[
+          def res = $(name : name) () : this;
+          res.CopyFrom (this);
+          res
+        ]>;
+        if (has_mutable_parm)
+          body
+        else
+          <[
+            if(System.Threading.Interlocked.CompareExchange(ref _N_this_used, 1, 0) != 0)
+              $body
+            else
+              this
+          ]>
+      };
+
+      <[ decl:
+        class $(name : name) :
+          System.Collections.IEnumerator,
+          System.Collections.Generic.IEnumerator [$(yield_type : typed)],
+          System.IDisposable,
+          System.Collections.IEnumerable,
+          System.Collections.Generic.IEnumerable [$(yield_type : typed)]
+        {
+          public Current : $(yield_type : typed)
+          {
+            get { this._N_current }
+          }
+
+          public Dispose () : void
+          {
+            foobar
+          }
+
+          public Reset () : void
+          {
+            throw System.NotSupportedException ();
+          }
+
+          public MoveNext () : bool
+          {
+            foobar
+          }
+
+          mutable _N_this_used : int;
+
+          public GetEnumerator () : System.Collections.Generic.IEnumerator [$(yield_type : typed)]
+          {
+            $getEnumeratorBody
+          }
+
+          private NonGenericGetEnum () : System.Collections.IEnumerator
+            implements System.Collections.IEnumerable.GetEnumerator
+          {
+            $getEnumeratorBody
+          }
+
+          CopyFrom (other : this) : void
+          {
+            _ = other; // avoid warning about unused other
+            _N_this_used = 1;
+          }
+        }
+      ]>
+    }
+
+    RewriteTryFinally(clo_type : TypeBuilder, fh : TFunHeader) : void
+    {
+      mutable dispose_expr = VoidLiteral();
+      def thisref = TExpr.This(clo_type.GetMemType());
+
+      def look_for_invalid_yield(expr : TExpr)
+      {
+        | Assign(LocalRef (decl), _) when decl.Name == "_N_current" =>
+          Message.Error ("using `yield' is not allowed here");
+          null
+        | _ => null
+      }
+
+      def contains_yield(expr : TExpr) : bool
+      {
+        mutable contains;
+
+        def look_for_yield(expr : TExpr)
+        {
+          | TExpr.LocalFunRef(LocalValue where (ValKind=LocalValue.Kind.Function(hd, _)), _) =>
+            when (hd.body is FunBody.Typed(body))
+              _ = body.Walk(look_for_yield);
+            null
+
+          | TExpr.Assign(TExpr.LocalRef(LocalValue where (Name = "_N_current")), _)
+              => contains = true; null
+          | _ => null
+        }
+
+        _ = expr.Walk(look_for_yield);
+        contains
+      }
+
+      def rewrite (expr : TExpr)
+      {
+        | TryFinally (body, handler) =>
+          // rewrite only those try/finally bodies that contain 'yield' in bodies
+          if (contains_yield(body))
+          {
+            def fld = clo_type.DefineAndReturn (<[ decl:
+              mutable $(Macros.NewSymbol ("finally_needed") : name) : bool;
+            ]>) :> IField;
+            Manager.MarkAsAssigned (fld);
+            def fldref = TExpr.FieldMember (InternalType.Boolean, thisref, fld);
+            def for_dispose =
+              TExpr.If(InternalType.Void, fldref, handler, VoidLiteral (), Location.Default, Location.Default);
+            dispose_expr = TExpr.Sequence (dispose_expr.Type, for_dispose, dispose_expr);
+
+            BuildRevSequence (
+               [handler.Walk(look_for_invalid_yield),
+                TExpr.Assign (InternalType.Void, fldref, TExpr.FalseLiteral (Manager)),
+                body.Walk(rewrite),
+                TExpr.Assign (InternalType.Void, fldref, TExpr.TrueLiteral (Manager))])
+          }
+          else
+            null
+
+        | Try (body, cases) as expr =>
+          _ = body.Walk(look_for_invalid_yield);
+          def walk_case(case)
+          {
+            | Try_case.Fault (handler)
+            | Try_case.Catch (_, handler) =>
+              _ = handler.Walk(look_for_invalid_yield);
+            | Try_case.Filter (_, filter, handler) =>
+              _ = filter.Walk(look_for_invalid_yield);
+              _ = handler.Walk(look_for_invalid_yield);
+          }
+          foreach (case in cases)
+            walk_case (case);
+          expr
+        | _ => null
+      }
+
+      match (fh.body) {
+        | FunBody.Typed (expr) =>
+          def expr = expr.Walk(rewrite);
+
+          def dispose_meth =
+            SingleMemberLookup (clo_type, "Dispose") :> IMethod;
+          def dispose_call =
+            TExpr.Call (InternalType.Void,
+                        TExpr.MethodRef (dispose_meth.GetMemType (),
+                                         thisref, dispose_meth, [], true),
+                        [], false);
+          def expr = TExpr.Try (expr.Type, expr, [Try_case.Fault (dispose_call)]);
+          fh.body = FunBody.Typed (expr);
+
+          def this_N_state =
+            TExpr.FieldMember (InternalType.Int32, thisref,
+                               SingleMemberLookup (clo_type, "_N_state") :> IField);
+          dispose_expr =
+            TExpr.Sequence (InternalType.Void,
+              TExpr.Assign (InternalType.Void,
+                            this_N_state,
+                            TExpr.Literal (InternalType.Int32,
+                                           Literal.FromInt (-1))),
+              dispose_expr);
+          dispose_meth.GetHeader ().body = FunBody.Typed (dispose_expr);
+
+        | _ => Util.ice ()
+      }
+    }
+
+
+    SetEnumeratorBody (clo_type : TypeBuilder, subst : Subst, parm_field_names : list [string]) : void
+    {
+      match (current_local_fun.body) {
+        | FunBody.Typed (DefValIn (_, _, DefValIn (_, _, DefFunctionsIn ([fh], _)))) =>
+          def meth = SingleMemberLookup (clo_type, "MoveNext") :> MethodBuilder;
+          RewriteTryFinally (clo_type, fh);
+          fh.used_closures = fh.GetParents ();
+          fh.is_in_closure_of = fh.id;
+          meth.PrepareForEmission (fh, subst);
+          def child = Typer3 (this, meth);
+          child.current_subst = subst;
+          child.Run ();
+
+          def meth = SingleMemberLookup (clo_type, "Dispose") :> MethodBuilder;
+          meth.GetHeader ().used_closures = fh.GetParents ();
+          meth.GetHeader ().is_in_closure_of = fh.id;
+          def child = Typer3 (this, meth);
+          child.current_subst = subst;
+          child.Run ();
+
+          unless (parm_field_names.IsEmpty) {
+            def meth = SingleMemberLookup (clo_type, "CopyFrom") :> MethodBuilder;
+            def assigns = meth.Body :: parm_field_names.Map (fun (name) {
+              <[ this . $(name : dyn) = other . $(name : dyn) ]>
+            });
+            def newBody = Util.locate(meth.Body.Location, <[ { .. $assigns } ]>);
+            meth.Body = newBody;
+          }
+
+          current_local_fun.body = FunBody.Typed (PlainRef (current_closure));
+
+        | FunBody.Typed (t)
+        | _ with t = null => Util.ice ($ "oops, t=$t")
+      }
+    }
+
+
+    PrepareClosure () : list [TExpr]
+    {
+      //Message.Debug ($"closure for $(current_local_fun.name) $(current_local_fun.closure_vars)");
+      if (current_local_fun.closure_vars.IsEmpty) []
+      else
+      {
+        Manager.Stats.FunctionClosures++;
+
+        def (new_tp, subst) = CopyFunTyparms (add_class_tyvars = true);
+
+        def fix_type (t : TypeVar) : TypeVar
+        {
+          if (subst == null)
+            t.DeepFix()
+          else
+            subst.Apply(t.DeepFix())
+        }
+
+        def uses_yield = current_local_fun.yield_type != null;
+        def is_enumerable =
+          if (uses_yield)
+            match (current_local_fun.ReturnType.Fix ()) {
+              | Class (tc, _) =>
+                tc.Equals (InternalType.Generic_IEnumerable_tc) ||
+                tc.Equals (InternalType.IEnumerable_tc)
+              | _ => Util.ice ()
+            }
+          else false;
+
+        def closureName = "closureOf_" + current_local_fun.Name;
+        def clo_decl =
+          if (!uses_yield)
+            <[ decl:
+              private sealed class $(Macros.NewSymbol(closureName) : name)
+              {
+                internal this () {}
+              }
+            ]>
+          else
+            if (is_enumerable)
+              PrepareEnumerableObject (fix_type (current_local_fun.yield_type));
+            else
+              PrepareEnumeratorObject (fix_type (current_local_fun.yield_type));
+
+        def clo_type = CurrentType.DefineNestedType (clo_decl, do_fixup = false);
+        clo_type.forced_typarms = new_tp;
+        clo_type.FixupDefinedClass ();
+
+        //Message.Debug ($"acc_tp: $accumulated_typarms, cs=$current_subst");
+        def clo_mtype = FixedType.Class (clo_type, FunAndClassTyparmsRefs ());
+        current_local_fun.closure_type = clo_mtype;
+
+        def closure_val_fun = 
+          if (current_local_fun.ConvertToLoopWithClosure)
+          {
+            current_method
+          }
+          else
+            current_local_fun;
+
+        def closure_val = LocalValue(closure_val_fun, "_N_" + closureName, clo_mtype, LocalValue.Kind.Plain(), is_mutable = false);
+        closure_val.Register();
+        closure_val.UseFrom(closure_val_fun);
+        current_closure = closure_val;
+
+        // FIXME: this should be moved up, so empty closures are not generated
+        // but this causes ICE
+
+        // skip non-1st class functional values
+        def vars =
+          current_local_fun.closure_vars.Filter(
+            fun (decl : LocalValue)
+            {
+              match (decl.ValKind)
+              {
+                | Function(TFunHeader where(usage = UsedAsFirstClass), _) => true
+                | Function => false
+                | _ => true
+              }
+            });
+
+        mutable parm_field_names = [];
+
+        foreach (decl in vars)
+        {
+          def name =
+            if (decl.Name == "_N_current" || decl.Name == "_N_state")
+              Parsetree.Name (decl.Name)
+            else
+              Macros.NewSymbol (decl.Name);
+          //Message.Debug ($"clo field: $name $(fix_type (decl.Type)) tv=$new_tp");
+          def ptdecl = <[ decl: internal mutable $(name : name) : $(fix_type (decl.Type) : typed); ]>;
+          def fld = clo_type.DefineAndReturn (ptdecl);
+          decl.ClosureField = fld :> IField;
+          Manager.MarkAsAssigned (decl.ClosureField);
+          when(is_enumerable && (decl.ValKind is LocalValue.Kind.FunParm || decl.ValKind is LocalValue.Kind.ClosurisedThisPointer))
+            parm_field_names ::= name.Id;
+        }
+
+        def ctor = SingleMemberLookup (clo_type, ".ctor");
+        def ctor_ref = TExpr.StaticRef (ctor.GetMemType (), clo_mtype, ctor, []);
+        def ctor_call = TExpr.Call (clo_mtype, ctor_ref, [], false);
+
+        //clo_type.MarkWithSpecialName ();
+        Manager.MarkAsUsed (clo_type);
+
+        when (uses_yield)
+          SetEnumeratorBody (clo_type, subst, parm_field_names);
+
+
+        clo_type.Compile ();
+
+        [TExpr.DefValIn (InternalType.Void, closure_val, ctor_call, null)]
+      }
+    }
+
+
+    LoadParameters () : list [TExpr]
+    {
+      mutable initializers = [];
+
+      foreach (fp in current_local_fun.Parameters) {
+        def parm = fp.decl;
+        assert(parm != null);
+
+        def parmtype = parm.Type.Fix ();
+
+        def need_cast =
+          fp.ty.Fix ().IsSystemObject && ! parmtype.IsSystemObject;
+
+        when (need_cast)
+          parm.SetType (InternalType.Object); // modify its type
+
+         //Message.Debug ($"handle fp $parm $(parm.Type)");
+        when (parm.InClosure) {
+          def expr =
+            if (need_cast)
+              CheckedConversion (PlainRef (parm), parmtype)
+            else
+              PlainRef (parm);
+          def a = TExpr.Assign (InternalType.Void,
+                                LocalRef (parm, for_store = true),
+                                expr);
+          parm.UseFrom (current_local_fun);
+
+          initializers = a :: initializers
+        }
+      }
+
+      initializers
+    }
+
+    #region ctors, base calls, etc
+    /*
+    Simple execution flow analysis tool
+    Computes [result] : T for expression [e]
+    [f] is used to find atomic results,
+    i.e. when f(e) isn't None result is f(e)
+    if it's None we transform expression to
+    - sequence, and pass it to [seq]
+    - several sequences, pass them to [fork]
+    for all other expressions we return [default]
+    */
+    SimpleFlow[T] (e : TExpr,
+                   f : TExpr -> option[T],
+                   default : T,
+                   seq : list[TExpr] -> T,
+                   fork : list[list[TExpr]] -> T) : T
+    {
+      def SimpleFlow = SimpleFlow(_, f, default, seq, fork);
+
+      match (f (e))
+      {
+        | Some (t) => t
+        | _ =>
+          match (e)
+          {
+             | TExpr.FieldMember (e, _)
+             | TExpr.MethodRef (e, _, _, _)
+             | TExpr.Throw (e)
+             | TExpr.DefFunctionsIn (_, e)
+             | TExpr.HasType(e, _)
+             | TExpr.MacroEnvelope(_, _, e, _)
+             | TExpr.TypeConversion (e, _, _, _)
+             | TExpr.Label (_, e)
+             | TExpr.DebugInfo (e, _) when e != null
+             | TExpr.ClosureObjectOf(e) // VladD2: It's need to flow???
+             | TExpr.ClosureFieldOf(e) => SimpleFlow(e)
+
+             | TExpr.Call (e, p, _) =>
+                def lst = p.Map(x => x.expr);
+                def lst = lst.Append ([e]);
+                seq(lst);
+
+             | TExpr.DefValIn (_, v, e)      => seq ( [v, e] )
+             | TExpr.Assign (t, s)           => seq ( [t, s] )
+             | TExpr.TryFinally (b, h)       => fork ([h] :: [b, h] :: [])
+
+             //TODO: analyze catchs?
+             //like fork (  [b] :: cs.Map(x => [b, x.handler]) +
+             //             [ ] :: cs.Map(x => [   x.handler])  )
+             | TExpr.Try (b, _)              => fork ([] :: [b] :: [])
+
+             | TExpr.Sequence(a, b)          => seq([a, b])
+             | TExpr.MultipleAssign(la)      => seq(la.Map(x => x[1]))
+             | TExpr.Tuple (l)               => seq(l)
+             | TExpr.Array (l, d)            => seq(l + d)
+             | TExpr.ArrayIndexer (a, l)     => seq(a :: l)
+             | TExpr.PointerIndexer(a, l)    => seq([a, l])
+             | TExpr.TupleIndexer (a, _, _)  => SimpleFlow (a)
+
+             | TExpr.If(c, a, b, _, _)       => fork([c, a] :: [c, b] :: [])
+             | TExpr.Switch(e, Some (c), cs) => fork([e, c] :: cs.Map(x => [e, x[1]]))
+             | TExpr.Switch (e, None, cs)    => fork([e   ] :: cs.Map(x => [e, x[1]]))
+             | TExpr.Match (e, cs)           => fork(cs.Map(x => [e, x.body]))
+
+             | TExpr.StaticRef | TExpr.LocalRef | TExpr.LocalFunRef
+             | TExpr.Literal | TExpr.This | TExpr.DefaultValue
+             | TExpr.ImplicitValueTypeCtor
+             | TExpr.Base | TExpr.SelfTailCall
+             | TExpr.MethodAddress
+             | TExpr.TypeOf | TExpr.MethodOf | TExpr.CtorOf | TExpr.FieldOf
+             | TExpr.OpCode
+             | TExpr.Goto
+             | TExpr.DebugInfo => default;
+
+             //invalid things
+             | TExpr.PropertyMember
+             | TExpr.StaticPropertyRef
+             | TExpr.EventMember
+             | TExpr.StaticEventRef
+             | TExpr.ConstantObjectRef
+             | TExpr.Block
+             | TExpr.Delayed
+             | TExpr.Cache
+             | TExpr.CacheRef
+             | TExpr.Error
+             | TExpr.Def
+             | TExpr.Use => Util.ice("invalid expression in Typer3")
+           }
+      }
+    }
+
+    static IsCtor (_ : TExpr) : bool
+    {
+      | TExpr.Base => true
+      | TExpr.MacroEnvelope(_, _, e, _) => IsCtor (e)
+      | _ => false
+    }
+
+    IsBaseCtor (_ : TExpr) : bool
+    {
+      | TExpr.Base (mth) =>
+          ! mth.DeclaringType.Equals (CurrentType)
+      | TExpr.MacroEnvelope(_, _, e, _) => IsBaseCtor (e)
+      | _ => false
+    }
+
+    static IsThis (_ : TExpr) : bool
+    {
+      | TExpr.This => true
+      | TExpr.LocalRef as e
+       => (e.decl.ValKind is LocalValue.Kind.ClosurisedThisPointer)
+      | _ => false;
+    }
+
+    IsBaseField (f : IField) : bool
+    {
+      ! f.DeclaringType.Equals (CurrentType)
+    }
+
+    IsBaseMethod (m : IMethod) : bool
+    {
+      ! m.DeclaringType.Equals (CurrentType)
+    }
+
+    //Return min*max ctor calls in expr
+    CtorCalls (e : TExpr) : int*int
+    {
+      def default = (0, 0);
+      def f (_) {
+        | TExpr.Call (e, _, _) when IsCtor (e) => Some ((1, 1))
+        | _ => None ()
+      }
+      and ctor_calls (e) { SimpleFlow (e, f, default, seq, fork) }
+      and acc (_)
+      {
+        | [] => (0, 0)
+        | h :: rst =>
+          def (a, b) = acc (rst);
+          (a + h[0], b + h[1])
+      }
+      and seq (lst) { acc (lst.Map(x => ctor_calls (x))) }
+      and alt (x)
+      {
+        | [] => (0, 0)
+        | [q] => q
+        | h :: rst =>
+          def (a, b) = alt(rst);
+          (System.Math.Min(a, h[0]), System.Math.Max(b, h[1]))
+      }
+      and fork (lst) { alt(lst.Map(x => seq (x))) }
+      ctor_calls (e);
+    }
+    /*
+    Inject expressions before base ctor call, after this ctor call
+    If expression is null then don't inject it.
+    Used to inject field inits before and closure init after.
+    */
+    InjectAroundCtor (e : TExpr, beforeBase : TExpr, afterThis : TExpr) : TExpr
+    {
+      def inject (e : TExpr, inits : TExpr, post_init : TExpr)
+      {
+        def inject = inject (_, inits, post_init);
+        def o = e;
+
+        match (e)
+        {
+          | TExpr.StaticRef | TExpr.LocalRef | TExpr.LocalFunRef
+          | TExpr.Literal | TExpr.This | TExpr.DefaultValue
+          | TExpr.ImplicitValueTypeCtor
+          | TExpr.Base | TExpr.SelfTailCall
+          | TExpr.MethodAddress
+          | TExpr.TypeOf | TExpr.MethodOf | TExpr.CtorOf | TExpr.FieldOf | ClosureObjectOf | ClosureFieldOf
+          | TExpr.OpCode | TExpr.Goto
+           => e
+
+          | TExpr.FieldMember(e, z)                => TExpr.FieldMember(o.Location, o.ty, inject(e), z)
+          | TExpr.MethodRef(e, z, x, c)            => TExpr.MethodRef(o.Location, o.ty, inject(e), z, x, c)
+          | TExpr.Throw(e)                         => TExpr.Throw(o.Location, o.ty, inject(e))
+          | TExpr.DefFunctionsIn(q, e)             => TExpr.DefFunctionsIn(o.Location, o.ty, q, inject(e))
+          | TExpr.DefValIn(z, v, e)                => TExpr.DefValIn(o.Location, o.ty, z, inject(v), inject(e))
+          | TExpr.HasType(e, z)                    => TExpr.HasType(o.Location, o.ty, inject(e), z)
+          | TExpr.MacroEnvelope(z, x, e, epe)      => TExpr.MacroEnvelope(o.Location, o.ty, z, x, inject(e), epe)
+          | TExpr.TypeConversion(e, z, x, c)       => TExpr.TypeConversion(o.Location, o.ty, inject(e), z, x, c)
+          | TExpr.Label(z, e)                      => TExpr.Label(o.Location, o.ty, z, inject(e))
+          | TExpr.Call(e, p, t) when IsBaseCtor(e) =>
+             def p = p.Map(x => Parm (x.kind, inject(x.expr), x.name, x.required_type));
+             def expr = TExpr.Call (o.Location, o.ty, e, p, t);
+
+             match ((inits, post_init))
+             {
+               | (null, null) => expr
+               | (_, null)    => TExpr.Sequence (o.Location, o.ty, inits, expr)
+               | (null, _)    => TExpr.Sequence (o.Location, o.ty, expr, post_init);
+               | _ => TExpr.Sequence (o.Location, o.ty,
+                        inits,
+                        TExpr.Sequence (o.Location, o.ty, expr, post_init)
+                      )
+             }
+
+          | TExpr.Call (e, p, t) when IsCtor (e) =>
+             def p = p.Map(x => Parm (x.kind, inject (x.expr), x.name, x.required_type));
+             def expr = TExpr.Call (o.Location, o.ty, e, p, t);
+             match (post_init)
+             {
+               | null => expr
+               | _ => TExpr.Sequence (o.Location, o.ty, expr, post_init)
+             }
+
+          | TExpr.Call => e
+
+          | TExpr.Assign (a, b) =>
+             TExpr.Assign (o.Location, o.ty, inject (a), inject (b))
+
+          | TExpr.TryFinally (b, h) =>
+             TExpr.TryFinally (o.Location, o.ty, inject (b), inject (h))
+
+          | TExpr.Try (b, cs) =>
+             TExpr.Try (o.Location, o.ty, inject (b), cs)
+
+          | TExpr.Sequence (a, b) =>
+             TExpr.Sequence (o.Location, o.ty, inject (a), inject (b))
+
+          | TExpr.MultipleAssign (la) =>
+             TExpr.MultipleAssign(o.Location, o.ty, la.Map(x => (x[0], inject (x[1]))))
+
+          | TExpr.Tuple (lst) => TExpr.Tuple (o.Location, o.ty, lst.Map(inject))
+
+          | TExpr.Array (lst, d) =>
+             TExpr.Array (o.Location, o.ty, lst.Map(inject), d.Map(inject))
+
+          | TExpr.ArrayIndexer(a, lst) => TExpr.ArrayIndexer(o.Location, o.ty, inject(a), NList.Map(lst, inject))
+          | TExpr.PointerIndexer(p, i) => TExpr.PointerIndexer(o.Location, o.ty, inject(p), inject(i))
+          | TExpr.TupleIndexer (a, z, x) =>
+             TExpr.TupleIndexer (o.Location, o.ty, inject (a), z, x)
+
+          | TExpr.If(c, a, b, l1, l2) =>
+             TExpr.If(o.Location, o.ty, inject (c), inject (a), inject (b), l1, l2)
+
+          | TExpr.Switch (e, Some (c), cs) =>
+             TExpr.Switch(o.Location, o.ty,
+               inject (e),
+               Some (inject (c)), cs.Map(x => (x[0], inject (x[1]))))
+
+          | TExpr.Switch (e, None, cs) =>
+             TExpr.Switch(o.Location, o.ty, inject(e), None(),
+              cs.Map(x => (x[0], inject (x[1]))))
+
+          | TExpr.Match (e, cs) =>
+             TExpr.Match (o.Location, o.ty, inject (e),
+               cs.Map(x => Match_case (x.patterns, inject (x.body), x.disable_warnings)))
+
+          | TExpr.DebugInfo (null, _) => e
+
+          | TExpr.DebugInfo (e, pe) =>
+            def e = inject(e);
+            TExpr.DebugInfo (o.Location, e.ty, e, pe);
+
+          //invalid things
+          | TExpr.PropertyMember
+          | TExpr.StaticPropertyRef
+          | TExpr.EventMember
+          | TExpr.StaticEventRef
+          | TExpr.ConstantObjectRef
+          | TExpr.Block
+          | TExpr.Delayed
+          | TExpr.Cache
+          | TExpr.CacheRef
+          | TExpr.Error
+          | TExpr.Def
+          | TExpr.Use
+           => Util.ice ("invalid expression in Typer3")
+        }
+      }
+      inject (e, beforeBase, afterThis);
+    }
+#endregion
+
+    FixBaseCall (clo_ini : TExpr = null) : void
+    {
+      // put base () / this () call before storing 'this' in closure inside constructor
+      when (is_in_ctor) {
+        //deny ctor calls from local funs
+        def f (_) {
+          | TExpr.Call (e, _, _) as o when IsCtor (e)
+           => Message.Error (o.Location, "Constructor call inside local function "
+                                      "or loop isn't allowed");
+              Some (true)
+          | _ => None ()
+        }
+        and check (e) { SimpleFlow (e, f, false, seq, fork) }
+        and seq (e)
+        {
+          _ = e.Map(check);
+          true
+        }
+        and fork (e)
+        {
+          _ = e.Map(seq);
+          true
+        }
+        match (current_local_fun.body)
+        {
+          | FunBody.Typed (e) => _ = check (e)
+          | _ => ()
+        }
+      }
+      when (is_ctor)
+      {
+        def e = match (current_local_fun.body) {
+          | FunBody.Typed (e) => e
+          | _ => Util.ice ("bad function body")
+        }
+        if (CurrentType.IsValueType)
+        {
+          //Value types cannot call base ctor, so they can call several this()
+          def f (_)
+          {
+            | TExpr.Call (e, _, _) as o when IsBaseCtor (e) =>
+              Message.Error (o.Location, "Base constructor call in struct isn't allowed");
+              Some (false)
+
+            | _ => None ()
+          }
+          and check (e)
+          {
+            SimpleFlow (e, f, false, seq, fork)
+          }
+          and seq (l)
+          {
+            _ = l.Map(check);
+            true
+          }
+          and fork (l)
+          {
+            _ = l.Map(seq);
+            true
+          }
+          _ = check (e);
+        }
+        else
+        {
+          //first check base calls, add base() if needed
+          def e =
+            match (CtorCalls (e))
+            {
+              | (0, 0) =>
+                def errorCount = Message.ErrorCount;
+                def bc = ptyper.TypeExpr( <[ base() ]> );
+                if(errorCount == Message.ErrorCount)
+                {
+                  def bc = ptyper2.Walk(Typer2.Context.TopLevel, bc);
+                  TExpr.Sequence(e.Location, e.ty, bc, e)
+                }
+                else
+                  throw Recovery(); // bad base ctor detected in T3
+
+              | (1, 1) => e
+              | (0, _) =>
+                Message.Warning ("Base constructor call can be missed");
+                e
+              | (x, _) when x > 1 =>
+                Message.Error ($"Base constructor call happens at least $x times");
+                e
+              | (_, y) =>
+                Message.Warning ($"Base constructor call can happen $y times");
+                e
+            }
+          def ini =
+            match (CurrentType.init_list)
+            {
+              | [q] =>
+                  match (q)
+                  {
+                    | PT.PExpr.Typed (e) => e
+                    | _ => Util.ice ("bad field initializers");
+                  }
+
+              | _ => null
+            };
+          when (clo_ini != null)
+          {
+            def f (_)
+            {
+              | TExpr.Call (e, _, _) when IsCtor (e) => Some (true)
+              | _ => None ()
+            }
+            and ctor_calls (e) { SimpleFlow (e, f, false, seq, fork) }
+            and seq (_)
+            {
+              | e :: _ => ctor_calls (e)
+              | _ => false
+            }
+            and fork (l) { l.ForAll(seq) }
+            when (!ctor_calls (e))
+              Message.Error ("closure utilizing 'this' reference is not allowed when base ctor call is not placed at the beginning of current ctor");
+          }
+          def e = InjectAroundCtor (e, ini, clo_ini);
+          //Check this usage before base()
+          //Allow this.field
+          //Deny base.*, this.method, this, base
+          def f (e)
+          {
+            | TExpr.Call (e, p, _) when IsCtor (e)
+             => _ = p.Map(x => ctor_calls (x.expr));
+                Some (true)
+            | TExpr.FieldMember (e, f) as expr when IsThis (e)
+             => when (IsBaseField (f))
+                  Message.Error (expr.Location,
+                    "using base class field before base is constructed");
+                Some (false)
+            | TExpr.MethodRef (e, m, _, _) as expr when IsThis (e)
+             => if (IsBaseMethod (m))
+                  Message.Error (expr.Location,
+                    "using base class method before base is constructed");
+                else
+                  Message.Error (expr.Location,
+                    "using class method before base is constructed (``this'' isn't yet initialized)");
+                Some (false)
+            | e when IsThis (e)
+             => Message.Error (e.Location,
+                  "``this'' or ``base'' usage before base is constructed");
+                Some (false)
+            | TExpr.Try | TExpr.TryFinally
+             => Message.Error (e.Location,
+                  "uninitialized ``this'' on entering a try block "
+                  "(denied only to be compatible with Ecma-335 noncompliant MS.NET)"
+                );
+                Some (false)
+            | _ => None ()
+          }
+          and ctor_calls (e) {
+            SimpleFlow (e, f, false, seq, fork)
+          }
+          and seq (_)
+          {
+            | [] => false
+            | q :: _ when ctor_calls (q) => true
+            | _ :: w => seq (w)
+          }
+          and fork (l) { l.Filter(seq) != [] }
+          _ = ctor_calls (e);
+          current_local_fun.body = FunBody.Typed (e);
+        }
+      }
+    }
+
+
+    // the result is reversed!
+    PrepareProlog () : list [TExpr]
+    {
+      // if we have closures passed in as parameters, add entries
+      // to closure_parms
+      PrepareClosureParms ();
+
+      // assigments of parameters and 'this' to closure fields
+      // interleaved with base (..) call in constructor
+      mutable initializers = [];
+
+      // we build the initialization stuff of method:
+      // 1. method's closure ctor()
+      // 2. store parameters into closure
+      // 3. base (..) / this (..) for constructors
+      // 4. store 'this' in closure
+
+      initializers = PrepareClosure ();
+
+      initializers = LoadParameters () + initializers;
+
+      mutable ini = null;
+      // store 'this' into closure object
+      foreach (d in current_local_fun.closure_vars)
+        when (d.InClosure &&
+              d.ValKind is LocalValue.Kind.ClosurisedThisPointer) {
+          ini =
+            TExpr.Assign (InternalType.Void,
+                          LocalRef (d, for_store = true),
+                          TExpr.This (CurrentType.GetMemType ()));
+        }
+
+      FixBaseCall (ini);
+      unless (is_ctor && !CurrentType.IsValueType)
+        when (ini != null)
+          initializers ::= ini;
+      initializers
+    }
+    #endregion
+
+
+    #region Local function generation
+    ComputeUsedClosures (h : TFunHeader) : void
+    {
+      def we_use (var) {
+        // FIXME: doesn't work, because function have to be removed from external closures
+        //var.id != h.decl.id && // call to our function shouldn't be closurised
+        (h :: h.children_funs).Exists (fun (child) {
+          var.UsedIn.Contains (child)
+        })
+      }
+
+      when (h.used_closures == null) {
+        h.used_closures = [];
+
+        def needed = Hashtable ();
+
+        foreach (fh in h.GetParents ())
+          foreach (var in fh.closure_vars) {
+            when (we_use (var)) {
+              needed [fh.id] = true;
+              match (var.ValKind) {
+                | Function (ch, _) =>
+                  ComputeUsedClosures (ch);
+                  foreach (clo in ch.used_closures)
+                    needed [clo.id] = true;
+                | _ => {}
+              }
+            }
+          }
+
+          h.used_closures = h.GetParents ().Filter (fun (fh) { needed.Contains (fh.id) })
+      }
+    }
+
+
+    internal static ClosureParmCount (fn : TFunHeader) : int
+    {
+      Util.cassert (fn.used_closures != null || fn.decl == null,
+                    $ "closures not computed for $(fn.Name)");
+      if (fn.static_method == null) 0
+      else fn.used_closures.Length
+    }
+
+    // Used only in DecisionTreeCompiler.
+    internal EmitStaticLocalFunction(fn : TFunHeader) : void
+    {
+      def q = Queue();
+
+      EmitStaticLocalFunction(fn, q);
+
+      while (!q.IsEmpty)
+        q.Take().Run();
+    }
+
+    EmitStaticLocalFunction(fn : TFunHeader, children : Queue [Typer3]) : void
+    {
+      def (new_tp, subst) = CopyFunTyparms ();
+      fn.TypeParameters = fn.TypeParameters + new_tp;
+      def closures = fn.used_closures;
+
+      // Message.Debug ($ "emit static $(fn.name) $(fn.typarms) subst=$subst");
+
+      def clo_parms = //TODO: VladD2: We must use names like in C#-compiler. It need to debugger.
+        closures.Map (fun (hd) {
+          <[ parameter: $(Macros.NewSymbol (hd.Name + "_cp") : name)
+                      : $(FixType (hd.closure_type, subst) : typed) ]>
+        });
+
+      def parms = clo_parms + fn.Parameters.Map (fun (fp) {
+        <[ parameter: $(fp.decl.Name : dyn)
+                    : $(FixType (fp.decl.Type, subst) : typed) ]>
+      });
+
+      def is_static =
+        // mark method static if it do not have closurised this pointer
+        is_static : {
+          foreach (h in closures)
+            foreach (val in h.closure_vars)
+              when (val.ValKind is LocalValue.Kind.ClosurisedThisPointer)
+                is_static (false);
+          true
+        }
+
+      def ret_type = FixType (fn.ReturnType, subst);
+
+      def decl =
+        if (is_static)
+          <[ decl:
+            private static $(Macros.NewSymbol(fn.Name) : name)(..$parms) : $(ret_type : typed)
+            {
+            }
+          ]>
+        else
+          <[ decl:
+            private $(Macros.NewSymbol(fn.Name) : name)(..$parms) : $(ret_type : typed)
+            {
+            }
+          ]>;
+
+      CurrentType.forced_typarms = fn.TypeParameters;
+      def meth = CurrentType.DefineAndReturn (decl) :> MethodBuilder;
+
+      fn.static_method = meth;
+      meth.PrepareForEmission (fn, subst);
+      fn.typarms_to_pass = accumulated_typarms.Map(FixedType.StaticTypeVarRef(_));
+
+      def child = Typer3 (this, meth);
+      child.current_subst = subst;
+      // make it here, so Run will fill it up
+      child.closure_parms = Hashtable ();
+      children.Push (child);
+    }
+
+    static IsIdentityFunction(fn : TFunHeader) : bool
+    {
+      def checkBody(body : TExpr, parm : LocalValue)
+      {
+        match(body)
+        {
+          | LocalRef(local) =>
+            local.Equals(parm)
+          | DebugInfo(e, _)
+          | TypeConversion(e, _, ConversionKind.UpCast, _) =>
+            checkBody(e, parm)
+          | _ => false
+        }
+      }
+
+      match(fn.Parameters, fn.body)
+      {
+        | ([parm], Typed(body)) when parm.ty.TryRequire(fn.ReturnType) =>
+          def parmTy = parm.ty.Fix();
+          def retTy = fn.ReturnType.Fix();
+          !(parmTy is FixedType.Out
+            || parmTy is FixedType.Ref
+            || parmTy is FixedType.Tuple
+            || retTy is FixedType.Tuple)
+            && checkBody(body, parm.decl)
+        | _ => false
+      }
+    }
+
+    EmitIdentityValue(fn : TFunHeader) : TExpr
+    {
+      Manager.Stats.FirstClassFunctions++;
+      def fn_mtype = FixedType.ConstructFunctionType (fn).DeepFix ();
+      def fnty = FunctionType.Make (fn_mtype);
+      def (parm_types, ret_type) =
+        Option.UnSome (fn_mtype.FunReturnTypeAndParms ());
+
+      def identityClassInfo = Manager.InternalType.IdentityFunction_tc;
+      def identityClass = FixedType.Class(identityClassInfo, parm_types + [ret_type]);
+      def identityInstanceMember = match(identityClassInfo.LookupMember("Instance"))
+      {
+        | [one] => one
+        | _ => Util.ice("not one Nemerle.Util.Identity.Instance?")
+      };
+
+      TExpr.StaticRef(fnty, identityClass, identityInstanceMember, [])
+    }
+
+    EmitFunctionalValue (fn : TFunHeader, children : Queue [Typer3]) : TExpr
+    {
+      Manager.Stats.FirstClassFunctions++;
+      def closures = fn.used_closures;
+
+      Util.cassert (fn.TypeParameters.IsEmpty, $"should be handled in T2, $(fn.Name)");
+
+      // Message.Debug ($ "emit 1st class $(fn.name) acc=$(accumulated_typarms)");
+      def (new_tp, subst) = CopyFunTyparms (add_class_tyvars = true);
+
+      def fix_type (t) { FixType (t, subst) }
+
+      def fn_mtype = FixedType.ConstructFunctionType (fn).DeepFix ();
+      def fnty = FunctionType.Make (fn_mtype);
+      def (parm_types, ret_type) =
+        Option.UnSome (fn_mtype.FunReturnTypeAndParms ());
+
+      def addParamNames(param, acc) : void
+      {
+        def addNames(expr, acc) : void
+        {
+          match (expr)
+          {
+            | PExpr.Ref(name)   => acc.Add(name)
+            | PExpr.Tuple(args) => foreach (a in args) addNames(a, acc)
+            | _                 => acc.Add(Macros.NewSymbol())
+          }
+        }
+
+        match (param.ParsedPatternHack)
+        {
+          | PExpr.Tuple(args) => foreach (a in args) addNames(a, acc)
+          | _                 => acc.Add(param.PName)
+        }
+      }
+
+      def names         = fn.Parsed?.header?.ParsedParameters?.Flatten(addParamNames);
+      def formal_parms  =
+        if (names != null && parm_types.Length == names.Length)
+          NList.Map2(parm_types, names, (ty, name) => <[ parameter:  $(name : name) : $(fix_type(ty) : typed) ]>)
+        else
+          parm_types.Map(ty => <[ parameter: $(Macros.NewSymbol() : name) : $(fix_type(ty) : typed) ]>);
+
+      def apply_name        = if (ret_type.Fix () is FixedType.Void) "apply_void" else "apply";
+      def lambda_name       = Macros.NewSymbol (fn.Name + "_");
+      def lambda_base_type  = fix_type (fnty);
+
+      //Message.Debug ($"lambda: $lambda_name $new_tp : $lambda_base_type");
+
+      def builder = CurrentType.DefineNestedType (<[ decl:
+        private sealed class $(lambda_name : name) : $(lambda_base_type : typed)
+        {
+          public override sealed $(apply_name : dyn) (.. $formal_parms) : $(fix_type (ret_type) : typed)
+          {
+          }
+        }
+      ]>, false);
+      builder.DisableImplicitConstructor();
+      builder.forced_typarms = new_tp;
+      builder.is_lambda = true;
+      builder.FixupDefinedClass();
+
+      def clo_fields = Hashtable();
+
+      def (parms, assigns) =
+        NList.Split(closures.Map(
+          fun (hd)
+          {
+            def name = Macros.NewSymbol(hd.Name + "_closure");
+            Util.cassert(hd.closure_type != null, $"null closure for $(hd.Name)");
+            def clo_type = hd.closure_type;
+            //Message.Debug ($"add field $name to $lambda_name : $clo_type --> $(fix_type (clo_type)) new_tp=$new_tp $local_function_type->$(local_function_type.TypeParameters) $current_method->$(current_method.typarms)");
+            def field = builder.DefineAndReturn(<[ decl: mutable $(name : name) : $(fix_type(clo_type) : typed) ]>) :> IField;
+            clo_fields[hd.id] = field;
+            (<[ parameter: $(name : name) : $(fix_type(clo_type) : typed) ]>,
+             <[ this.$(name : name) = $(name : name) ]>)
+          }));
+
+      def ctor = builder.DefineAndReturn(<[ decl:
+        public this(.. $parms)
+        {
+          { .. $assigns }
+        }
+      ]>);
+
+      def (isCaching, cacheField) = match(parms)
+      {
+        | [] =>
+          def cacheField = builder.DefineAndReturn(<[ decl:
+            public static Instance : this = $(lambda_name : name)()
+          ]>);
+          (true, cacheField)
+        | _ =>
+          (false, null)
+      };
+
+      def the_method = SingleMemberLookup(builder, apply_name) :> MethodBuilder;
+
+      the_method.PrepareForEmission(fn, subst);
+
+      def child = Typer3(this, the_method);
+      child.closure_fields = clo_fields;
+      child.current_subst = subst;
+      children.Push(child);
+
+      builder.MarkWithSpecialName();
+      builder.Compile();
+
+      def ctor_parms = closures.Map(fun(hd) { Parm(ClosureRef(hd)) });
+
+      def from_type = FixedType.Class(builder, FunAndClassTyparmsRefs());
+      def ctorty =
+        match (from_type.TypeOfMember(ctor).Fix())
+        {
+          | FixedType.Fun(from = from, argsCount = argsCount) => FixedType.Fun(from, argsCount, fnty)
+          | _ => Util.ice()
+        };
+
+      if(isCaching)
+        TExpr.StaticRef(fnty, from_type, cacheField, [])
+      else
+      {
+        def ctor_ref = TExpr.StaticRef(ctorty, from_type, ctor, []);
+        TExpr.Call(fnty, ctor_ref, ctor_parms, false)
+      }
+    }
+
+
+    HandleLocalFunctions (fns : list [TFunHeader]) : list [TExpr]
+    {
+      mutable res = [];
+      def q = Queue ();
+
+      foreach (fn in fns)
+      {
+        ComputeUsedClosures (fn);
+        //Message.Debug ($"hlf: $(fn.name) $(fn.usage) $closures");
+        match (fn.usage)
+        {
+          | FunctionUsage.UsedJustOnce // handled in EmitLoop
+          | FunctionUsage.NotUsed => // obvious
+            {}
+
+          | FunctionUsage.Used =>
+            EmitStaticLocalFunction (fn, q);
+
+          | FunctionUsage.UsedAsFirstClass =>
+            def fval =
+              if(IsIdentityFunction(fn))
+                EmitIdentityValue(fn)
+              else
+                EmitFunctionalValue(fn, q);
+            assert(fn.decl != null);
+            res ::= TExpr.DefValIn (fn.decl, fval, null);
+        }
+      }
+
+      while (! q.IsEmpty)
+        q.Take ().Run ();
+
+      res
+    }
+    #endregion
+
+
+    #region Language constructs
+    
+    EmitLoop (hd : TFunHeader, parms : list [Parm]) : TExpr
+    {
+      def child = Typer3(this, hd);
+      // the child can reuse our closure
+      child.current_closure = current_closure;
+      child.closure_fields = closure_fields;
+      child.closure_parms = closure_parms;
+      child.current_subst = current_subst;
+      child.Run();
+
+      //when (closure_fields == null && hd.ConvertToLoopWithClosure)
+      //{
+      //}
+
+      def body =
+        match (hd.body)
+        {
+          | FunBody.Typed (x) => x
+          | _ => assert(false);
+        };
+
+      // need to pass parameters
+      def (parms, ini) = TupleParms (hd, parms);
+      def assigns = NList.RevMap2 (parms, hd.Parameters, 
+        fun (actual, formal)
+        {
+          assert(actual.kind == ParmKind.Normal);
+          TExpr.DefValIn (formal.decl, actual.expr, null)
+        });
+
+      BuildRevSequence (body :: (assigns + ini));
+    }
+
+
+    EmitDelegateCtor(ret_ty : TypeVar, sr : TExpr.StaticRef, parm : TExpr) : TExpr
+    {
+      def noObj = TExpr.Literal(InternalType.Object, Literal.Null());
+      def invokeArgsCount =
+        {
+          assert(sr.mem.DeclaringType.LookupMemberAvailable);
+          def mems = sr.mem.DeclaringType.LookupMemberImpl("Invoke");
+          def mems = $[x | x is IMethod in mems];
+          match (mems)
+          {
+            | [one] => one.GetParameters ().Length
+            | _ => Util.ice ("not exactly one Invoke method?")
+          }
+        };
+      def properApply(mtype : FixedType)
+      {
+        match (mtype.FunReturnTypeAndParms())
+        {
+          | Some ((parms, ret_type)) =>
+            def ft = InternalType.GetFunctionType(parms.Length);
+            def tupled = parms.Length > 1 && invokeArgsCount == 1;
+
+            def meth =
+              if (!tupled)
+                ft.GetMethodWithReturnType (ret_type);
+              else
+                ft.GetTupledMethodWithReturnType (ret_type);
+
+            TExpr.MethodAddress (mtype, meth, true, [])
+
+          | _ =>
+            assert2(false);
+            Util.ice ("nonfunction type?")
+        }
+      }
+      def (parm2, pexpr) =
+        match (parm)
+        {
+          | TExpr.DebugInfo(expr, pexpr) => (expr, pexpr)
+          | _ => (parm, null);
+        };
+
+      def (obj, meth) =
+        match (parm2)
+        {
+          | TExpr.StaticRef(_, meth is IMethod, _) when meth.IsConstructor =>
+            assert(invokeArgsCount == meth.GetParameters ().Length);
+            (Walk(parm), properApply(parm2.Type.Fix()))
+
+          | TExpr.StaticRef(from, meth is IMethod, typarms) =>
+            assert(invokeArgsCount == meth.GetParameters ().Length);
+            (noObj, TExpr.MethodAddress (from, meth, false, typarms))
+
+          | TExpr.MethodRef(obj, meth, typarms, nonvirt) =>
+            assert(invokeArgsCount == meth.GetParameters ().Length);
+            (Walk(obj), TExpr.MethodAddress(obj.Type, meth, !nonvirt, typarms))
+
+          | TExpr.LocalRef(decl) => (Walk(parm), properApply(decl.Type.Fix()))
+          | TExpr.DefFunctionsIn([func], LocalFunRef(decl, _))
+            when func.decl.Equals(decl) => // this is for sure lambda
+
+            ComputeUsedClosures (func);
+            match (func.used_closures)
+            {
+              | [] when func.Parameters.Length == invokeArgsCount =>
+                def q = Queue();
+                EmitStaticLocalFunction (func, q);
+
+                while (!q.IsEmpty)
+                  q.Take ().Run ();
+
+                (noObj, TExpr.MethodAddress(CurrentType.GetMemType(), func.static_method, false, func.typarms_to_pass))
+
+              | _cls =>
+                def e = Walk(parm);
+                (e, properApply (e.Type.Fix ()))
+            }
+
+          | _ =>
+            def e = Walk(parm);
+            (e, properApply (e.Type.Fix ()))
+        };
+
+      match (meth)
+      {
+        | TExpr.MethodAddress(meth = m) when (m.IsConditional) => Message.Error(meth.Location, $"cannot create delegate with `$meth.meth' because it has a Conditional attribute");
+        | _                                                    => ()
+      }
+      def callExpr = TExpr.Call(ret_ty, sr, [Parm(obj), Parm(meth)], false);
+
+      if (pexpr == null)
+        callExpr
+      else
+        TExpr.DebugInfo(pexpr.Location, ret_ty, callExpr, pexpr)
+    }
+
+
+    EmitCall (loc : Location, ret_type : TypeVar, func : TExpr, parms : list [Parm], is_tail : bool) : TExpr
+    {
+      foreach (p in parms)
+        p.expr = Walk(p.expr);
+
+      def just_call (meth, func, clo_parms) {
+        def (parms, ini) = TupleParms (meth.GetHeader (), parms, clo_parms.Length);
+        def call = TExpr.Call (ret_type, func, clo_parms + parms, is_tail);
+        BuildRevSequence (call :: ini)
+      }
+
+      def plain_call () {
+        def ft = InternalType.GetFunctionType (parms.Length);
+        def meth = ft.GetMethodWithReturnType (ret_type);
+        just_call (meth, TExpr.MethodRef (func.ty, Walk(func), meth, [], false), [])
+      }
+
+      match (func) {
+        | TExpr.MethodRef (obj, meth, tp, notvirt) =>
+          just_call (meth,
+                     TExpr.MethodRef (func.ty, Walk(obj), meth, tp, notvirt), [])
+
+        | TExpr.ConstantObjectRef => Util.ice ()
+
+        | TExpr.Base (meth)
+        | TExpr.StaticRef (_, meth is IMethod, _) =>
+          just_call (meth, func, [])
+
+        | TExpr.OpCode => TExpr.Call (func, parms, false)
+
+        | TExpr.LocalRef (LocalValue where (ValKind = LocalValue.Kind.Function)) =>
+          Util.ice ()
+
+        | TExpr.LocalFunRef (LocalValue where
+                          (ValKind = LocalValue.Kind.Function (hd, _)), type_parms) =>
+          match (hd.usage) {
+            | FunctionUsage.UsedJustOnce =>
+              def body = EmitLoop (hd, parms);
+              TExpr.Sequence (loc, body.Type,
+                TExpr.Literal (loc, InternalType.Void, Literal.Void ()),
+                body)
+
+            | _ =>
+              if (hd.static_method != null) {
+                // first check if we're dealing with static method from current type
+                // or from our enclosing type (so we're calling a local function
+                // that got static but we're first class)
+                def from_type = hd.static_method.DeclaringType;
+                def is_local = local_function_type.Equals (from_type);
+
+                def from_memty =
+                  if (is_local)
+                    from_type.GetMemType ()
+                  else {
+                    // we have the enclosing type's type parameters
+                    // as prefix of our type parameters
+                    def parm_count = from_type.Typarms.Length;
+                    def parms = local_function_type.Typarms.FirstN (parm_count);
+                    def parms = parms.Map (fun (x) { FixedType.StaticTypeVarRef (x) });
+                    FixedType.Class (from_type, parms)
+                  }
+
+                def typarms = type_parms + hd.typarms_to_pass.Map(SubstType(_));
+
+                def clo_parms =
+                  hd.used_closures.Map (fun (hd) {
+                    Parm (ClosureRef (hd))
+                  });
+
+                // check if we can use the current this pointer
+                // and if not, lookup one in closure
+                def this_ptr =
+                  if (hd.static_method.IsStatic)
+                    null
+                  else if (is_local) {
+                    TExpr.This (from_memty)
+                  } else {
+                    def lookup_this (t3) {
+                      if (t3.parent == null) {
+                        def decl =
+                          Option.UnSome (
+                            t3.current_local_fun.closure_vars.Find (fun (decl) {
+                              decl.ValKind is LocalValue.Kind.ClosurisedThisPointer
+                            }));
+                        LocalRef (decl)
+                      } else {
+                        lookup_this (t3.parent)
+                      }
+                    }
+                    lookup_this (this)
+                  }
+
+                def (fnc_type, fresh_typarms)  =
+                  from_memty.TypeOfMethodWithTyparms (hd.static_method);
+
+                NList.Iter2 (fresh_typarms, typarms, (a, b) => a.ForceUnify (b));
+
+                def fnc =
+                  if (hd.static_method.IsStatic)
+                    TExpr.StaticRef (fnc_type,
+                                     from_memty, hd.static_method,
+                                     typarms)
+                  else
+                    TExpr.MethodRef (fnc_type,
+                                     this_ptr, hd.static_method,
+                                     typarms, false);
+
+                just_call (hd.static_method, fnc, clo_parms);
+              } else
+                plain_call ()
+          }
+
+        | _ => plain_call ()
+      }
+    }
+    #endregion
+
+
+    #region Matching compilation
+    CompileMatch (m : TExpr.Match) : TExpr
+    {
+      mutable vals = Set ();
+
+      foreach (case in m.cases)
+        foreach ((pat, _, assigns) in case.patterns) {
+          _ = pat.Walk(fun (_) {
+            | Pattern.As (_, decl) =>
+              vals = vals.Replace (decl);
+              null
+            | _ => null
+          });
+          foreach ((decl, _) in assigns)
+            vals = vals.Replace (decl);
+        }
+
+
+      def is_bool_pattern(pat)
+      {
+        | Pattern.Literal(Bool) | Wildcard => true
+        | _ => false
+      }
+
+      def match_comp = DecisionTreeCompiler.Run(m.Type, _, m.cases, this);
+
+      mutable expr =
+        match (m.cases)
+        {
+          | [([(p1, TExpr.Literal(Bool(true)), [])], _, _),
+             ([(p2, TExpr.Literal(Bool(true)), [])], _, _)]
+            when is_bool_pattern(p1) && is_bool_pattern(p2) =>
+            // don't cache
+            match_comp(m.expr)
+
+          | _ => WithCached(m.expr, match_comp(_));
+        };
+
+      expr =
+        vals.Fold (expr,
+          fun (decl, expr)
+          {
+            if (decl.InClosure)
+              expr
+            else
+            {
+              // Message.Debug ($"store $decl $(decl.Id)");
+              decl.UseFrom (current_local_fun);
+              decl.PostponedDeclaration = true;
+              TExpr.DefValIn (expr.Type, decl,
+                              TExpr.DefaultValue (decl.Type), expr)
+          }
+        });
+
+      unless (expr is TExpr.DebugInfo)
+        expr.Location = m.Location;
+
+      // This code adds break point at the end of the match expr.
+      when (Manager.Options.EmitDebug && m.Location.IsSourceAvailable)
+      {
+        def l  = m.Location;
+        def dl = Location (l.FileIndex, l.EndLine, l.EndColumn - 1, l.EndLine, l.EndColumn);
+        def di = TExpr.DebugInfo (dl, null, TExpr.Literal (dl, InternalType.Void, Literal.Void ()), null);
+
+        expr = TExpr.Sequence (l, expr.Type, expr, di);
+      }
+
+      Walk(expr)
+    }
+    #endregion
+
+
+    #region Top level stuff
+    Walk(expr : TExpr) : TExpr
+    {
+      expr.Walk(DoWalk)
+    }
+
+
+    DoWalk (expr : TExpr) : TExpr
+    {
+      // Message.Debug ($ "dowalk: $(expr.GetType()) $(expr)");
+      mutable customTyperRes;
+      if (ptyper != null &&
+          ptyper.HasCustomTyperStage3 &&
+          ptyper.TryCustomExpressionTyper(TypingStage.Stage3, expr, Walk, out customTyperRes)) 
+        customTyperRes
+      else 
+        match (expr)
+        {
+          | TExpr.LocalFunRef (decl, _)
+          | TExpr.LocalRef (decl) =>
+            LocalRef (decl)
+
+          | TExpr.StaticRef (_, _ is IField, _) =>
+            null
+
+          | TExpr.ImplicitValueTypeCtor as ctor
+            when
+              ctor.Type.Fix () is FixedType.Fun =>
+            EmitCtorProxy (ctor)
+
+          | TExpr.StaticRef (_, _ is IMethod, _) as sr =>
+            EmitStaticProxy (sr)
+
+          // we do not support any other staticrefs here
+          // everything should be handled by Typer2 already
+          | TExpr.StaticRef => assert(false)
+
+          | TExpr.DefFunctionsIn (funs, body) =>
+            def res = HandleLocalFunctions (funs);
+            Walk(BuildRevSequence (body :: res))
+
+          | TExpr.DefValIn (decl, val, body) when decl.InClosure =>
+            if (val is TExpr.DefaultValue)
+              Walk(body)
+            else {
+              def assign =
+                TExpr.Assign (InternalType.Void, LocalRef (decl), Walk(val));
+              TExpr.Sequence (assign, Walk(body))
+            }
+
+          // handled by Typer2.LambdaTransform
+          | TExpr.MethodRef =>
+            assert(false)
+
+          | TExpr.Call (TExpr.StaticRef (_, m is IMethod, _) as sr, [parm], _)
+            when
+              m.MemberKind == MemberKinds.Constructor && m.DeclaringType.IsDelegate =>
+            EmitDelegateCtor (expr.Type, sr, parm.expr)
+
+          | TExpr.Call (func, parms, is_tail) =>
+            EmitCall (expr.Location, expr.Type, func, parms, is_tail)
+
+          | TExpr.SelfTailCall (_, parms) =>
+            def clo_len = ClosureParmCount (current_local_fun);
+            foreach (p in parms)
+              p.expr = Walk(p.expr);
+            def (parms, ini) = TupleParms (current_local_fun, parms, clo_len);
+            def assigns =
+              NList.Map2 (parms, current_local_fun.Parameters.ChopFirstN(clo_len),
+                fun (parm, fp)
+                  {
+                    assert(parm.kind == ParmKind.Normal);
+                    def ty = fp.ty;
+                    def conv = CheckedConversion (parm.expr, ty);
+                    (fp.decl, conv)
+                  });
+
+            def beg =
+              if (assigns.IsEmpty)
+                ini
+              else
+                TExpr.MultipleAssign (InternalType.Void, assigns) :: ini;
+
+            def goto = TExpr.Goto (InternalType.Void, start_label, 1);
+
+            BuildRevSequence (goto :: beg)
+
+          | TExpr.ConstantObjectRef => Util.ice ();
+
+          | TExpr.Match as m =>
+            CompileMatch (m)
+
+          // we cannot handle closurised values as placeholders for exceptions
+          // so we use a fresh variable for exception and assign it using
+          // regular DefValIn
+          | TExpr.Try (body, cases) =>
+            mutable change_happened = false;
+            def need_walk (cases) {
+              | [] => false
+              | Try_case.Catch (orig, _) :: _ when (orig.InClosure) => true
+              | Try_case.Filter (orig, _, _) :: _ when (orig.InClosure) => true
+              | _ :: cases => need_walk (cases)
+            }
+            def walk_case (case) {
+              | Try_case.Catch (orig, handler) when (orig.InClosure) =>
+                def val =
+                  LocalValue (current_local_fun, orig.Name,
+                              orig.Type, LocalValue.Kind.ExceptionValue (),
+                              is_mutable = false);
+                val.Register ();
+                val.UseFrom (current_local_fun);
+                def handler =
+                  TExpr.DefValIn (handler.Type, orig, PlainRef (val), handler);
+                change_happened = true;
+                Try_case.Catch (val, Walk(handler))
+
+              | Try_case.Filter (orig, filter, handler) when (orig.InClosure) =>
+                def val =
+                  LocalValue (current_local_fun, orig.Name,
+                              orig.Type, LocalValue.Kind.ExceptionValue (),
+                              is_mutable = false);
+                val.Register ();
+                val.UseFrom (current_local_fun);
+                def filter =
+                  TExpr.DefValIn (filter.Type, orig, PlainRef (val), filter);
+                def handler =
+                  TExpr.DefValIn (handler.Type, orig, PlainRef (val), handler);
+                change_happened = true;
+                Try_case.Filter (val, Walk(filter), Walk(handler))
+
+              | Try_case.Catch (orig, handler) =>
+                Try_case.Catch (orig, Walk(handler))
+
+              | Try_case.Filter (orig, filter, handler) =>
+                Try_case.Filter (orig, Walk(filter), Walk(handler))
+
+              | Try_case.Fault (handler) =>
+                Try_case.Fault (Walk(handler))
+            }
+            if (need_walk (cases))
+              TExpr.Try (Walk(body), cases.Map (walk_case))
+            else
+              null
+
+
+          // optimize ifs
+          | If (cond, e1, e2, l1, l2) =>
+            match (Walk(cond)) {
+              | Literal (Bool (lit)) => Walk(if (lit) e1 else e2)
+
+              | Sequence (prep, Literal (Bool (lit))) =>
+                def e = Walk(if (lit) e1 else e2);
+                TExpr.Sequence (e.Type, prep, e)
+
+              | cond =>
+                match ((Walk(e1), Walk(e2))) {
+                  | (Literal (Bool (true)), Literal (Bool (false))) =>
+                    cond
+                  | (e1, e2) =>
+                    TExpr.If(cond, e1, e2, l1, l2)
+                }
+            }
+
+          | TExpr.Array (args, _) =>
+            when (args.Exists(x => x.Type.Fix () is FixedType.Void))
+              Message.Error ("array element type cannot be void");
+            null
+
+          | TExpr.DebugInfo(e, pe) when e != null =>
+            def res = Walk(e);
+
+            if (res == null)
+              null
+            else
+              TExpr.DebugInfo(expr.Location, res.ty, res, pe)
+
+          | _ => null
+        }
+    }
+    #endregion
+
+
+    #region current_subst handling
+    SubstType (t : TypeVar) : FixedType
+    {
+      if (current_subst != null)
+        current_subst.Apply (t.Fix ()).Fix ()
+      else t.Fix ()
+    }
+
+
+    SubstTypes (t : list [TypeVar]) : list [TypeVar]
+    {
+      t.Map (fun (x) { SubstType (x) })
+    }
+
+
+    SubstExpr (expr : TExpr) : TExpr
+    {
+      expr.Walk(DoSubstExpr)
+    }
+
+
+    DoSubstExpr (expr : TExpr) : TExpr
+    {
+      when (expr.ty != null)
+        expr.ty = SubstType (expr.ty);
+
+      match (expr)
+      {
+        | StaticRef(from, mem, tp)      => TExpr.StaticRef(SubstType(from) :> FixedType.Class, mem, SubstTypes(tp))
+        | MethodRef(obj, meth, tp, nv)  => TExpr.MethodRef(SubstExpr(obj), meth, SubstTypes(tp), nv)
+        | TypeConversion(e, t, k, tl)   => TExpr.TypeConversion(SubstExpr(e), SubstType(t), k, tl)
+        | TypeOf(t)                     => TExpr.TypeOf(SubstType(t))
+        | HasType(e, t)                 => TExpr.HasType(SubstExpr(e), SubstType(t))
+        | MacroEnvelope(m, o, e, epe)   => TExpr.MacroEnvelope(m,  o, SubstExpr(e), epe)
+
+        | DefValIn (name, _, _) =>
+          name.SetType (SubstType (name.Type));
+          null
+
+        | Try (_, cases) =>
+          def walk_case (case)
+          {
+            | Try_case.Catch (name, _)
+            | Try_case.Filter (name, _, _) =>
+              name.SetType (SubstType (name.Type));
+            | _ => ()
+          }
+
+          foreach (case in cases)
+            walk_case (case);
+
+          null
+
+        | LocalRef
+        | ImplicitValueTypeCtor
+        | FieldMember
+        | Call
+        | Assign
+        | Throw
+        | TryFinally
+        | Literal
+        | This
+        | Base
+        | Sequence
+        | Tuple
+        | Array
+        | ArrayIndexer
+        | PointerIndexer
+        | TupleIndexer
+        | OpCode
+        | MethodAddress
+        | MultipleAssign
+        | Label
+        | Goto
+        | DefaultValue
+        | If
+        | Switch
+        | MethodOf | TExpr.CtorOf | TExpr.FieldOf | ClosureObjectOf | ClosureFieldOf
+        | DebugInfo =>
+          null
+
+        | Cache
+        | CacheRef
+        | LocalFunRef
+        | PropertyMember
+        | StaticPropertyRef
+        | EventMember
+        | StaticEventRef
+        | ConstantObjectRef
+        | Delayed
+        | Error
+        | DefFunctionsIn
+        | Match
+        | SelfTailCall
+        | Block
+        | Def
+        | Use =>
+          Util.cassert (Message.SeenError);
+          null
+      }
+    }
+    #endregion
+
+  }
+
+  public partial class MethodBuilder
+  {
+    internal PrepareForEmission (fn : TFunHeader, subst : Subst) : void
+    {
+      def new_header = fun_header;
+      fun_header = fn;
+
+      def clo_count = Typer3.ClosureParmCount (fn);
+      def new_parms = new_header.Parameters.ChopFirstN (clo_count);
+
+      foreach (parm in new_header.Parameters.FirstN (clo_count)) {
+        parm.decl = LocalValue (fn, parm.name, parm.ty,
+                                LocalValue.Kind.Plain (),
+                                is_mutable = false);
+        parm.decl.Register ();
+        parm.decl.UseFrom (fn);
+      }
+
+      if (new_parms.Length > 1 && fn.Parameters.Length == 1) {
+        match (fn.body) {
+          | FunBody.Typed (body) =>
+            def vals = new_parms.Map (fun (parm : TParameter) {
+              def local = LocalValue (fn, parm.name, parm.ty,
+                                      LocalValue.Kind.Plain (), is_mutable = false);
+              local.Register ();
+              local.UseFrom (fn);
+              parm.decl = local;
+              local
+            });
+            def parm = fn.Parameters.Head;
+            def expr =
+              TExpr.DefValIn (body.Type,
+                              parm.decl,
+                              TExpr.Tuple (parm.ty, vals.Map (Typer3.PlainRef)),
+                              body);
+            fn.body = FunBody.Typed (expr);
+            fn.Parameters = new_header.Parameters;
+          | _ => assert(false)
+        }
+      }
+      else
+      {
+        NList.Iter2 (fn.Parameters, new_parms, fun (orig, copy : TParameter) {
+          copy.decl = orig.decl;
+          // FIXME: is it still needed?
+          copy.ty = Typer3.FixType (copy.ty, subst);
+          copy.decl.SetType (Typer3.FixType (copy.decl.Type, subst));
+        });
+        fn.Parameters = new_header.Parameters;
+      }
+
+      fn.ReturnType = new_header.ReturnType;
+    }
+  }
+}

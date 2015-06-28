@@ -1,0 +1,53 @@
+﻿#define FOO
+
+// will be undefined
+#define IMPOSSIBLE_1
+
+#if FOO
+  #define BAR
+#else
+  #define IMPOSSIBLE_2
+#endif
+
+#if BAR
+  #undef IMPOSSIBLE_1
+#endif
+
+
+using System.Console;
+
+
+module Program {
+
+  Main() : void {
+
+#if FOO
+    WriteLine("OK");
+#else
+    WriteLine("Fail");
+#endif
+
+#if BAR
+    WriteLine("OK");
+#else
+    WriteLine("Fail");
+#endif
+
+
+#if IMPOSSIBLE_1
+    WriteLine("Fail");
+#else
+    WriteLine("OK");
+
+  #if IMPOSSIBLE_2
+    WriteLine("Fail");
+  #else
+    WriteLine("OK");
+  #endif
+#endif
+
+      WriteLine("Press any key to continue...");
+      _ = ReadKey(true);
+  }
+
+}

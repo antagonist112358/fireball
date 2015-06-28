@@ -1,0 +1,26 @@
+class Bug854
+{
+  public Foo[T](x : T) : void where T : T { // E: A constraint of 'T' type parameter is cyclic \(T => T\)
+    _ = x.Foo()
+  }
+}
+
+public class X[A, // E: A constraint of 'A' type parameter is cyclic \(A => B => C => A\)
+  B, C, D, E] 
+  
+  where A: B
+  where B: C
+  where C: A
+  where D: E
+{
+}
+
+class A : B {} // E: type definition for `A' is cyclic
+class B : A {}
+
+class C : C.I { // E: type definition for `C' is cyclic
+  interface I {
+  }
+}
+
+

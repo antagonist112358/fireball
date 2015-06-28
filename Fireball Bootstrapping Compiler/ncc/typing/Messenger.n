@@ -1,0 +1,203 @@
+/*
+ * Copyright (c) 2005-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Logging;
+using Nemerle.Utility;
+
+namespace Nemerle.Compiler 
+{
+  /** Class to deal with error/warning reporting.  */
+  public class Messenger
+  {
+    #region Private implementation
+    mutable seen_error : bool;
+    mutable first_error : string;
+    mutable need_message : bool;
+    mutable throw_on_error : bool;
+    mutable previous : Messenger;
+    [Accessor (set (Internal))]
+    mutable in_error_mode : bool;
+    mutable saved_error : string;
+    mutable local_error : int;
+    
+
+    CopyFrom (other : Messenger) : void
+    {
+      seen_error = other.seen_error;
+      first_error = other.first_error;
+      need_message = other.need_message;
+      throw_on_error = other.throw_on_error;
+      previous = other.previous;
+      saved_error = other.saved_error;
+      in_error_mode = other.in_error_mode;
+      local_error = other.local_error;
+    }
+    
+
+    internal PushState () : void
+    {
+      def msg = Messenger ();
+      msg.CopyFrom (this);
+      
+      previous = msg;
+      seen_error = false;
+      first_error = null;
+      saved_error = null;
+      need_message = false;
+      throw_on_error = false;
+      local_error = 0;
+    }
+
+
+    internal PopState () : void
+    {
+      assert(previous != null);
+      CopyFrom (previous);
+    }
+    #endregion
+
+
+    #region Public API
+    public this ()
+    {
+    }
+
+
+    public Error (msg : string) : void
+    {
+      assert(NeedMessage);
+
+      seen_error = true;
+      local_error++;
+
+      when (first_error == null)
+        first_error = msg;
+
+      when (!in_error_mode)
+        throw RestartInErrorMode ();
+        
+      if (saved_error == null)
+        Message.Error (msg)
+      else
+        Message.Error ($ "$msg: $saved_error");
+
+      saved_error = null;
+    }
+
+
+    public Cleanup () : void
+    {
+      CleanLocalError ();
+      seen_error = false;
+    }
+
+
+    public CleanLocalError () : void
+    {
+      local_error = 0;
+      when (saved_error != null) {
+        Message.Error ($ "during cleanup: $saved_error");
+        saved_error = null;
+      }
+    }
+
+
+    public SaveError (msg : string) : void
+    {
+      log (TYPING, $"save error: $msg $(System.Environment.StackTrace)");
+      assert(NeedMessage);
+
+      when (!in_error_mode)
+        throw RestartInErrorMode ();
+        
+      local_error++;
+      seen_error = true;
+      saved_error = msg;
+    }
+
+
+    /** A debug tool. */
+    public DumpSavedError () : void
+    {
+      if (saved_error == null)
+        Message.Warning ("no saved error")
+      else
+        Message.Warning ($ "saved error: $saved_error")
+    }
+    
+
+    /** Set the messenger to be in the error state. */
+    public MarkError () : void
+    {
+      assert(!NeedMessage);
+      
+      when (previous == null && !in_error_mode)
+        throw RestartInErrorMode ();
+      
+      local_error++;
+      seen_error = true;
+    }
+    
+
+    public NeedMessage : bool
+    {
+      get { need_message }
+      
+      set {
+        assert(value == true);
+        need_message = value
+      }
+    }
+    
+    /** Check if we have encountered an error in the current state. */
+    public SeenError : bool
+    {
+      set { assert(value); seen_error = value }
+      get { seen_error }
+    }
+
+
+    public IsTopLevel : bool
+    {
+      get { previous == null }
+    }
+
+
+    public LocalError : bool
+    {
+      get { local_error != 0 }
+    }
+
+
+    public LocalErrorCount : int
+    {
+      get { local_error }
+    }
+    #endregion
+  }
+}

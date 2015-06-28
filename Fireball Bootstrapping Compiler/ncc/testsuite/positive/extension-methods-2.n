@@ -1,0 +1,131 @@
+using Nemerle.Collections;
+using Nemerle.IO;
+using Nemerle.Utility;
+
+using System;
+using System.Console;
+using System.Collections.Generic;
+
+using SCG = System.Collections.Generic;
+
+public module Ext
+{
+  public WithPrePostPolicy(this call : void -> void, pre : (void -> void) -> void -> void, post : void -> void) : void -> void
+  {
+    fun() { def newCall = pre(call); try { newCall(); } finally { post(); } }
+  }
+}
+
+module Program
+{
+  Main() : void
+  {
+    // IsEmpty() test
+    WriteLine("IsEmpty() test");
+    WriteLine(array[1].IsEmpty());
+    WriteLine(array(0).IsEmpty());
+    WriteLine([1].IsEmpty());
+    WriteLine([1].Tail.IsEmpty());
+    WriteLine(SCG.List().IsEmpty());
+    WriteLine(SCG.List(array[1, 2]).IsEmpty());
+    def dic = SCG.Dictionary();
+    dic.Add("aaa", 123);
+    WriteLine(dic.IsEmpty());
+    dic.Clear();
+    WriteLine(dic.IsEmpty());
+
+    // ForAll2 test
+    WriteLine("ForAll2 test");
+    WriteLine(Sec1().ForAll2(Sec1(), _ == _));
+    WriteLine(Sec1().ForAll2(Sec1L(), _ == _));
+    WriteLine (Sec2 ().ForAll2 (Sec2 ().NToArray (), _ == _));
+    WriteLine (Sec2 ().NToArray ().ForAll2 (Sec2 ().NToArray (), _ == _));
+    WriteLine (List (Sec1 ()).ForAll2 (Sec1 ().NToArray (), _ == _));
+    WriteLine(List(Sec1()).ForAll2(List(Sec1()), _ == _));
+    WriteLine (List (Sec1 ()).NToArray ().ForAll2 (List (Sec1 ()), _ == _));
+    WriteLine(Sec1().ForAll2(Sec2(), _ == _));
+    WriteLine (List (Sec1 ()).ForAll2 (Sec2 ().NToArray (), _ == _));
+    WriteLine(List(Sec1()).ForAll2(List(Sec2()), _ == _));
+    WriteLine (Sec1 ().NToArray ().ForAll2 (Sec2 ().NToArray (), _ == _));
+    
+    WriteLine("WithPrePostPolicy test");
+    def test() : void { Write("Test!") }
+    def f = test.WithPrePostPolicy(fun(f) { Write("Pre:"); fun() { Write("In call:"); f() }}, // pre
+                                   () => Write(":Post"));                                     // post
+    f();
+    WriteLine();
+
+    def exec[T](func : void -> SCG.IEnumerable[T])
+    {
+      try 
+      {
+        def result = func();
+        WriteLine($"..$result");
+      }
+      catch
+      { | e is System.ArgumentException => 
+          WriteLine($"ParamName:$(e.ParamName)"); 
+      }
+    }
+    
+    WriteLine("Map2Lazy & ZipLazy");
+    exec(fun() { array(0).Map2Lazy(array(0), x : int * int => x) });
+    exec(fun() { ["a", "b", "c"].Map2Lazy(array[1, 2, 3], x => x) });
+    exec(fun() { array[1, 2, 3].ZipLazy(["a", "b", "c"]) });
+    exec(fun() { ["a", "b"].Map2Lazy(array[1, 2, 3], x => x) });
+    exec(fun() { array[1, 2, 3].Map2Lazy(["a", "b"], x => x) });
+    //_ = ReadLine();
+  }
+
+  Sec1() : IEnumerable[int]
+  {
+    yield 2; yield 5; yield 1; yield 4; yield 3;
+  }
+
+  Sec1L() : IEnumerable[long]
+  {
+    foreach (val in Sec1())
+      yield val;
+  }
+
+  Sec2() : IEnumerable[int]
+  {
+    foreach (val in Sec1())
+      yield val;
+    
+    yield 6;
+  }
+}
+/*
+BEGIN-OUTPUT
+IsEmpty() test
+False
+True
+False
+True
+True
+False
+False
+True
+ForAll2 test
+True
+True
+True
+True
+True
+True
+True
+False
+False
+False
+False
+WithPrePostPolicy test
+Pre:In call:Test!:Post
+Map2Lazy & ZipLazy
+
+(a, 1), (b, 2), (c, 3)
+(1, a), (2, b), (3, c)
+ParamName:first
+ParamName:second
+END-OUTPUT
+*/

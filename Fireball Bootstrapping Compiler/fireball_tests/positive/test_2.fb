@@ -1,0 +1,77 @@
+namespace Fireball.Tests {
+
+	using System;
+	
+	// Test normal class decl
+	class NoDefaultConstructor {
+		def DoesNothing() : Void { }
+	}
+	
+	class Base {
+		override def ToString() : String { "This is the base class" }
+	}
+	
+	// Default constructor test
+	class DefaultConstructorTest(a: int) : Base {
+		def PrintOutA() : string { a.ToString() }
+		override def ToString() : String { a.ToString(); }
+	}
+	
+	// Default constructor test (multiple arguments)
+	class DefaultConstructorTest2(a: String, b: String) {
+		def Concat() : string { a + " " + b }		
+	}
+
+	// Default constructor test (with default non-literal argument)
+	class DefaultConstructorTest3(a: String, b: list[int] = [1, 2, 3, 4, 5]) {
+		def PrintOut() : string { a + String.Join(" ", b) }
+	}
+	
+	// Default constructor test (multiple non-literal arguments)
+	class DefaultConstructorTest4(v: int, str: string = "hello world", obj: Base = DefaultConstructorTest(5), boring: option[NoDefaultConstructor] = None()) {
+		def PrintOut() : string {
+			val start: string = if (boring.HasValue) "Has boring option " else "Doesn't have boring option "; 
+			start + str + " " + obj.ToString() + " " + v.ToString();
+		}
+	}
+	
+	// Default constructor test (multiple non-literal arguments with subset expansion)
+	class DefaultConstructorTest5(v: int, str: string = "hello world", obj: Base = DefaultConstructorTest(5), boring: option[NoDefaultConstructor] = None())* {
+		def PrintOut() : string {
+			val start: string = if (boring.HasValue) "Has boring option " else "Doesn't have boring option "; 
+			start + str + " " + obj.ToString() + " " + v.ToString();
+		}
+	}
+	
+	module Program {
+    public def Main(args: array[String]) : void {      
+			val tester = DefaultConstructorTest(5);
+			val testMethodVal = tester.PrintOutA();
+			Console.WriteLine($"Value from test method: $testMethodVal");
+			
+			val tester2 = DefaultConstructorTest2("Hello", "World");
+			val testMethodVal2 = tester2.Concat();
+			Console.WriteLine($"Value from test method: $testMethodVal2");
+			
+			val tester3 = DefaultConstructorTest3("Default Sequence: ");
+			val testVal = tester3.PrintOut();
+			Console.WriteLine($"Value from test method: $testVal");
+
+			val tester4 = DefaultConstructorTest3("Fibonacci Sequence: ", [1,1,2,3,5,8,11]);
+			val testVal2 = tester4.PrintOut();
+			Console.WriteLine($"Value from test method: $testVal2");			
+			
+			//Console.WriteLine("\nPress any key...");			
+			//Console.ReadKey(true)
+    }
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Value from test method: 5
+Value from test method: Hello World
+Value from test method: Default Sequence: 1 2 3 4 5
+Value from test method: Fibonacci Sequence: 1 1 2 3 5 8 11
+END-OUTPUT
+*/

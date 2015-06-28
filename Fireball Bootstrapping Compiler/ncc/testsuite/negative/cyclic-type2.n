@@ -1,0 +1,8 @@
+module M {
+Main () : void { 
+def foo (l,f) { // E: cyclic type found
+  l.Map (fun (_) { foo([l],!f) })
+}
+
+_ = foo([],true)
+}}

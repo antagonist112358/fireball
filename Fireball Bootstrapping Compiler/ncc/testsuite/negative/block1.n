@@ -1,0 +1,48 @@
+module M 
+{
+  quxo () : int // E: expected int, got .*-> void
+  {
+    ret : { ret } // E: block-return expression .*needs to be followed by \(...\)
+  }
+  
+
+  foo2 () : int
+  {
+    ret : {
+      _ = (ret (42), 1); // E: not allowed inside expressions
+      42
+    }
+  }
+
+
+  finaly () : int
+  {
+    ret : {
+      try {
+        _ = quxo ();
+        4
+      }
+      finally {
+         ret (42); // E: not allowed
+      }
+    }
+  }
+
+
+  bar4 () : int // E: expected int
+  {
+    brk : { 
+      when (3 < 4)
+        brk (42);
+      when (3 < 5)
+        brk ("foo"); // E: in argument #1, needed a int.*, got string
+      "foo" // E: got string
+    }
+  }
+
+
+  Main () : void
+  {
+  }
+  
+}

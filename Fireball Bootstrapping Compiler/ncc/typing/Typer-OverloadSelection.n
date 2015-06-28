@@ -1,0 +1,757 @@
+﻿/*
+ * Copyright (c) 2005-2008 The University of Wroclaw. (c) 2009 RSDN.ru
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Utility;
+
+using Nemerle.Compiler;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Surround;
+
+using System.Diagnostics;
+using Nemerle.Diagnostics;
+using Nemerle.Imperative;
+
+namespace Nemerle.Compiler
+{
+  public partial class Typer
+  {
+    internal ResolveOverload(
+      overloads                 : list[OverloadPossibility], 
+      parms                     : list[Parm],
+      expected                  : TypeVar,
+      speculative               : bool,
+      exprLocation              : Location
+    )
+      : list[OverloadPossibility]
+    {
+//#define DEBUG_OVERLOADS
+#if DEBUG_OVERLOADS
+      def printOverloads(overloads : list[OverloadPossibility], msg : string) : void
+      {
+        Debug.WriteLine(msg);
+        Debug.Indent();
+        foreach (overload in overloads)
+        {
+          def str = NDebug.ToStringWitoutNs(overload);
+          Debug.WriteLine($"> $str");
+        }
+        Debug.Unindent();
+      }
+#endif
+
+      def solver = this.solver;
+      def messenger = solver.CurrentMessenger;
+
+      foreach (overload in overloads)
+        overload.UsedLastTime = false;
+
+      def has_untyped_parm = parms.Exists(p => p.expr.Type.Hint.IsNone);
+
+      def print_error_message (overload : OverloadPossibility) 
+      {
+        when (messenger.NeedMessage)
+        {
+          //when (speculative)
+            solver.PushState();
+
+          messenger.NeedMessage = true;
+          // We retry operation to output error messages.
+          _ = try_type(overload, parms, expected, final = !speculative);
+          
+          //when (speculative)
+            solver.PopState ();
+        }
+      }
+
+      match (OverloadPossibility.OnlyPossible(overloads, null, this)) 
+      {
+        | [] => []
+        | overloads =>
+          mutable ok = [];
+#if DEBUG_OVERLOADS
+          Debug.WriteLine($<#try resolve overload '$(overloads.Head.Member.Name)' (speculative=$speculative) parms: '..$parms' (..$(parms; ", "; p => p.expr.Type.ToString())) :#>);
+          Debug.WriteLine("[");
+          ////NDebug.PrintStackTrace();
+          printOverloads(overloads, $"try resolv overloads (overloads) (speculative=$speculative):");
+          Debug.Indent();
+#endif
+
+          foreach (overload in overloads)
+          {
+            solver.PushState();
+            try
+            { 
+#if DEBUG_OVERLOADS
+              //Debug.WriteLine($"{: $overload");
+              Debug.Indent();
+              //when (overload.ToString() == "method System.Console.WriteLine(value : string) : void")
+              //  assert(true);
+#endif
+              def res = !IsError(try_type(overload, parms, expected, final = false));
+              when (res)
+                ok ::= overload;
+#if DEBUG_OVERLOADS
+              Debug.Unindent();
+              //Debug.WriteLine($"}: OK?=$res");
+#endif
+            }
+            finally { solver.PopState(); }
+          }
+
+#if DEBUG_OVERLOADS
+          Debug.Unindent();
+          printOverloads(ok, "resolved (ok) overloads:");
+#endif
+
+          def bastOk = if (ok.Length > 1) this.GetBestOverloads(ok, parms.Map(p => p.expr.Type)) else ok;
+
+          def bastOk2 = 
+            if (bastOk.Length > 1 && (!has_untyped_parm || this.BadnessAllowed > 0))
+              PreferLessGenericMethods(bastOk)
+            else
+              bastOk;
+            
+
+#if DEBUG_OVERLOADS
+          printOverloads(bastOk2, "bast of resolved (bastOk2) overloads:");
+          Debug.WriteLine("]");
+#endif
+
+          def strType = InternalType.String;
+
+          if (bastOk2.IsEmpty && !overloads.IsEmpty && overloads.Head.Member.Name == "op_Addition" && parms.Exists(p => p.expr.Type.Equals(strType)) && expected.TryUnify(strType))
+          {
+            unless (speculative)
+            {
+              // C# string concatination
+              foreach (p in parms)
+                p.expr =
+                  if (p.expr.Type.Equals(strType))
+                    p.expr
+                  else
+                    TypeExpr(
+                      if (p.expr.Type.Hint.IsNone)
+                        <[ System.Convert.ToString($(p.expr : typed) : object) ]>
+                      else if (p.expr.Type.CanBeNull)
+                        <[ def x = $(p.expr : typed);
+                           if (x != null) x.ToString() else "" ]>
+                      else
+                        <[ $(p.expr : typed).ToString() ]>, strType);
+
+              _ = Expect(expected, strType, "string concatenation");
+            }
+
+            overloads
+          }
+          else match (bastOk2)
+          {
+            | [] =>
+              if (messenger.NeedMessage) 
+                match (overloads) 
+                {
+                  | [o] => print_error_message(o);
+                  | _ =>
+                    Util.locate(exprLocation,
+                    {
+                      surroundwith (related_messages)
+                      {
+                        ReportError (messenger, "each overload has an error during call:");
+                        mutable cnt = 1;
+                        foreach (o in overloads) 
+                        {
+                          surroundwith (related_messages)
+                          {
+                            ReportError (messenger, $<#overload #$cnt, "$o" fail because:#>);
+                            print_error_message (o);
+                            when (IsMemberLocationCorrect(o))
+                              Message.Hint(o.Member.Location.FromStart(), "overload definition");
+                          }
+                          ++cnt;
+                        }
+                      }
+                    });
+                }
+              else
+                messenger.MarkError();
+              []
+
+            /*
+              In general we do not commit to a single, best overload when we still
+              have some parameters that have no Hint (which means they are of a totally
+              unknown type), except:
+                - when it is the only possible overload, 
+                - we're in a special second pass of delayed typings or 
+                - it is == or !=. 
+
+              The last part is a hack, it might be a good idea to
+              commit to a single overload also in some other cases
+              but the comparison operators seem to be crucial.
+
+              Bug #770.
+            */
+
+            | [one] as result when ok is [_]
+                                   || !has_untyped_parm 
+                                   || this.BadnessAllowed > 0 
+                                   || one.Member.Name == "op_Equality" 
+                                   || one.Member.Name == "op_Inequality" 
+              =>
+              // if this typing is speculative, then we should not do final typeng. It prevent change parameters of call.
+              if (speculative)
+                result
+              else if (!one.IsAllNestedDelayedTypingResolved && has_untyped_parm && one.Member is BuiltinMethod)
+              {
+                //assert2(false);
+                result
+              }
+              else match (try_type(one, parms, expected, final = true)) 
+              {
+                | TExpr.Call(func, tParms, _) as _tCall =>
+                  when (func is TExpr.OpCode(op) when binary_operators.Contains(op) && Typer.IsNullableBinaryOperator(func.Type))
+                    when (tParms is [p1, p2])
+                      // This is a fake typing. It only report error if we have no operator.
+                      _ = TypeExpr(<[ $(op : dyn)($(p1.expr : typed).Value, $(p2.expr : typed).Value) ]>);
+
+                  one.ResolvedCallParameters = tParms; // [TAG:SetResolvedCallParameters]
+                  one.UsedLastTime = true;
+                  _ = _tCall;
+                  result
+
+                | e => 
+                  _ = e;
+                  overloads
+              }
+
+            | lst => 
+              // This is important -- we only drop the clearly evil
+              // solutions. We leave the less general ones (dropped by 
+              // GetBestOverloads), as it is possible we will need them 
+              // later.
+              //
+              // However we still mark only the best overloads in case we want
+              // an error message later.
+              foreach (o in lst)
+                o.UsedLastTime = true;
+              ok
+          }
+      }
+    }
+
+    static PreferLessGenericMethods(overload : list[OverloadPossibility]) : list[OverloadPossibility]
+    {
+      def cmp(o1, o2)
+      {
+        match (o1.Member, o2.Member)
+        {
+          | (method1 is IMethod, method2 is IMethod) => PreferLessGenericMethods(method1, method2) > 0
+          | _ => false
+        }
+      }
+
+      GetMinimal(overload, cmp)
+    }
+
+    static PreferLessGenericMethods(m1 : IMethod, m2 : IMethod) : int
+    {
+      def params1 = m1.Header.Parameters;
+      def params2 = m2.Header.Parameters;
+    
+      def cmpTypesArgs(t1 : TypeVar, t2 : TypeVar, acc : int) : int
+      {
+        if (acc != 0)
+          acc
+        else match (t1.FixedValue, t2.FixedValue)
+        {
+          | (FixedType.StaticTypeVarRef, FixedType.StaticTypeVarRef) => 0
+          | (_, FixedType.StaticTypeVarRef)                          => 1
+          | (FixedType.StaticTypeVarRef, _)                          => -1
+          | (FixedType.Class(ti1, args1), 
+             FixedType.Class(ti2, args2)) when ti1.Equals(ti2) && args1.Length == args2.Length => 
+            def result = args1.FoldLeft2(args2, 0, cmpTypesArgs);
+            result
+          
+          | _ => 0
+        }
+      }
+    
+      def result = 
+        if (params1.Length == params2.Length)
+          params1.FoldLeft2(params2, 0, (p1, p2, acc) => cmpTypesArgs(p1.ty, p2.ty, acc))
+        else
+          0;
+        
+      result
+    }
+
+    try_type(overload : OverloadPossibility, parms : list[Parm], expected : TypeVar, final : bool) : TExpr
+    {
+      def parms2 = // Make full list of parameters
+        if (overload.ExtensionMethodObject == null)
+          parms
+        else
+          Parm(overload.ExtensionMethodObject) :: parms;
+      def ct = CallTyper(this, overload.Compile(), parms2, expected);
+
+      ct.overload_possibility = overload;
+      ct.is_final = final;
+      ct.is_var_args = overload.VarArgs;
+      overload.ResetOverloadSelectionStuff();
+      ct.Run();
+      overload.IsNeedTupleConvertion = ct.IsTupleConvertionMade;
+
+      def result = 
+        if (ct.result == null || (overload.VarArgs && !ct.used_var_args))
+          TExpr.Error()
+        else
+        {
+          unless (ct.result is TExpr.Error)
+          {
+            overload.PermutationArray = ct.GetPermutationArray();
+            overload.UsedDefaultParms = ct.used_default_parms;
+          }
+
+          ct.result
+        };
+
+      result
+    }
+
+    public static IsMemberLocationCorrect(x : OverloadPossibility) : bool
+    {
+      def memLoc  = x.Member.Location;
+      //TODO: VladD2: Maybe try to resolve reference on dll's in IDE-mode? We can forward it into generated file or into Object Browser
+      memLoc.Line != 0 && System.IO.File.Exists(memLoc.File)
+    }
+
+    // FIXME: to stdlib?
+    /** A simple O(n^2) algorithm for finding a set of minimal elements
+        of [lst] using strict partial order [less].  */
+    static internal GetMinimal[T] (lst : list [T], less : T * T -> bool) : list [T]
+    {
+      lst.FoldLeft([], (elem, minimal) =>
+        if (minimal.Exists(min => less (min, elem)))
+          minimal
+        else
+          elem :: minimal.Filter(min => !less (elem, min)))
+    }
+
+
+    IsBetterType (t1 : TypeVar, t2 : TypeVar) : bool
+    {
+      def real_check (t1, t2) 
+      {
+        mutable we_dont_care = null;
+
+        SubtypingOrImplicitConv (t1, t2, out we_dont_care) 
+          || (t1.IsFixed && t2.IsFixed 
+              && match (t1.FixedValue) 
+                 {
+                   // treat all parametric types (including arrays) as covariant
+                   | FixedType.Class (tc1, _ :: _ as a1) =>
+                     match (t2.FixedValue) 
+                     {
+                       | FixedType.Class (tc2, a2) when tc1.Equals (tc2) =>
+                         NList.ForAll2 (a1, a2, IsBetterType)
+                       | _ => false
+                     }
+
+                   | FixedType.Array (a1, r1) =>
+                     match (t2.FixedValue) 
+                     {
+                       | FixedType.Array (a2, r2) when r1 == r2 =>
+                         IsBetterType (a1, a2)
+                       | _ => false
+                     }
+
+                   | _ => false
+                 })
+      }
+
+
+      def both_fixed = t1.IsFixed && t2.IsFixed;
+      mutable tc1 = null;
+      mutable tc2 = null;
+
+      when (both_fixed)
+        match (t1.FixedValue) 
+        {
+          | FixedType.Class (tc, []) => 
+            tc1 = tc;
+            match (t2.FixedValue) 
+            {
+              | FixedType.Class (tc, []) =>
+                tc2 = tc;
+              | _ => {}
+            }
+          | _ => {}
+        }
+
+      def res =
+        if (tc2 == null) 
+        {
+          // cannot use cache
+          real_check (t1, t2)
+        }
+        else
+        {
+          def ids = (tc1, tc2);
+          def better_type_cache = Manager.Typer_BetterTypeCache;
+          mutable result;
+
+          unless (better_type_cache.TryGetValue(ids, out result))
+          {
+            result = 
+              if (tc1.IsNumeric && tc2.IsNumeric)
+              {
+                if (tc1.IsFloating != tc2.IsFloating)
+                  tc2.IsFloating
+                else
+                  tc1.Size < tc2.Size 
+                  || tc1.Size == tc2.Size && tc1.Unsigned != tc2.Unsigned && tc2.Unsigned
+              }
+              else
+                real_check(t1, t2);
+
+            better_type_cache.Add(ids, result);
+          }
+            
+          result
+        }
+      //Message.Debug ($"better($t1,$t2)=$res");
+      res
+    }
+    
+    
+    IsBetterOverload (o1 : OverloadPossibility, o2 : OverloadPossibility) : bool
+    {
+      def f1 = o1.FormalTypes;
+      def f2 = o2.FormalTypes;
+      // Message.Debug($"$o1==$(NList.FromArray(f1)) != $o2==$(NList.FromArray(f2))");
+
+      System.Diagnostics.Debug.Assert(f1 != null && f2 != null);
+      System.Diagnostics.Debug.Assert(f1.Length == f2.Length);
+      Util.cassert (f1 != null && f2 != null);
+      Util.cassert (f1.Length == f2.Length, 
+                    $"$o1==$(NList.FromArray(f1)) != $o2==$(NList.FromArray(f2))");
+                    
+      def getBetterList(f1, f2)
+      {
+        Manager.Solver.PushState ();
+        try 
+        {
+          def tyCmps = f1.Map2ToArray(f2, (t1, t2) => IsBetterType(t1, t2));
+          tyCmps
+        }
+        finally { Manager.Solver.PopState() }
+      }
+      
+      def tyCmpsForward  = getBetterList(f1, f2);
+      def tyCmpsBackward = getBetterList(f2, f1);
+      def tyCmpPairs = tyCmpsForward.ZipToArray(tyCmpsBackward);
+      
+      // exclude identical pairs (for example (true, true) or (false, false))
+      // The (true, true) pair cause in case (object * object)
+      // The (false, false) pair cause if type not comparable
+      def differPairs = tyCmpPairs.FilterToArray(_ != _);
+      
+      def isBetterOverload = differPairs.Exists((p1, _) => p1) && !differPairs.Exists((_, p2) => p2);
+      
+      // Message.Debug($"X $o1==$(NList.FromArray(f1)) != $o2==$(NList.FromArray(f2))");
+      //Message.Debug ($"cmp:$o1,$o2 $(f1.Length) ==> $res");
+      isBetterOverload
+    }
+    
+    /// Compare two overloads fore better match type of arguments.
+    /// It prefer overload whith exect match type of arguments.
+    /// For example, if we have ? -> ? and (? * ?) -> ? overloads and argument list
+    /// [?] this function prefer first overload (? -> ?) because overload (? * ?) -> ? 
+    /// demand of convertion from ? to ? * ?.
+    static IsBetterOverload (o1 : OverloadPossibility, o2 : OverloadPossibility, argsTypes : list[TypeVar]) : bool
+    {
+      def matchType(tyParam, tyArg)
+      {
+        def tyParam = tyParam.AnyHint;
+        def tyArg   = tyArg.AnyHint;
+        match (tyParam, tyArg)
+        {
+          | (Some(FixedType.Tuple(paramTypes)), Some(FixedType.Tuple(argTypes))) =>
+            paramTypes.ForAll2(argTypes, matchType)
+            
+          | (Some(FixedType.Fun(from = pFrom, argsCount = c1)), Some(FixedType.Fun(from = argFrom, argsCount = c2))) => 
+            c1 == c2 && matchType(pFrom, argFrom)
+
+          | (Some(FixedType.Fun), _) => false
+          
+          | (Some(FixedType.Class), Some(FixedType.Fun(from = argFrom, argsCount = ac))) =>
+            def (_, _, args, _ret) = Typer.TryExtractFunType(tyParam);
+            if (args != null)
+              ac == args.Length && matchType(TypeVar.FromList(args), argFrom)
+            else false
+            
+          | (Some(t1), Some(t2)) when t1.IsEnum || t2.IsEnum => t1.IsEnum == t2.IsEnum
+          //| FixedType.StaticTypeVarRef(staticTyVar) =>
+          //| FixedType.Array(tyVar, rank) => 
+          //| FixedType.Ref(tyVar) => 
+          //| FixedType.Out(tyVar) => 
+          //| FixedType.Void =>
+          //| Intersection =>
+          | _ => true
+        }
+      }
+      def makeArgsTypes(o)
+      {
+        if (o.ExtensionMethodObject == null) argsTypes 
+        else o.ExtensionMethodObject.Type :: argsTypes
+      }
+      def formalTypes1 = o1.FormalTypes;
+      def formalTypes2 = o2.FormalTypes;
+      def matchs1 = formalTypes1.Map2ToArray(makeArgsTypes(o1), matchType);
+      def matchs2 = formalTypes2.Map2ToArray(makeArgsTypes(o2), matchType);
+      assert2(matchs1.Length == matchs2.Length);
+      def differPairs = matchs1.ZipToArray(matchs2).Filter(_ != _);
+
+      if (differPairs.IsEmpty)
+      {
+        // If not the best argument, the reason for it may be implicit type conversion. Let's try to
+        // drop overload with has arguments that are better in terms of a subtype / supertype.
+
+        def extArg1 = o1.ExtensionMethodObject;
+        assert2(extArg1 == null && o2.ExtensionMethodObject == null
+             || extArg1 != null && o2.ExtensionMethodObject != null);
+
+        def argTypes = (if (extArg1 == null) argsTypes else extArg1.Type :: argsTypes).NToArray();
+        mutable overload1Wins = false;
+        mutable overload2Wins = false;
+
+        foreach (t1 in formalTypes1 with i)
+        {
+          assert2(i < argTypes.Length);
+          def t2      = formalTypes2[i];
+          def argType = argTypes[i];
+
+          if        (t1.TryRequire(t2) && argType.TryRequire(t1) && !t2.TryRequire(t1))
+            overload1Wins |= true;
+          else if   (t2.TryRequire(t1) && argType.TryRequire(t2) && !t1.TryRequire(t2))
+            overload2Wins |= true;
+          else if   (t1.IsFixed && argType.TryUnify(t1) && !argType.TryUnify(t2))
+            overload1Wins |= true;
+          else when (t2.IsFixed && argType.TryUnify(t2) && !argType.TryUnify(t2))
+            overload2Wins |= true;
+        }
+
+        overload1Wins && !overload2Wins
+      }
+      else
+      {
+        def isBetterOverload = differPairs.Exists((p1, _) => p1) && !differPairs.Exists((_, p2) => p2);
+        isBetterOverload
+      }
+    }
+
+    static AintExtension (o : OverloadPossibility) : bool
+    {
+      o.ExtensionMethodObject == null
+    }
+
+
+    static AintVarArgs (o : OverloadPossibility) : bool
+    {
+      !o.VarArgs
+    }
+
+
+    static DidntMamboJumbo (o : OverloadPossibility) : bool
+    {
+      ! o.DidMamboJumbo
+    }
+    
+
+    static AintGeneric (o : OverloadPossibility) : bool
+    {
+      ! o.IsGeneric
+    }
+
+    static RemoveExtensionMethods (parms : list [OverloadPossibility]) : list [OverloadPossibility]
+    {
+      if (NList.Exists (parms, AintExtension))
+        NList.RevFilter (parms, AintExtension)
+      else parms
+    }
+
+    static RemoveOverloadsWithTupleConvertion(parms : list [OverloadPossibility]) : list [OverloadPossibility]
+    {
+      def f = x => !x.IsNeedTupleConvertion;
+
+      if (NList.Exists(parms, f))
+        NList.RevFilter(parms, f)
+      else
+        parms
+    }
+
+    public static FilterIfExists[T](this source : list[T], predicate : T -> bool) : list[T]
+    {
+      if (source.Exists (predicate)) source.RevFilter (predicate) else source
+    }
+
+
+    GetBestOverloads(parms : list [OverloadPossibility]) : list [OverloadPossibility]
+    {
+      match (parms)
+      {
+        | [] | [_] => parms
+        | _ =>
+          def res0 = RemoveOverloadsWithTupleConvertion(parms);
+          def res1 = RemoveExtensionMethods(res0);
+          def res2 = GetMinimal(res1, IsBetterOverload);
+          def res3 = res2.FilterIfExists(AintVarArgs);
+          def res4 = res3.FilterIfExists(DidntMamboJumbo);
+          def res5 = res4.FilterIfExists(AintGeneric);
+            
+          // Message.Debug ($"gbo: $parms ---> $res5");
+
+          res5
+      }
+    }
+
+    GetBestOverloads(parms : list [OverloadPossibility], argsTypes : list[TypeVar]) : list [OverloadPossibility]
+    {
+      match (parms) 
+      {
+        | [] | [_] => parms
+        | _ =>
+          def res1 = GetBestOverloads (parms);
+          def res2 = if (res1.Length <= 1) res1
+                     else GetMinimal (res1, IsBetterOverload(_, _, argsTypes));
+          res2
+      }
+    }
+
+    #region Version using IMethod
+
+    static MinimalTypes[T] (tyvars : list [TypeVar * T]) : list [TypeVar * T]
+    {
+      def less (a, b) {
+        def (a, _) = a;
+        def (b, _) = b;
+        a.TryRequire (b) && !b.TryRequire (a)
+      }
+      GetMinimal (tyvars, less)
+    }
+
+    MinimalTypesWithImplicit[T] (tyvars : list [TypeVar * T]) : list [TypeVar * T]
+    {
+      def le (a, b) {
+        if (a.IsFixed && b.IsFixed)
+          match ((a.FixedValue, b.FixedValue)) {
+            | (FixedType.Tuple (l1), FixedType.Tuple (l2)) =>
+              l1.Length == l2.Length &&
+              NList.FoldLeft2 (l1, l2, true, fun (x, y, acc) {
+                acc &&
+                IsBetterType (x, y)
+              })
+
+            | (x, y) => IsBetterType (x, y)
+          }
+        else false
+      }
+
+      def less (a, b) {
+        def (a, _) = a;
+        def (b, _) = b;
+        le (a, b) && ! le (b, a)
+      }
+
+      GetMinimal (tyvars, less)
+    }
+
+    
+    /// it won't work with named parameters
+    GetBestOverloadsWithoutImplicitConversions(parms : list [IMethod]) : list [IMethod]
+    {
+      match (parms)
+      {
+        | [] | [_] => parms
+        | _ =>
+          def pairs =
+            parms.RevMap(
+              fun (meth : IMethod)
+              {
+                match (meth.GetFreshType()[0])
+                {
+                  | FixedType.Fun(from, _) => (from, meth)
+                  | _                      => assert(false)
+                }
+              });
+
+          def res1 = 
+            match (MinimalTypes(pairs))
+            {
+              | []       => []
+              | [(_, x)] => [x]
+              | lst      => MinimalTypesWithImplicit(lst).RevMap(Pair.Second)
+            };
+
+          // remove generic methods if a non generic exists in list
+          def res2 = res1.FilterIfExists(m => NList.IsEmpty(m.Header.TypeParameters));
+          res2
+      }
+    }
+
+    GetBestOverloadsWithoutImplicitConversions(parms : list[FixedType * IMethod]) : list[FixedType * IMethod]
+    {
+      match (parms)
+      {
+        | [] | [_] => parms
+        | _ =>
+          def pairs =
+            parms.RevMap((from, meth) =>
+              match (from.TypeOfMethodWithTyparms(meth)[0].Fix())
+              {
+                | FixedType.Fun(src, _) => (src, (from, meth))
+                | _                     => assert(false)
+              });
+
+          def res1 =
+            match (MinimalTypes(pairs))
+            {
+              | []       => []
+              | [(_, x)] => [x]
+              | lst      => MinimalTypesWithImplicit(lst).RevMap(Pair.Second)
+            };
+
+        // remove generic methods if a non generic exists in list
+        def res2 = res1.FilterIfExists((_, m) => NList.IsEmpty(m.Header.TypeParameters));
+        res2
+      }
+    }
+
+    #endregion
+  }
+}

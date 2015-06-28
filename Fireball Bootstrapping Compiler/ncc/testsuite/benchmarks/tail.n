@@ -1,0 +1,31 @@
+module Test {
+  mutable i : int = 3;
+  mutable count : int = 0;
+
+  foo () : void {
+    ++count;
+    unchecked {
+       i = i * (i + i * 34) / 5 + 1;
+    }
+    goo ();
+  }
+
+  goo () : void {
+    unchecked {
+      mutable x = 7;
+      x *= 3;
+      i = i * (i + i * 34) / 7 + 1 + x;
+    }
+    unless (count > 10000)
+      foo ();
+  }
+
+  public Main() : void
+  {
+    for (mutable k = 0; k < 1000; ++k) {
+      count = 0;
+      foo ();
+    }
+    Nemerle.IO.printf ("%d %d\n", count, i);
+  }
+}

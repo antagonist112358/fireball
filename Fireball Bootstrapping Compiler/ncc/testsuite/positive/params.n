@@ -1,0 +1,66 @@
+// REFERENCE: params-lib.dll
+
+module P {
+  sum (params x : array [int]) : int {
+    mutable s = 0;
+    for (mutable i = 0; i < x.Length; ++i)
+      s += x[i];
+    s
+  }
+
+  sum (_y : string, params x : array [int]) : int {
+    mutable s = 0;
+    for (mutable i = 0; i < x.Length; ++i)
+      s += x[i];
+    s
+  }
+
+  sum (params x : array [object]) : string {
+    mutable s = "";
+    for (mutable i = 0; i < x.Length; ++i)
+      s += x[i].ToString ();
+    s
+  }
+
+  local_mut (mutable x : int, y : int, mutable z : int) : void
+  {
+    x = y;
+    z = x;
+    System.Console.WriteLine ("{0} {1} {2}", x, y, z);
+    def f (mutable i : int) {
+      System.Console.WriteLine ("{0}", i);
+      i = 9;
+      System.Console.WriteLine ("{0}", i);      
+    }
+    f (8);
+  }
+  
+  Main () : void
+  {
+    System.Console.WriteLine ("{0} {1} {2} {3}", "fo", 123.0, 1000.0, 123);
+    System.Console.WriteLine ("{0} {1} {2} {3} {4} {5} {6} {7} {8} {9}",
+                                0, 
+                                sum (42), 
+                                sum (42, 42, 42, 42, 42, 42, 42, 42),
+                                8 * 42,
+                                4, 5, 6, null, "osiem", sum ("4", "2", "foo"));
+    System.Console.WriteLine (sum ("s"));
+    local_mut (1,2,3);
+    
+
+    def x = External() : IExternal;
+    x.Invok ("a", 1);
+  }
+}
+
+/*
+BEGIN-OUTPUT
+fo 123 1000 123
+0 42 336 336 4 5 6  osiem 42foo
+0
+2 2 2
+8
+9
+2
+END-OUTPUT
+*/

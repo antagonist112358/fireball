@@ -1,0 +1,56 @@
+enum E {
+  | A
+  | B
+}
+ 
+[Record]
+class Boo {
+   public x : E;
+   public y : list [int];  
+}
+ 
+module Mai {
+  Main () : void {
+    match (Boo (E.A, [])) {
+      | Boo where (y = E.B) => ()  // E: Nemerle.Core.list.* is not a subtype of E
+    }
+    def _x = 4;
+    match (5) {
+      | _x + 1 => ();  // E: couldn't fold arithmetic expression
+    }
+  }
+}
+
+module Bug823 {
+    
+   goo () : void {
+   def f(): string {
+            ""
+   }
+           
+   when(f())  // E: expected bool, got string
+     ()      
+  }
+   
+    
+}
+
+module Program
+{
+  Foo(x : object) : string {
+   | x is _ => "_" // E: type given in.*pattern must be fully specified
+   | _ => "Other"
+ }
+}
+
+
+ 
+ 
+module NoMatchOn {
+  Run () : void { // E: there is nothing to
+    | _ => ()
+  }
+  
+}
+
+

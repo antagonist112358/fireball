@@ -1,0 +1,11 @@
+namespace Bug1048 {
+using System;
+
+class RefTypeA {}
+class RefTypeB {}
+
+struct StructType {}
+
+class Test4[T1] where T1 : class, StructType {} // E: `StructType' is not a valid constraint\. A type used as a constraint must be an interface, a non-sealed class or a type parameter
+
+}

@@ -1,0 +1,251 @@
+using Nemerle.Assertions;
+using Nemerle.IO;
+
+class A
+invariant i < 10 invariant i >= 0
+{
+  mutable i : int;
+
+  public this () { }
+  
+  public foo () : void {
+    ++i;
+  }
+}
+
+module M {
+  mutable i : int;
+  
+  foo () : void
+  requires i >= 0 && i < 5
+  {
+    def x = array [1,2,3,4];
+    printf ("%d\n", x [i])
+  }
+
+  getfoo (i : int) : int
+  requires i >= 0 && i < 5 otherwise throw System.ArgumentOutOfRangeException (i.ToString ())
+  {
+    def x = array [1,2,3,4];
+    printf ("%d\n", x [i]);
+    x [i]
+  }
+  
+  
+  boo (x : int) : void
+  ensures i >= 0 && i < 5
+  {
+    i = x;
+    printf ("%d\n", x)    
+  }
+
+  boa (x : int) : int
+  ensures value > 0
+  {
+    printf ("%d\n", x);
+    x
+  }
+
+  juu ([NotNull] _o : object) : void { }
+
+  juu1 (requires (value != null) o : object) : void { }
+
+  CheckedProp : int {
+    get
+    ensures value > 0
+    {
+      1
+    }
+
+    set
+    requires value < 10 otherwise throw System.Exception ("a")    
+    {
+      _ = value;
+    }
+  }
+
+  generic_bar [T] ([NotNull] _bar : T?) : void
+    where T: struct
+  {
+  }
+
+  generic_foo [T] ([NotNull] _bar : T) : void
+    where T: class
+  {
+  }
+  
+  myassert () : void {
+    printf ("Testing the assertions...\n");
+    
+    mutable i = 10;
+    
+    try {
+      assert(i == 10)    
+    } catch { _ is AssertionException => 
+      printf ("Assertion number 1 failed\n") };
+
+    i = 20;
+
+    try {
+      assert(i == 20)
+    } catch { _ is AssertionException => 
+      printf ("Assertion number 2 failed\n") };
+
+    try {
+      assert(i == 19) 
+    } catch { 
+      | _ is AssertionException => 
+        printf ("Assertion number 3 failed\n") 
+      | _ =>
+        printf ("Got System.Exception (wrong!)\n") 
+    };
+    
+    try
+    {
+      assert(i == 19) 
+    }
+    catch
+    { | _ is System.Exception =>
+        printf ("Got System.Exception (ok!)\n") 
+      | _ is AssertionException => 
+        printf ("Assertion number 3 failed (wrong!)\n") 
+    }
+
+    generic_foo ("ss");
+
+    generic_bar (1);
+  }
+  
+  public Main () : void
+  {
+		System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+		System.Threading.Thread.CurrentThread.CurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
+    i = 2;
+    foo ();
+    i = -1;
+
+    try
+    {
+      foo ()
+    }
+    catch
+    { | e is AssertionException =>
+      printf ("%s\n", e.Message.Substring (e.Message.LastIndexOf (',')));
+    }
+    
+    boo (3);
+    
+    try
+    {
+      boo (-1)
+    }
+    catch
+    { | e is AssertionException =>
+      printf ("%s\n", e.Message.Substring (e.Message.LastIndexOf (',')));
+    }
+    
+    ignore (boa (3));
+    
+    try
+    {
+      ignore (boa (-1))
+    }
+    catch 
+    { | e is AssertionException =>
+      printf ("%s\n", e.Message.Substring (e.Message.LastIndexOf (',')));
+    }
+    
+    try
+    {
+      def b = A ();
+      for (mutable i = 0; i < 10; ++i) b.foo ();
+      b.foo ();
+    }
+    catch
+    { | e is AssertionException => 
+      printf ("%s\n", e.Message.Substring (e.Message.LastIndexOf (',')));
+    }
+    
+    try
+    {
+      juu (null);
+    }
+    catch
+    { | e is System.ArgumentNullException =>
+      def see = ". See ";
+      def seeIndex = e.Message.IndexOf(see);
+      
+      def pos = "positive/";
+      def posIndex  = e.Message.IndexOf(pos);
+      
+      print (e.Message.Substring(0, seeIndex + see.Length) +
+             e.Message.Substring(posIndex) + "\n");
+    }
+    
+    myassert ();
+    
+    try
+    {
+      _ = getfoo (19);
+    }
+    catch
+    { | _e is System.ArgumentOutOfRangeException =>
+      printf ("got argument out of range exception\n");
+    }
+    
+    try { abort () } catch { _ => () }
+    
+    ExposePropagateException.Run();
+  }
+}
+
+class ExposePropagateException
+invariant x > 10 
+{
+  class MyExposeException : System.Exception { }
+
+  mutable x : int = 20;
+  
+  private NoAutoExpose () : void {
+    try {
+      expose (this) {
+        x = 15;
+        when (x == 15) throw MyExposeException ();
+      }
+      printf ("should not happen\n");
+    }
+    catch {
+      | _ is MyExposeException => 
+        printf ("should happen\n");
+    }  
+  }
+  
+  public static Run () : void {
+    ExposePropagateException ().NoAutoExpose ();
+  }
+}
+
+
+
+/*
+BEGIN-OUTPUT
+3
+, line 20: The ``Requires'' contract of method `foo' has been violated.
+3
+-1
+, line 36: The ``Ensures'' contract of method `boo' has been violated.
+3
+-1
+, line 43: The ``Ensures'' contract of method `boa' has been violated.
+, line 5: The class invariant has been violated.
+The ``NotNull'' contract of parameter ``_o'' has been violated. See positive/assert.n:49:18:49:20: .
+Parameter name: _o
+Testing the assertions...
+Assertion number 3 failed
+Got System.Exception (ok!)
+got argument out of range exception
+should happen
+END-OUTPUT
+*/
+
+

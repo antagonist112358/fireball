@@ -1,0 +1,80 @@
+namespace NoDelegateProxy
+{
+  using Nemerle.IO;
+  using Nemerle.Collections;
+  
+  delegate Foo (x : string) : void;
+
+  class Test {
+    event boom1 : Foo;
+    static event boom : Foo;
+    
+    static doo (x : string) : void
+    {
+      print (x);
+    }
+
+    daa (x : string) : void
+    {
+      print (x);
+    }
+
+    Do () : void {
+      this.boom1 += this.daa;
+      this.boom1 ("event instance\n");
+
+      NeedFoo (fun (x) { System.Console.WriteLine (x) });
+    }
+
+    NeedFoo (del : Foo) : void {
+      del ("NeedFoo");
+    }
+    
+    public static Run () : void
+    {
+      def f = Foo (doo);
+      f ("bla\n");
+      def g = doo : Foo;
+      g ("blu\n");
+      boom += doo;
+      boom ("event\n");
+      Test ().Do ();
+      Test ().NeedFoo (fun (x) { System.Console.WriteLine (x) });
+
+      CheckReflection ();
+    }
+
+    static CheckReflection () : void
+    {
+      mutable count = 0;
+      foreach (x in NList.FromArray (typeof (Test).Assembly.GetTypes ()))
+        when (x.FullName.StartsWith ("NoDelegateProxy"))
+          ++count;
+      assert(count == 2);
+    }
+  }
+}
+
+
+module M {
+  Main () : void {
+    NoDelegateProxy.Test.Run ();
+
+    mutable ev : System.EventHandler = null;
+    ev += fun (x) { def (snd, _args) = x; System.Console.WriteLine (snd) }
+    ev (3, null);
+
+  }
+}
+
+/*
+BEGIN-OUTPUT
+bla
+blu
+event
+event instance
+NeedFoo
+NeedFoo
+3
+END-OUTPUT
+*/

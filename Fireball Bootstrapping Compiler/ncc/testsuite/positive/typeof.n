@@ -1,0 +1,102 @@
+using System.Diagnostics;
+
+// Try get open generic type!
+[DebuggerTypeProxy(typeof(TestProxy[_]))] 
+public class Test[T]
+{
+  public this(val : T) { _val = val; }
+  public _val : T;
+}
+
+public class TestProxy[T]
+{
+  public this(test : Test[T]) { _test = test; }
+
+  mutable _test : Test[T];
+
+  public Val : T { get { _test._val; } }
+}
+
+
+[Record]
+[DebuggerTypeProxy(typeof(System.Collections.Generic.List[int]))] 
+class X : System.IEquatable[X]
+{
+  val : int;
+  
+  [Nemerle.OverrideObjectEquals]
+  public Equals (x : X) : bool
+    implements System.IEquatable[X].Equals
+  {
+    val == x.val
+  }
+}
+
+[Record]
+class Y {
+  val : int;
+
+  Plus3 : Y
+  {
+    get { Y (val + 3) }
+  }
+
+  [Nemerle.ForwardThis (Plus3)]
+  public SomeMeth (a : int, b : string) : string
+  {
+    $ "$val $a $b"
+  }
+}
+
+namespace Bug676 {
+interface A { }
+class B[T] where T : A, new() { public override ToString () : string { typeof(T).ToString () } }
+struct C : A {}
+
+type D = B.[C];
+}
+
+
+public class TypeOfTest
+{
+    public static Main () : void
+    {
+        def x = typeof (System.String);
+        def y = typeof (int);
+
+        System.Console.WriteLine (x.FullName + ", " + y.FullName);
+
+        def x1 = X(5);
+        def x2 = X(5);
+        def x3 = X(7);
+        assert(x1.Equals (x1));
+        assert(x1.Equals (x2));
+        assert(!x1.Equals (x3));
+        assert((x1 : object).Equals (x1));
+        assert((x1 : object).Equals (x2));
+        assert(!(x1 : object).Equals (x3));
+        
+        Nemerle.IO.print (Y (39).SomeMeth (42, "42") + "\n");
+        
+        System.Console.WriteLine (typeof (System.Collections.Generic.List[_]));
+        System.Console.WriteLine (typeof (System.Collections.Generic.Dictionary[_,_]));
+        System.Console.WriteLine (typeof (System.Collections.Generic.List[int]));        
+        System.Console.WriteLine(typeof(_ * _).IsGenericTypeDefinition); 
+        System.Console.WriteLine(typeof(_ * _).Equals(typeof(object * object)));
+
+        System.Console.WriteLine (Bug676.D());
+    }
+}
+
+/*
+BEGIN-OUTPUT
+System.String, System.Int32
+42 42 42
+System.Collections.Generic.List`1[T]
+System.Collections.Generic.Dictionary`2[TKey,TValue]
+System.Collections.Generic.List`1[System.Int32]
+True
+False
+Bug676.C
+END-OUTPUT
+*/

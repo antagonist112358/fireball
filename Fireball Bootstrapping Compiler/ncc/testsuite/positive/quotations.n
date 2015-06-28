@@ -1,0 +1,18 @@
+using System;
+
+macro X() {
+    _ = <[ decl:
+      public event X:System.EventHandler {
+          add {}
+          remove {}
+      }
+      ]>;
+    _ = <[ decl:
+      public event X:System.EventHandler;
+      ]>;
+
+    <[ ]>
+}
+
+
+// REFERENCE: Nemerle.Compiler

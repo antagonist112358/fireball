@@ -1,0 +1,12 @@
+using System;
+
+public module Program
+{
+  Main() : void { }
+  
+  public IsNull[T](this _x : T) : bool //E: `Nullable\[T\]' is not a valid constraint. A type used as a constraint must be an interface, a non-sealed class or a type parameter
+    where T: Nullable[T]
+  {
+    false
+  }
+}

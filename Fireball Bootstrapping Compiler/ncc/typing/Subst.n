@@ -1,0 +1,220 @@
+/*
+ * Copyright (c) 2004-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle;
+using Nemerle.Collections;
+
+using System.Reflection;
+
+namespace Nemerle.Compiler 
+{
+  /** Represent a substitution, from static type variables to types 
+      (represented by plain type variables).  */
+  public class Subst
+  {
+    mutable map : Map [int, TypeVar];
+    mutable empty : bool;
+
+    public this ()
+    {
+      empty = true;
+      map = Map ();
+    }
+
+
+    public override ToString () : string
+    {
+      def sb = System.Text.StringBuilder ("\n");
+      map.Iter (fun (k, v) {
+        _ = sb.Append ($".$k -> $v\n");
+      });
+      _ = sb.Append ("\n");
+      sb.ToString ()
+    }
+    
+
+    public IsEmpty : bool
+    {
+      get { empty }
+    }
+
+    
+    public Add (tv : StaticTypeVar, ty : TypeVar) : void
+    {
+      empty = false;
+      map = map.Add (tv.id, ty);
+    }
+    
+
+    public AddList (tv : list [StaticTypeVar], ty : list [TypeVar]) : void
+    {
+      NList.Iter2 (tv, ty, Add)
+    }
+    
+
+    public Copy () : Subst
+    {
+      def res = Subst ();
+      res.map = map;
+      res.empty = empty;
+      res
+    }
+
+    public MonoApply(t : FixedType) : FixedType
+    {
+      if (empty)
+        t
+      else match (t)
+      {
+        | FixedType.Class(_, []) => t
+        | FixedType.Class(tc, args) => FixedType.Class(tc, args.Map(ApplyTv))
+        | FixedType.Fun(from = f, argsCount = argsCount, to = t) => FixedType.Fun(ApplyTv(f), argsCount, ApplyTv(t))
+        | FixedType.Tuple(lst) => FixedType.Tuple(NList.Map (lst, ApplyTv))
+        | FixedType.Void => t
+        | FixedType.Ref(t) => FixedType.Ref(ApplyTv(t))
+        | FixedType.Out(t) => FixedType.Out(ApplyTv(t))
+        | FixedType.Array(t, rank) => FixedType.Array(ApplyTv(t), rank)
+        | FixedType.Intersection(lst) => FixedType.Intersection(lst.Map(MonoApply))
+//        | FixedType.StaticTypeVarRef (tv) => assert(!Option.IsSome (map.Find (tv.id))); t
+        | FixedType.StaticTypeVarRef (tv) => 
+          def tv2 = tv.ApplySubst(this);
+
+          if (tv2 : object == tv)
+            t
+          else
+            FixedType.StaticTypeVarRef(tv2)
+      }
+    }
+
+
+    ApplyTv(tv : TypeVar) : TypeVar
+    {
+      if (tv.NeedNoSubst) tv
+      else
+        Apply(tv.Fix())
+    }
+
+    
+    public Apply(t : FixedType) : TypeVar
+    { 
+      // def from = $ "$t";
+      // def res =
+        if (empty) t else
+        match (t) {
+          | FixedType.StaticTypeVarRef (tv) when map.Contains (tv.id) =>
+            Option.UnSome (map.Find (tv.id))
+          | _ =>
+            MonoApply (t)
+         }
+      // Message.Debug ($ "apply($from) --> $res");
+      // res
+    }
+
+
+    /** [other] has to be independent, that is [this] and [other] shall not
+        share variables, or use variables from the other one in result */
+    public AddSubst(other : Subst) : void
+    {
+      when (!other.empty)
+      {
+        empty = false;
+        map = other.map.Fold(map, fun (f, t, map : Map[int, _]) { map.Add(f, t) })
+      }
+    }
+
+    /** Used for combining T3 substitutions together.  */
+    internal Combine(other : Subst) : void
+    {
+      when (!other.empty)
+      {
+        
+        empty = false;
+        map =
+          // we have f->t in this
+          map.Fold (map, fun (f, t, map) {
+            def replace_targets (from, to) {
+              other.map.Fold (map, fun (x, ty, map) {
+                match (ty.Fix ()) {
+                  | FixedType.StaticTypeVarRef (from') when from'.Id == from.Id =>
+                    map.Replace (x, to)  
+                  | _ => map
+                }
+              })
+            }
+
+            match (other.map.Find (f)) {
+              // there is f->of in other
+              | Some (tv) =>
+                match (tv.Fix ()) {
+                  | FixedType.StaticTypeVarRef (of) =>
+                    replace_targets (of, t).Replace (of.Id, t)
+                  | x => Util.ice ($"$x")
+                }
+              | None => map
+            }
+          })
+      }
+    }
+
+    public static Fresh(vars : list[StaticTypeVar]) : Subst * list[TypeVar]
+    {
+      def res = Subst ();
+
+      if (vars.IsEmpty)
+        (res, [])
+      else
+      {
+        def Manager = vars.Head.Manager;
+        // Message.Debug ($ "start copying, $(Manager.Solver.CurrentMessenger.LocalError)");
+        def was_error = Manager.Solver.CurrentMessenger.LocalError;
+        def vars2 = vars.Map(fun (v) 
+            { 
+              def tv = Manager.Solver.FreshTypeVar ();
+              tv.ResetSerial();
+              res.Add (v, tv);
+              // Message.Debug ($ "copy $v, $(v.Constraints) $(v.LowerBound)");
+              tv
+            });
+
+        NList.Iter2(vars, vars2, 
+          fun (v : StaticTypeVar, tv : TypeVar) 
+          {
+            when (v.SpecialConstraints %&& GenericParameterAttributes.ReferenceTypeConstraint)
+              tv.HasReferenceTypeConstraint = true;
+
+            def lb = v.LowerBound;
+            when (!lb.Equals (tv.Manager.InternalType.Object) && !lb.Equals (tv.Manager.InternalType.ValueType)) {
+              def ok = tv.Require (res.Apply (lb));
+              Util.cassert (was_error || ok, $ "req fail, $tv $(res.Apply (v.LowerBound))");
+            }
+          });
+        (res, vars2)
+      }
+    }
+  }
+}

@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <NemerleVersion>Net-4.0</NemerleVersion>
+    <NemerleBinPathRoot Condition=" '$(NemerleBinPathRoot)' == '' ">$(ProgramFiles)\Nemerle</NemerleBinPathRoot>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <NemerleBinPathRoot Condition=" '$(NemerleBinPathRoot)' == '' ">$(ProgramFiles)\Nemerle</NemerleBinPathRoot>
+    <Nemerle Condition=" '$(Nemerle)' == '' ">$(NemerleBinPathRoot)\$(NemerleVersion)</Nemerle>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{0c558e38-7df9-4a68-9015-b316dd59c0cb}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <AssemblyName Condition="'$(AssemblyName)' == ''">fbcc</AssemblyName>
+    <TargetPlatform>v2</TargetPlatform>
+    <DefineConstants>RUNTIME_MS</DefineConstants>
+    <DefineConstants>_stage3</DefineConstants>
+    <DefineConstants Condition="'$(TargetFrameworkVersion)' == 'v4.0' Or '$(TargetFrameworkVersion)' == 'v4.5'">NET_4_0</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+    <NoStdLib>true</NoStdLib>
+    <!--NoStdMacros>true</NoStdMacros-->
+    <GreedyReferences>true</GreedyReferences>
+    <KeyOriginatorFile Condition="'$(NKeysDir)' == ''">resources\keys\Fireball.Compiler.snk</KeyOriginatorFile>
+    <KeyOriginatorFile Condition="'$(NKeysDir)' != ''">$(NKeysDir)\Fireball.Compiler.snk</KeyOriginatorFile>
+    <DocumentationFile />
+    <RootNamespace />
+    <StartupObject />
+    <ApplicationIcon />
+    <Name>fbcc</Name>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>NET_4_0</DefineConstants>
+    <RunDebugger>false</RunDebugger>
+    <!-- <DocumentationFile>$(OutputPath)\ncc.xml</DocumentationFile> -->
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DocumentationFile>$(OutputPath)\ncc.xml</DocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>D:\Workspaces\nemerle - Next\bin\Release\net-4.0\Stage1</OutputPath>
+    <DefineConstants>NET_4_0</DefineConstants>
+    <RunDebugger>false</RunDebugger>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platform>x64</Platform>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DocumentationFile>$(OutputPath)\ncc.xml</DocumentationFile>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platform>x64</Platform>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>D:\Workspaces\nemerle - Next\bin\Release\net-4.0\Stage1</OutputPath>
+    <DefineConstants>NET_4_0</DefineConstants>
+    <RunDebugger>false</RunDebugger>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platform>x86</Platform>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DocumentationFile>$(OutputPath)\ncc.xml</DocumentationFile>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platform>x86</Platform>
+  </PropertyGroup>
+  <Import Project="$(Nemerle)\Nemerle.MSBuild.targets" />
+  <ItemGroup>
+    <Folder Include="ncc" />
+    <Compile Include="ncc\main.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ncc\misc\AssemblyInfo.n">
+      <Link>ncc\AssemblyInfo.n</Link>
+    </Compile>
+    <Folder Include="Properties" />
+    <Folder Include="Properties" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="mscorlib" />
+    <Reference Include="Nemerle, Version=1.2.0.446, Culture=neutral, PublicKeyToken=e080a9c724e2bfcd">
+      <Name>Nemerle</Name>
+      <AssemblyName>Nemerle.dll</AssemblyName>
+      <HintPath>C:\Program Files (x86)\Nemerle\net-4.0\Nemerle.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Fireball Bootstrapping Compiler\Fireball.Compiler.nproj">
+      <Name>Fireball.Compiler</Name>
+      <Project>{0c558e36-7df9-4a68-9015-b316dd59c0cb}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

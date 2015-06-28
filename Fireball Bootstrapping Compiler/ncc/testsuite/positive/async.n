@@ -1,0 +1,92 @@
+using Nemerle.IO;
+using Nemerle.Concurrency;
+using System.Console;
+
+module Test
+{
+    class A
+    {
+        mutable i : int = 0;
+        
+        [Async]
+        public M () : void
+        {
+            while (i == 0)
+              System.Threading.Thread.Sleep (100);
+            printf ("OK\n")
+        }
+
+        public N () : void
+        {
+            i = 1;
+        }
+    }
+
+    public V():int async
+    {
+      def a =5;
+      
+      System.Threading.Thread.Sleep (100);
+      WriteLine(a);
+      a
+    }
+    
+    private volatile mutable x : int;
+    
+    Main () : void
+    {
+        def a = A ();
+        a.M ();
+
+        x = 0;
+
+        async 
+        {
+            while (x == 0)
+              System.Threading.Thread.Sleep (100);
+            assert(x == 1);
+            x = 2
+        }
+
+        async // W: ignored
+        {
+            3 
+        }
+
+        x = 1;
+        while (x == 1)
+          System.Threading.Thread.Sleep (100);
+        assert(x == 2);
+
+        printf ("%d\n", x);
+        a.N ();
+        
+                
+        def y = async 8;
+        
+        _ = y:int;
+        _ = y:Nemerle.DelayedValue[int];
+        
+        
+        
+        System.Threading.Thread.Sleep (150);
+        _ = V();
+        WriteLine("Hi!");
+        
+        System.Threading.Thread.Sleep (150);
+        def xx = V();
+        WriteLine(xx.Value);
+        WriteLine("Hi!");
+    }
+}
+/*
+BEGIN-OUTPUT
+2
+OK
+Hi!
+5
+5
+5
+Hi!
+END-OUTPUT
+*/

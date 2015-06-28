@@ -1,0 +1,25 @@
+module M {
+  public Main () : void // OK
+  {
+    [()].Iter ( // E: void is not a subtype of object
+      fun (_) {
+      }
+    );
+
+    // bug 628
+    def f (_)
+      {}
+
+    [1,2].Map (f).ToString (" "); // E: cannot use `void' as a generic parameter of Nemerle.Core.list
+
+    mutable q = 7;
+    System.Console.WriteLine ("{0}", q++); // E: void is not a subtype of object
+  }
+
+  public foo() : void
+  {
+
+    _ = System.Collections.Generic.List.[void] () ; // E: cannot use `void' in generic specifier of System.Collections.Generic.List.*
+    _ = System.Collections.Generic.List.[System.Void] () ; // E: cannot use `void' in generic specifier of System.Collections.Generic.List.*
+  }
+}

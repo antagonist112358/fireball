@@ -1,0 +1,249 @@
+using System;
+using Nemerle.IO;
+using System.Threading;
+
+public class C {
+  foox : double = 0;
+
+  static t1 (x : long) : void
+  {
+    assert(x == 42L);
+    assert(x == 42);
+    assert(x == 42S);
+  }
+
+  static t2 (x : byte) : void
+  {
+    assert(x == 42);
+  }
+
+  static t3 (x : double) : void
+  {
+    assert(x == 42);
+  }
+
+  static public over (_ : int) : void
+  {
+    System.Console.WriteLine ("int");
+  }
+
+  static public over (_ : sbyte) : void
+  {
+    System.Console.WriteLine ("sbyte");
+  }
+
+  static Main () : void
+  {
+    System.Console.WriteLine (42);
+    System.Console.WriteLine (42 :> ushort);
+    mutable x = 3;
+    x = 1S;
+    t1 (41 + x);
+    mutable y = 43 : long;
+    y--;
+    t1 (y);
+
+    t2 (42);
+    t3 (42);
+
+    // FIXME: we select wrong method here
+    // over (42);
+
+    X.Main2 ();
+    Enums.M.Run ();
+    ConvMatch.M.Run ();
+
+    when (true)
+      3; // W: ignored
+    unless (true)
+      3; // W: ignored
+
+    // bug #486
+    _ = array [3 : byte, 33];
+    mutable xyz = 42 : byte;
+    xyz = 72;
+
+    // bug #513
+    System.Console.WriteLine ({
+        ();
+        ( def _f () {} );
+        ""
+    });
+    System.Console.WriteLine ({
+        ();
+        ( def _q = 33 );
+        ""
+    });
+    
+    Bug612.Run ();
+
+    SharpConsole.Class1.Go ();
+  }
+}
+
+module Bug612 {
+    f(x : double) : void
+    {
+        System.Console.WriteLine("{0}", x);
+    }
+
+    public Run() : void
+    {
+        f(2 : uint);
+        unchecked (f(2 : uint));
+    }
+}
+
+//
+// Nested anonymous methods tests and capturing of different variables.
+//
+
+delegate D () : void;
+
+class X {
+        static mutable GlobalStoreDelegate : D;
+
+        static public Main2 () : void
+        {
+                mutable d = MainHost ();
+
+                d ();
+                GlobalStoreDelegate ();
+                GlobalStoreDelegate ();
+                d ();
+                GlobalStoreDelegate ();
+                GlobalStoreDelegate ();
+                GlobalStoreDelegate ();
+        }
+
+        static MainHost () : D
+        {
+                mutable toplevel_local = 0;
+
+                mutable d = fun () {
+                        mutable anonymous_local = 1;
+
+                        GlobalStoreDelegate = fun() {
+                                Console.WriteLine ("var1: {0} var2: {1}", toplevel_local, anonymous_local);
+                                anonymous_local = anonymous_local + 1;
+                        };
+
+                        toplevel_local = toplevel_local + 1;
+                };
+
+                 d;
+        }
+
+        static foo () : void
+        {
+          10 // W: ignored
+        }
+}
+
+namespace SharpConsole {
+
+    class Class1 {
+
+    static Y (): void {
+        Console.WriteLine ("Hello, from a new thread");
+    }
+
+        static public Go () : void{
+          Thread (Y).Start ();
+        }
+    }
+}
+
+namespace SharpConsole2 {
+  class X {}
+  class Class1 {
+    static qux (_ : System.Threading.ThreadStart) : void { }
+    static X (): void { }
+    static public foox () : void{ qux (X); }
+  }
+}
+
+namespace Enums {
+enum Foo {
+  | A = 0x01
+  | B = 0x02
+  | C = (A & 0)
+}
+
+
+module M {
+  foo (x : Foo) : void
+  {
+    System.Console.WriteLine (x)
+  }
+  
+  public Run () : void
+  {
+    def a = Foo.A | 0;
+    when (a & Foo.A != 0)
+      foo (0);
+  }
+}
+}
+
+
+namespace ConvMatch {
+
+variant V {
+  | A { x : long; }
+}
+
+module M {
+  public Run () : void
+  {
+    match (V.A(3)) {
+      | V.A(3) => print ("ok1\n");
+      | _ => {}
+    }
+    
+    match (V.A(long.MaxValue)) {
+      | V.A(3) => {}
+      | _ => print ("ok2\n")
+    }
+  }
+
+
+  static foo (_ : int) : V { null }
+
+  static goo () : void {
+       when (!false) {
+         def x = 2;
+         foo (x); // W: ignored
+       }
+   }
+
+  static goo2 () : void {
+       when (!false) {
+         def x = 2;
+         def y = x+2;
+         foo (y); // W: ignored
+       }
+   }
+
+}
+}
+
+/*
+BEGIN-OUTPUT
+42
+42
+var1: 1 var2: 1
+var1: 1 var2: 2
+var1: 2 var2: 1
+var1: 2 var2: 2
+var1: 2 var2: 3
+C
+ok1
+ok2
+
+
+2
+2
+Hello, from a new thread
+END-OUTPUT
+*/

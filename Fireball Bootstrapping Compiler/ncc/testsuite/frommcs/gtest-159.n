@@ -1,0 +1,29 @@
+using System;
+using System.Collections.Generic;
+
+public class App {
+  public static Main() :  void {
+    mutable  values =  Dictionary();
+    values["one"] = 1; values["two"] = 2;
+
+    mutable last = 0;
+    foreach ( key :> string in values.Keys) {
+      when (values [key] == last + 1) {
+        System.Console.WriteLine("key: {0}", key);
+        last = values [key];
+      }
+    }
+    foreach ( key :> string in values.Keys) {
+      when (values [key] == last + 1) {
+        System.Console.WriteLine("key: {0}", key);
+        last = values [key];
+      }
+    }
+  }
+}
+/*
+BEGIN-OUTPUT
+key: one
+key: two
+END-OUTPUT
+*/

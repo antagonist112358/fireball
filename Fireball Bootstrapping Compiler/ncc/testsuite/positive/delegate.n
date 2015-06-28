@@ -1,0 +1,494 @@
+using System;
+using Nemerle.IO;
+
+delegate Foo () : void;
+
+delegate MultiParm (h : object, b : A1) : void;
+
+class A1 {
+
+public event Bar : Foo;
+
+public static m1 () : void { }
+
+public static run () : void {
+    def a = A1();
+    a.Bar += Foo (m1);
+    a.Bar -= Foo (m1);
+    if (a.Bar == null) Nemerle.IO.printf ("ok\n") else Nemerle.IO.printf ("bad\n");
+  }
+}
+
+// Test for covariance support in delegates
+//
+
+
+ public class A {
+         protected  mutable  name : string;
+
+         public this ( name : string)
+         {
+                 this.name = "A::" + name;
+         }
+
+         public this ()
+         {
+         }
+
+         public Name : string {
+                 get {
+                          name;
+                 }
+         }
+ }
+
+ public class B : A {
+         public this ( name : string)
+         {
+                 this.name = "B::" + name;
+         }
+
+         public this ()
+         {
+         }
+ }
+
+ public class C : B {
+         public this ( name : string)
+         {
+                 this.name = "C::" + name;
+         }
+ }
+
+ public class Tester {
+
+         delegate MethodHandler ( name : string) :  A;
+
+         static MethodSampleA ( name : string) :  A
+         {
+                   A (name);
+         }
+
+         static MethodSampleB ( name : string) :  B
+         {
+                   B (name);
+         }
+
+         static MethodSampleC ( name : string) :  C
+         {
+                   C (name);
+         }
+
+         public static Mai () :  void
+         {
+                 mutable  a = MethodHandler (MethodSampleA);
+                 mutable  b = MethodHandler (MethodSampleB);
+                 mutable  c = MethodHandler (MethodSampleC);
+
+                 mutable  instance1 = a ("Hello");
+                 mutable  instance2 = b ("World");
+                 mutable  instance3 = c ("!");
+
+                 Console.WriteLine (instance1.Name);
+                 Console.WriteLine (instance2.Name);
+                 Console.WriteLine (instance3.Name);
+         }
+ }
+
+
+class MyClass {
+        delegate IsAnything ( c : Char) : bool;
+        delegate Foo () : int;
+
+        public static Run () : void {
+                mutable validDigit = Nemerle.Extensions.DefaultValue (IsAnything);
+                validDigit = IsAnything (Char.IsDigit);
+                assert(validDigit ('9'));
+                assert(!validDigit ('a'));
+                _ = Foo (System.Console.Read);
+        }
+}
+
+namespace ImplicitWithOverloadingChoose {
+
+  public delegate FooIWO () : void;
+  public delegate BarIWO (mutable x : int) : void;
+
+  class X
+  {
+    public this (_ : FooIWO)
+    { }
+    
+    public this (_ : BarIWO)
+    { }
+    
+    static Test () : void
+    { }
+    
+    public static Run () : void
+    {
+      def _x = X (Test);
+    }
+  }
+}
+
+namespace Bug590 {
+
+delegate Test[T] (mutable t : T) : void;
+
+class Foo[T]
+{
+        public event MyEvent : Test[T];
+
+        public Hello (mutable t : T) : void
+        {
+                when (MyEvent != null)
+                        MyEvent (t);
+        }
+}
+
+class X
+{
+        static do_hello (mutable hello : string) : void
+        {
+                Console.WriteLine ("Hello: {0}", hello);
+        }
+
+        public static Main2 () : void
+        {
+                mutable foo = Foo ();
+                foo.MyEvent += Test (do_hello);
+                foo.Hello ("Boston");
+        }
+}
+}
+
+public delegate GenDel[X] (x : X) : int;
+
+namespace Bug674 {
+delegate fn[T] () : T;
+delegate fn[R,T] (_:R) : T;
+delegate fn[R,S,T] (_:R,_:S) : T;
+
+module X {
+  public wh[T](_predicate : fn[T, int, bool]) : void
+    {  }
+  public wh[T](_predicate : fn[T, bool]) : void
+    {  }
+
+  public foobar () : void
+  {
+    X.wh (x => x % 2 == 0);
+  }
+}
+}
+
+namespace Bug674reopen {
+using System.Collections.Generic;
+
+public delegate FuncX [T] () : T;
+public delegate FuncX [A0,T] (arg0 : A0) : T;
+public delegate FuncX [A0,A1,T] (arg0 : A0, arg1 : A1): T;
+
+public module Sequence {
+    public SelectX [T, S] (this _source : IEnumerable [T], _selector : FuncX [T, S]) : IEnumerable [S] { null; }
+    public SelectX [T, S] (this _source : IEnumerable [T], _selector : FuncX [T, int, S]) : IEnumerable [S] { null; }
+    public foo () : void
+    {
+      def input = $[1 .. 10];
+      _ = Sequence.SelectX (input, x : int => x);
+      _ = Sequence.SelectX (input, x : int * int => x);
+      _ = Sequence.SelectX (input, x => x) : IEnumerable[int];
+      _ = Sequence.SelectX (input, x : _ * _ => x) : IEnumerable[int*int];
+
+      _ = input.SelectX (x : int => x);
+      _ = input.SelectX (x : int * int => x);
+      _ = input.SelectX (x => x) : IEnumerable[int];
+      _ = input.SelectX (x : _ * _ => x) : IEnumerable[int*int];
+      _ = input.SelectX (x => x);
+      _ = input.SelectX (x : _ * _ => x);
+    }
+}
+}
+
+module FunctionToDelegate
+{
+  public Sort[T] (sourse : array [T], comparison : T * T -> int) : void
+  {
+    System.Array.Sort(sourse, comparison);
+  }
+
+  public Convert[I,O] (sourse : array [I], conv : I -> O) : array [O]
+  {
+    System.Array.ConvertAll(sourse, conv);
+  }
+
+  public ForEach[T] (sourse : array [T], act : T -> void) : void
+  {
+    System.Array.ForEach (sourse, act);
+  }
+  
+  print_arr ['a] (arr : array ['a]) : void
+  {
+     foreach (x in arr) System.Console.Write ("{0}, ", x);
+     System.Console.WriteLine ();
+  }
+    
+   public Run() : void
+   {
+     def my_arr = array [6,2,8,32,7,333,2,9,1,-3,-33,43];
+     Sort (my_arr, _ - _);
+     print_arr (my_arr);
+     def str_arr = Convert (my_arr, fun (x) { (x + 1).ToString () });
+     print_arr (str_arr);
+     ForEach (str_arr, System.Console.Write : string -> void);
+     System.Console.WriteLine ();
+   }
+}
+      
+
+
+module Bug1064
+{
+  delegate D[T, R](x : T) : R;
+  delegate D2[T1, T2, R](x : T1, y : T2) : R;
+  public Run () : void
+  {
+    def d = D(fun ((x, _)){ x });
+    System.Console.WriteLine(d((1, "a")));
+
+    def d = D(fun (x, _){ x });
+    System.Console.WriteLine(d((2, "a")));
+
+    def d = D2(fun ((x, _)){ x });
+    System.Console.WriteLine(d((3, "a")));
+
+    def d = D2(fun (x, _){ x });
+    System.Console.WriteLine(d((4, "a")));
+
+    def f1 = fun ((x, _)) {x};
+    _ = [].FoldLeft (0, f1);
+
+    def f2 = fun (x, _) {x};
+    _ = [].FoldLeft (0, f2);
+
+    def d = D(f1);
+    System.Console.WriteLine(d((5, 5)));
+
+    def d = D(f2);
+    System.Console.WriteLine(d((6, 6)));
+
+    def d = D2(f1);
+    System.Console.WriteLine(d((7, 7)));
+
+    def d = D2(f2);
+    System.Console.WriteLine(d((8, 8)));
+  }
+}
+
+module Bug981 {
+    stuff(x : int, _s : string) : bool { x == 1 }
+    delegate F[T] (_ : T) : void;
+    delegate G (_ : int, _ : int) : void;
+    f[T] (x : T) : void { System.Console.WriteLine ($"static f got $x") }
+    g (x : int, y : int) : void { System.Console.WriteLine ($"static g got $x, $y") }
+    class I {
+      fi[T] (x : T) : void { System.Console.WriteLine ($"instance f got $x") }
+      gi (x : int, y : int) : void { System.Console.WriteLine ($"instance g got $x, $y") }
+      go () : void {
+        F (fi.[int*int]) ((-1, -2));
+        F (gi) (-3, -4);
+        G (fi) ((-5, -6));
+        G (gi) (-7, -8);
+      }
+      public static Run () : void {
+        I ().go ();
+      }
+    }
+    public Run() : void
+    {
+
+        def lis = System.Collections.Generic.List();
+        lis.Add((1, "one"));
+        def el = lis.Find(stuff);
+        assert(el.Equals((1, "one")));
+
+        def l = System.Collections.Generic.List();
+        l.Add((1, "aaa"));
+        assert((1, "aaa").Equals(l.Find((n, _) => n == 1)));
+
+        F (f.[int*int]) ((1, 2));
+        F (g) (3, 4);
+        G (f) ((5, 6));
+        G (g) (7, 8);
+        I.Run ();
+    }
+}
+
+
+public module M {
+
+// bug #718
+public Sort[T, Val] (this sourse : array [T], getComparableValue : T -> Val) : array [T]
+  where Val: System.IComparable[Val]
+{
+  def Cmp(x : T, y : T) : int
+  {
+    getComparableValue(x).CompareTo(getComparableValue(y))
+  }
+  System.Array.Sort.[T](sourse, System.Comparison.[T](Cmp));
+  sourse
+}
+
+  public delegate MyPrintDelegate (s : string) : void;
+  private delegate MySprintDelegate (s : string) : string;
+  delegate MyIntReturningDelegate () : int;
+
+  run_my_delegate (s : string, msd : MyPrintDelegate) : void
+  {
+    msd.Invoke (s)
+  }
+
+  run_my_non_void_delegate (s : string, mpd : MySprintDelegate) : string
+  {
+    mpd.Invoke (s)
+  }
+  
+  run_delegate (ts : System.Threading.ThreadStart) : void
+  {
+    ts.Invoke ()
+  }
+  
+  run_delegate (s : string, ts : System.Threading.WaitOrTimerCallback) : void
+  {
+    ts.Invoke (s, true);
+    ts.Invoke (s, false)
+  }
+  
+  static_meth () : void
+  {
+    printf ("static_meth\n")
+  }
+
+  string_static_meth (s : string) : void
+  {
+    printf ("string_static_meth: %s\n", s)
+  }
+  
+  sprint_static_meth (s : string) : string
+  {
+    sprintf ("sprint_static_meth: %s\n", s)
+  }
+
+  static_timer_meth (o : object, b : bool) : void
+  {
+    printf ("s: %s:%s\n", (o :> string), if (b) "t" else "f")
+  }
+
+  class C1 {
+    name : string;
+    public this (n : string) { name = n }
+    public m1 () : void
+    {
+      printf ("%s C.m1\n", name)
+    }
+    public m2 (o : object, b : bool) : void
+    {
+      printf ("%s: %s:%s\n", name, (o :> string), if (b) "t" else "f")
+    }
+  }
+
+  gen_fun [T] (x : T) : int { 
+    printf ("%s\n", x.GetType ().ToString ()); 1 
+  }
+  
+  Main () : void 
+  {
+    def str = "local_meth";
+    def local_meth () {
+      printf ("%s\n", str)
+    };
+    def local_timer_meth (o : object, b : bool) : void {
+      printf ("l: %s:%s\n", (o :> string), if (b) "t" else "f")
+    };
+    
+    run_delegate (System.Threading.ThreadStart (static_meth));
+    run_delegate (System.Threading.ThreadStart (local_meth));
+    run_delegate ("foo", System.Threading.WaitOrTimerCallback (local_timer_meth));
+    run_delegate ("foo", System.Threading.WaitOrTimerCallback (static_timer_meth));
+    run_delegate ("bar", System.Threading.WaitOrTimerCallback (static_timer_meth));
+
+    run_my_delegate ("foobarized", M.MyPrintDelegate (string_static_meth));
+    
+    printf ("non-void: %s",
+            run_my_non_void_delegate ("foobarized", M.MySprintDelegate (sprint_static_meth)));
+
+    Bug590.X.Main2 ();
+
+    def c1 = C1 ("c1");
+    def c2 = C1 ("c2");
+    run_delegate (System.Threading.ThreadStart (c1.m1));
+    run_delegate (System.Threading.ThreadStart (c2.m1));
+    run_delegate ("qux", System.Threading.WaitOrTimerCallback (c1.m2));
+    run_delegate ("qux", System.Threading.WaitOrTimerCallback (c2.m2));
+    A1.run ();
+    def _gen_d = GenDel (gen_fun);
+    assert(_gen_d (2) == 1);
+    Tester.Mai ();    
+    MyClass.Run ();
+    FunctionToDelegate.Run ();
+
+    System.Console.WriteLine ($[x | x in Sort ([3, 2, 7, 1, 18].ToArray (), x => -x)]);
+
+    Bug1064.Run ();
+    
+    Bug981.Run();
+  }
+}
+
+/*
+BEGIN-OUTPUT
+static_meth
+local_meth
+l: foo:t
+l: foo:f
+s: foo:t
+s: foo:f
+s: bar:t
+s: bar:f
+string_static_meth: foobarized
+non-void: sprint_static_meth: foobarized
+Hello: Boston
+c1 C.m1
+c2 C.m1
+c1: qux:t
+c1: qux:f
+c2: qux:t
+c2: qux:f
+ok
+System.Int32
+A::Hello
+B::World
+C::!
+-33, -3, 1, 2, 2, 6, 7, 8, 9, 32, 43, 333, 
+-32, -2, 2, 3, 3, 7, 8, 9, 10, 33, 44, 334, 
+-32-2233789103344334
+[18, 7, 3, 2, 1]
+1
+2
+3
+4
+5
+6
+7
+8
+static f got (1, 2)
+static g got 3, 4
+static f got (5, 6)
+static g got 7, 8
+instance f got (-1, -2)
+instance g got -3, -4
+instance f got (-5, -6)
+instance g got -7, -8
+END-OUTPUT
+*/

@@ -1,0 +1,23 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Compiler.TypeSystem
+{
+  /// <summary>
+  /// Description of IProperty.
+  /// </summary>
+  public interface IProperty : IMember
+  {
+    IsIndexer : bool { get; }
+    IsMutable : bool { get; }
+    GetPropertyInfo () : System.Reflection.PropertyInfo;
+    GetGetter () : IMethod;
+    GetSetter () : IMethod;
+  }
+}

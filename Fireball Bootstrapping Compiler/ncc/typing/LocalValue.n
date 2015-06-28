@@ -1,0 +1,330 @@
+﻿/*
+ * Copyright (c) 2003-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle.Collections;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Utility;
+
+using SC = System.Collections;
+using SCS = System.Collections.Specialized;
+
+namespace Nemerle.Compiler
+{
+  public class LocalValue : TypedBase,
+    System.IComparable[LocalValue],
+    System.IEquatable[LocalValue]
+  {
+    mutable ty            : TypeVar;
+    mutable is_registered : bool;
+    mutable closure_field : IField;
+
+    internal kind : Kind;
+    public ValueKind : Kind { get { kind } }
+    id   : int;
+
+    public Id : int { get { id } }
+
+    public IsPinned : bool { get; set; }
+
+    public CanInline : bool { get { !(IsPinned || is_managed_ptr || is_cache) } }
+    
+    [Accessor] name       : string;
+    [Accessor] is_mutable : bool;
+    [Accessor] defined_in : TFunHeader;
+    
+    [Accessor] internal mutable name_location : Location;
+    [Accessor]          mutable used_in       : Set [TFunHeader];
+
+    [Accessor (flags = WantSetter)]            mutable in_closure      : bool;
+    [Accessor (flags = WantSetter)]            mutable ever_used       : bool;
+    [Accessor (flags = WantSetter)]            mutable is_cache        : bool;
+    [Accessor (flags = WantSetter)]            mutable is_managed_ptr  : bool;
+    [Accessor (flags = WantSetter | Internal)] mutable never_closurise : bool;
+
+    // The declaration will be postponed to actual use.
+    // We need it to reduce the variable visible scope in the debugger.
+    [Accessor (flags = WantSetter | Internal)] mutable postponed_declaration : bool;
+    [Accessor (flags = WantSetter | Internal)] mutable declare : void -> void;
+
+    // Use of Kind.BlockReturn would be better,
+    // but it results in error at Typer2.n line 746
+    [Accessor (flags = WantSetter)]
+    mutable expanded_block_return : bool;
+
+    public UserData : SC.IDictionary
+    {
+      mutable _userData : SC.IDictionary;
+
+      get
+      {
+        when (_userData == null)
+          _userData = SCS.ListDictionary();
+
+        _userData
+      }
+    }
+
+    public this (defined_in : TFunHeader, name : string, 
+                 ty : TypeVar, kind : Kind, is_mutable : bool)
+    {
+      this(defined_in, name, Location.Default, ty, kind, is_mutable);
+    }
+
+    public this (defined_in : TFunHeader, name : string, name_location : Location,
+                 ty : TypeVar, kind : Kind, is_mutable : bool)
+    {
+      if (name_location.IsEmpty)
+        base ();
+      else
+        base (name_location);
+
+      this.defined_in = defined_in;
+      this.name = name;
+      this.name_location = name_location;
+      this.ty = ty;
+      this.kind = kind;
+      this.is_mutable = is_mutable;
+      
+      this.id = defined_in.ReturnType.Manager.GetNewId();
+      this.used_in = Set ();
+    }
+
+    [Nemerle.OverrideObjectEquals]
+    public Equals (other : LocalValue) : bool
+      implements System.IEquatable[LocalValue].Equals
+    {
+      id == other.id
+    }
+
+    public override GetHashCode () : int
+    { id }
+
+    internal UseFrom (fh : TFunHeader) : void
+    {
+      ever_used = true;
+      used_in = used_in.Replace (fh);
+    }
+
+    public Type : TypeVar
+    {
+      get { ty }
+    }
+
+    public ValKind : Kind
+    {
+      get { kind }
+    }
+
+    public override ToString () : string
+    {
+      $ "$kind $(Name)"
+    }
+
+    public CompareTo (other : LocalValue) : int
+    {
+      id - other.id
+    }
+
+    internal UsedInPatternBody : bool
+    {
+      get {
+        match (kind) {
+          | Kind.PatternVariable (x) => x
+          | _ => assert(false)
+        }
+      }
+      set {
+        (kind :> Kind.PatternVariable).used_in_body = value;
+      }
+    }
+
+    internal IsRegistered : bool
+    {
+      get { is_registered }
+    }
+
+    public Register() : void
+    {
+      Util.cassert (!IsRegistered, this.ToString ());
+      is_registered = true;
+      DefinedIn.all_locals = this :: DefinedIn.all_locals;
+
+      match (ValKind) {
+        | Kind.Function (h, parents) =>   
+          foreach (parent in parents)
+            parent.children_funs = h :: parent.children_funs;
+        | _ => {}
+      }
+    }
+
+    internal ClosureField : IField
+    {
+      get { closure_field }
+      set {
+        assert(closure_field == null);
+        closure_field = value;
+      }
+    }
+
+    internal SetType (t : TypeVar) : void
+    {
+      ty = t;
+    }
+
+    #region IL integration
+    variant ILKind
+    {
+      | None
+      | Parm { slot : int; }
+      | ByRefParm { slot : int; }
+      | Local { builder : System.Reflection.Emit.LocalBuilder; }
+    }
+
+    mutable ilkind : ILKind = ILKind.None ();
+
+    CheckIL () : void
+    {
+      when (postponed_declaration)
+      {
+        postponed_declaration = false;
+        when (declare != null)
+          declare();
+      }
+      assert2(!(ilkind is ILKind.None));
+      Util.cassert(!(ilkind is ILKind.None), $"ilkind is none for $this (id=$id)");
+    }
+
+    internal IsByRefParm : bool
+    {
+      get {
+        CheckIL ();
+        ilkind is ILKind.ByRefParm
+      }
+    }
+    
+    internal IsParm : bool
+    {
+      get {
+        CheckIL ();
+        match (ilkind) {
+          | Parm
+          | ByRefParm => true
+          | Local => false
+          | None => Util.ice ()
+        }
+      }
+    }
+
+    internal LocalSlot : System.Reflection.Emit.LocalBuilder
+    {
+      get
+      {
+        CheckIL ();
+
+        match (ilkind)
+        {
+          | Local (slot) => slot
+          | _ => Util.ice()
+        }
+      }
+      set
+      {
+        unless (ilkind is ILKind.None)
+        {
+          assert(true);
+        }
+        Util.cassert (ilkind is ILKind.None);
+        ilkind = ILKind.Local (value);
+      }
+    }
+
+    internal ParmIndex : int
+    {
+      get {
+        CheckIL ();
+        match (ilkind) {
+          | Parm (id)
+          | ByRefParm (id) => id
+          | _ => Util.ice ()
+        }
+      }
+    }
+
+    internal SetParmIndex (idx : int, is_by_ref : bool) : void
+    {
+      Util.cassert (ilkind is ILKind.None);
+      ilkind = 
+        if (is_by_ref)
+          ILKind.ByRefParm (idx);
+        else
+          ILKind.Parm (idx)
+    }
+
+    #endregion
+
+
+    public variant Kind
+    {
+      | Plain
+      | Function {
+          header : TFunHeader; 
+          uses_closure_of : list [TFunHeader]; 
+        }
+      | FunParm {
+          kind : ParmKind;
+        }
+      | ExceptionValue
+      | PatternVariable {
+          /** True if variable is used in body of match, not only in guard. */
+          mutable used_in_body : bool;
+        }
+      | BlockReturn {
+          /// where to store result of the current block
+          mutable result_val : LocalValue;
+          /// the exit label of the block
+          mutable block_label : int;
+        }
+      | ClosurisedThisPointer
+      | MacroRedirection { subst : Parsetree.PExpr; }
+
+      public override ToString () : string
+      {
+        match (this) {
+          | Plain => "a local value"
+          | Function => "a local function"
+          | FunParm => "a function parameter"
+          | ExceptionValue => "a caught exception"
+          | PatternVariable => "a value bound in pattern"
+          | BlockReturn => "a return from a block"
+          | ClosurisedThisPointer => "a `this' pointer" // not reached?
+          | MacroRedirection => "a macro invocation" // not reached?            
+        }
+      }
+    }
+  }
+} // ns

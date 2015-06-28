@@ -1,0 +1,333 @@
+using System.Collections.Generic;
+using System;
+
+class C : IEnumerable [int] 
+{
+  public GetEnumerator () : IEnumerator [int]
+  {
+    yield 42;
+    yield 13;
+    yield 77;
+  }
+}
+
+module Bug756 {
+  public GetToken() : System.Collections.Generic.IEnumerable[int]
+  {
+      mutable i = 42;
+      def next() { ++i;i }
+      yield next();
+      yield next();
+      yield next();
+      yield next();
+  }
+}
+
+module Bug991 {
+ public Go () : void {
+   foreach (_ in E(3)) { }
+   foreach (_ in E2()) { }
+ }
+ q (f : int->int) : void {
+   System.Console.WriteLine(f(1));
+   System.Console.WriteLine(f(2));
+ }
+ E (qq : int) : System.Collections.Generic.IEnumerable[int] 
+ {
+  def x = 42;
+  q (z => z+x*qq);
+  yield 1;
+ }
+ E2 () : System.Collections.Generic.IEnumerable[int] 
+ {
+  def x = 42;
+  q (z => z+x);
+  yield 1;
+ }
+}
+
+[Record]
+class D : IEnumerable [string] 
+{
+  mutable a : int;
+  ene : string;
+  due : string;
+  static rabe : string = "trzy";
+
+  public GetEnumerator () : IEnumerator [string]
+  {
+    ++a;
+    do_get (a)
+  }
+
+  do_get (qux : int) : IEnumerator [string]
+  {
+    yield qux.ToString ();
+    yield ene;
+    yield this.due;
+    yield rabe;
+  }
+}
+
+class E : IEnumerable [int] 
+{
+  public GetEnumerator () : IEnumerator [int]
+  {
+    for (mutable i = 1; i < 5; ++i)
+      yield i;
+  }
+}
+
+class X {
+  public static FromTo (from : int, to : int) : IEnumerable [int]
+  {
+    for (mutable i = from; i <= to; ++i)
+      yield i;
+  }
+  
+  public static FromTo2 (mutable from : int, to : int) : IEnumerable [int]
+  {
+    while (from <= to) {
+      yield from;
+      from++;
+    }
+  }
+}
+
+// #587
+public class Sequence
+{
+        public static Concat['a] (
+                 first : IEnumerable ['a],
+                 second : IEnumerable ['a]) : IEnumerable ['a]
+        {
+                when (first == null || second == null)
+                        throw ArgumentNullException ();
+
+                foreach (element in first)
+                        yield element;
+                foreach (element in second)
+                        yield element;
+        }
+
+    // #588
+    public Foo (a : int) : System.Collections.IEnumerable
+    {
+        try {
+            try {
+                yield a;
+            } finally {
+                Console.WriteLine ("Hello World");
+            }
+
+            Console.WriteLine ("Next block");
+
+            try {
+                yield a * a;
+            } finally {
+                Console.WriteLine ("Boston");
+            }
+        } finally {
+            Console.WriteLine ("Outer finally");
+        }
+
+        Console.WriteLine ("Outer block");
+    }
+
+        // #589
+        public a () : System.Collections.IEnumerable
+        {
+                lock (this){
+                        yield "a";
+                        yield "b";
+                }
+        }
+}
+
+class XX {
+  static GetIt (mutable args : array [int]) : IEnumerable[int]
+  {
+    def f (_ar) {
+      def a () { System.Console.WriteLine("g") }
+      a ();
+      yield 11
+    }
+    f (args)
+  }
+
+  public static Run () : void
+  {
+    foreach (i in GetIt (array[1, 2, 3])) {
+      Console.WriteLine ($"Got: $i")
+    }
+  }
+}
+
+class Ret
+{
+  public static GetIt () : IEnumerable[int] {
+    yield 1;
+    when (true)
+      Nemerle.Imperative.Return ();
+    yield 2;
+  }
+  public static GetIt2 () : IEnumerable[int] {
+    when (true)
+      Nemerle.Imperative.Return ();
+    yield 3;
+  }
+  public static GetIt3 () : IEnumerable[int] {
+    Nemerle.Imperative.Return ();
+  }
+  public static GetIt4 () : IEnumerable[int] {
+    when (true)
+      Nemerle.Imperative.Return (null);
+    GetIt3 ();
+  }
+  public static GetIt5 () : IEnumerable[int] {
+    for (mutable i = 0; i < 5; ++i) {
+      when (i == 3)
+        Nemerle.Imperative.Return ();
+      yield i;
+    }
+  }
+}
+
+foreach (e in C ())
+  System.Console.WriteLine (e);
+
+foreach (e in C ())
+  System.Console.WriteLine (e);
+
+def d = D (3, "raz", "dwa");
+
+foreach (e in d)
+  System.Console.WriteLine (e);
+  
+foreach (e in d)
+  System.Console.WriteLine (e);
+
+foreach (e in E ())
+  System.Console.WriteLine (e);
+
+def x = X.FromTo (42, 47);
+System.Console.WriteLine ("------------");
+foreach (e in x)
+  System.Console.WriteLine (e);
+System.Console.WriteLine ("------------");
+foreach (e in x)
+  System.Console.WriteLine (e);
+
+def x = X.FromTo2 (42, 47);
+System.Console.WriteLine ("------------");
+foreach (e in x)
+  System.Console.WriteLine (e);
+System.Console.WriteLine ("------------");
+foreach (e in x)
+  System.Console.WriteLine (e);
+System.Console.WriteLine ("------------");
+
+def fst = [1,2,3];
+def snd = [4,5,6];
+foreach (x in Sequence.Concat (fst, snd))
+   Nemerle.IO.printf ("%d\n", x);
+
+def seq = Sequence ();
+def list = System.Collections.ArrayList ();
+foreach (o in seq.Foo (5))
+    _ = list.Add (o);
+
+System.Console.WriteLine ($[x | x in Bug756.GetToken()]);
+
+Bug991.Go();
+
+XX.Run ();
+
+foreach (x in Ret.GetIt ())
+  System.Console.WriteLine (x);
+
+foreach (x in Ret.GetIt2 ())
+  System.Console.WriteLine (x);
+
+foreach (x in Ret.GetIt3 ())
+  System.Console.WriteLine (x);
+
+System.Console.WriteLine (Ret.GetIt4 () == null);
+
+foreach (x in Ret.GetIt5 ())
+  System.Console.WriteLine (x);
+
+/*
+BEGIN-OUTPUT
+42
+13
+77
+42
+13
+77
+4
+raz
+dwa
+trzy
+5
+raz
+dwa
+trzy
+1
+2
+3
+4
+------------
+42
+43
+44
+45
+46
+47
+------------
+42
+43
+44
+45
+46
+47
+------------
+42
+43
+44
+45
+46
+47
+------------
+42
+43
+44
+45
+46
+47
+------------
+1
+2
+3
+4
+5
+6
+Hello World
+Next block
+Boston
+Outer finally
+Outer block
+[43, 44, 45, 46]
+127
+128
+43
+44
+g
+Got: 11
+1
+True
+0
+1
+2
+END-OUTPUT
+*/

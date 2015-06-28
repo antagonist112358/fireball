@@ -1,0 +1,606 @@
+/*
+ * Copyright (c) 2004-2008 The University of Wroclaw.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *    1. Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *    2. Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *    3. The name of the University may not be used to endorse or promote
+ *       products derived from this software without specific prior
+ *       written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE UNIVERSITY ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN
+ * NO EVENT SHALL THE UNIVERSITY BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+ * TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Logging;
+using Nemerle.Imperative;
+
+using SCG = System.Collections.Generic;
+
+/*
+
+There are two kinds of type variables:
+
+  * free type variables with an associated upper and lower bounds on
+    types that can be substituted for it
+    
+  * fixed type variables, that are already substituted some type
+    constructor
+    
+The constraint solver maintains a graph of type variables (vertices)
+and subtyping relations (edges).  The graph follows several invariants:
+
+  1. There are only free type variables in it.
+
+  2. There are no cycles in it. If a cycle emerge, all type variables
+     involved in it are merged into one type variable. (The graph is
+     therefore a DAG).
+
+  3. The graph is transitively closed, that is if A :> B and B :> C, then
+     A :> C, where X :> Y stands for an edge in the graph from X to Y.
+     
+  4. The upper and lower bounds are also transitively closed, that is
+     if t :> A, A :> B, B :> t' then t :> t', where :> stands for a
+     subtyping relation.
+
+  5. If t :> A and A :> t', then t :> t' (that is upper bound has to be
+     bigger than lower bound). If t = t', then the type t is substituted
+     for the variable A (that is A gets fixed), since it is the only
+     type to fulfill both upper and lower limits. To maintain 1., it's
+     then removed from the graph.
+     
+It is sometimes crucial to save the graph in a certain state and then go
+back to it. This is done with the PushState and PopState methods -- they
+maintain stack of maps from type variable identifiers to type variables
+themselves. Type variables in given state are looked up with the Find
+method, while if there is a need to update a type variable, Copy should
+be called.  Copy is a noop if there is already a copy in the current
+state, while both Copy and Find are noops if the stack of states is empty.
+
+The Find() methods also takes into account the equality constraints
+on type variables (they result from subtyping tests or cycle merging).
+It returns the selected representative of given merged variable class.
+New equality constraints are added using the AddLink method.
+
+*/
+
+namespace Nemerle.Compiler 
+{
+  /** A constraint solver. */
+  [ManagerAccess]
+  public class Solver
+  {
+    /** Store current constraint state.
+        
+        Called before some speculative type checking fragment, like
+        overload resolution. */
+    public PushState() : void
+    {
+      ++serial_stack_top;
+      ++last_serial;
+      top_serial = last_serial;
+
+      dt_stack.Push(dt_store);
+      messenger.PushState();
+      serial_stack [serial_stack_top] = top_serial;
+    }
+
+
+    /** Go one constraint state back.
+        
+        This function rollbacks all constraints made in current state,
+        and also clear the error state if it was in */
+    public PopState() : void
+    {
+      --serial_stack_top;
+      dt_store = dt_stack.Pop();
+      messenger.PopState();
+      top_serial = serial_stack [serial_stack_top];
+    }
+
+
+    public Unwind() : void
+    {
+      while (!IsTopLevel)
+        PopState()
+    }
+
+
+    internal CanEnterPossiblyLooping() : bool
+    {
+      possibly_looping++;
+
+      if (possibly_looping < 100) true
+      else {
+        CyclicTypeCount++;
+        SaveError(CurrentMessenger, "cyclic type found");
+        false
+      }
+    }
+
+
+    internal LeavePossiblyLooping() : void
+    {
+      possibly_looping--;
+    }
+
+    public FreshTyVar() : TypeVar { FreshTypeVar() }
+
+    /** Generate a new type variable. */
+    [System.Diagnostics.DebuggerNonUserCode]
+    public FreshTypeVar() : TypeVar { TypeVar(Manager) }
+
+
+    public static MonoTypes(m : list [FixedType]) : list [TypeVar]
+    {
+      if (m.IsEmpty) []
+      else m.Map(fun (x) { x })
+    }
+
+
+    public static FixedValues(m : list [TypeVar]) : list [FixedType]
+    {
+      if (m.IsEmpty) []
+      else m.Map(fun(x : TypeVar) { x.FixedValue })
+    }
+    
+
+    public static Fix(m : list [TypeVar]) : list [FixedType]
+    {
+      if (m.IsEmpty) []
+      else m.Map(fun(x : TypeVar) { x.Fix() })
+    }
+
+
+    /** Increment current type variable rank.
+
+        Called before typing of a local function. */
+    public PushRank() : void
+    {
+      ++current_rank;
+    }
+
+    
+    /** Restore previous type variable rank.
+
+        Called after typing of a local function. */
+    public PopRank() : void
+    {
+      --current_rank;
+    }
+
+
+    #region Anti dead lock queue
+    public Enqueue(action : void -> void) : void
+    {
+      if (locked)
+        comp_queue.Push (action);
+      else
+      {
+        try
+        {
+          locked = true;
+          action();
+
+          while (!comp_queue.IsEmpty)
+          {
+            def action = comp_queue.Pop();
+            action()
+          }
+
+        }
+        finally
+        {
+          locked = false;
+          comp_queue.Clear();
+        }
+      }
+    }
+
+    comp_queue : Queue [void -> void] = Queue();
+    mutable locked : bool;
+    #endregion
+
+
+    /** Return the biggest type [t] such that [t &lt;: t1] and [t &lt;: t2]. 
+        It doesn't work for separated types. */
+    public Intersect(t1 : FixedType, t2 : FixedType) : FixedType
+    {
+      def intersect_classes(t1 : FixedType.Class, t2 : FixedType.Class)
+      {
+        def tc1 = t1.tycon;
+        def tc2 = t2.tycon;
+
+        if (tc1.IsDerivedFrom(tc2))
+        { // tc1 : tc2(args)
+          _ = t1.Require(t2);
+          [t1]
+        }
+        else if (tc2.IsDerivedFrom(tc1))
+          intersect_classes(t2, t1)
+        else match (tc1.GetTydecl(), tc2.GetTydecl())
+        {
+          | (TypeDeclaration.Interface, TypeDeclaration.Interface)
+          | (TypeDeclaration.Class, TypeDeclaration.Interface)
+          | (TypeDeclaration.Interface, TypeDeclaration.Class) => [t1, t2]
+          | _ =>
+            SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection]");
+            [t1]
+        }
+      }
+
+      if (t1 == null)      t2
+      else if (t2 == null) t1
+      else
+      {
+        t1.Validate ();
+        t2.Validate ();
+
+        def result =
+          match ((t1, t2))
+          {
+            | _ when t1.Equals(t2) => [t1]
+            | (FixedType.Class(tc, []), t) when tc.Equals(InternalType.Object_tc)
+            | (t, FixedType.Class(tc, [])) when tc.Equals(InternalType.Object_tc) => [t]
+            | (Class(tc, []), Array as t) when tc.Equals(InternalType.Array_tc)
+            | (Array as t, Class(tc, [])) when tc.Equals(InternalType.Array_tc) => [t]
+            | ((FixedType.StaticTypeVarRef(tv)) as tvr, (FixedType.Class(tc, _)) as t)
+            | ((FixedType.Class(tc, _)) as t, (FixedType.StaticTypeVarRef(tv)) as tvr) =>
+              mutable res = true;
+              mutable seen = false;
+
+              foreach (FixedType.Class (tc2, _) as t2 in tv.Constraints)
+              {
+                when (!seen && tc2.IsDerivedFrom(tc))
+                {
+                  res = t2.Require (t);
+                  // Message.Debug ($ "$(t2) vs $t : $res");
+                  seen = true;
+                }
+              }
+
+              unless (seen && res)
+                SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection, tyvar]");
+
+              [tvr : FixedType]
+
+            | (FixedType.Array, FixedType.Intersection)
+            | (FixedType.Intersection, FixedType.Array) => [Sum(t1, t2)]
+            | (FixedType.Class(tc, args), FixedType.Intersection(lst))
+            | (FixedType.Intersection(lst), FixedType.Class(tc, args)) =>
+              def loop(res, tc, args, lst)
+              {
+                match (lst)
+                {
+                  | (FixedType.Class(tc2, args2) as t) :: tl =>
+                    if (tc2.IsDerivedFrom(tc) || tc.IsDerivedFrom(tc2))
+                      match (intersect_classes(FixedType.Class(tc, args), FixedType.Class(tc2, args2)))
+                      {
+                        | [FixedType.Class(tc, args)] => loop (res, tc, args, tl)
+                        | _                           => assert(false)
+                      }
+                    else
+                      loop((t : FixedType) :: res, tc, args, tl)
+                    
+                  | _ :: _ => assert(false)
+                  | []     => FixedType.Class(tc, args) :: res
+                }
+              }
+
+              loop([], tc, args, lst)
+              
+            | (FixedType.Class(tc1, args1), FixedType.Class(tc2, args2)) =>
+              intersect_classes(FixedType.Class(tc1, args1), FixedType.Class(tc2, args2))
+
+            | (FixedType.Fun(from = p1, argsCount = c1, to = r1), FixedType.Fun(from = p2, argsCount = c2, to = r2)) =>
+               _ = p1.Unify(p2);
+               _ = r1.Unify(r2);
+               [FixedType.Fun(p1, System.Math.Max(c1, c2), r1)]
+
+            | (Array(t2, n),         Class(_, [_]) as ty1)
+            | (Class(_, [_]) as ty1, Array(t2, n)) =>
+              def arrayType = FixedType.Class(InternalType.GetArrayType(n), [t2]);
+              intersect_classes(arrayType, ty1)
+               
+            | _ => 
+              SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection]");
+              [t1]
+          };
+
+        match (result)
+        {
+          | [x] => 
+            log(TYPING, $"intersection: $t1 $t2 -> $x le=$(messenger.LocalError)");
+            x
+
+          | lst =>
+            def res = FixedType.Intersection(lst);
+            res.Validate();
+            log(TYPING, $"intersection: $t1 $t2 -> $lst le=$(messenger.LocalError)");
+            res
+        }
+      }
+    }
+    
+
+    public Sum(t1 : FixedType, t2 : FixedType) : FixedType
+    {
+      def sum_list(lst : list [FixedType], allow_fake = false)
+      {
+        mutable supertypes          = null;
+        mutable seen_object         = allow_fake;
+        mutable seen_value_type     = allow_fake;
+        mutable seen_non_class_type = false;
+        mutable seen_class_type     = false;
+        mutable seen_array_type     = false;
+        
+        def add_supertypes(s) : void
+        {
+          if (supertypes == null)
+            supertypes = s
+          else
+            supertypes = supertypes.Intersect(s);
+        }
+
+        foreach (t in lst)
+        {
+          | FixedType.Class(tc, _) =>
+            seen_class_type = true;
+            when (tc.Equals(InternalType.Object_tc))
+              seen_object = true;
+
+            when (tc.Equals(InternalType.ValueType_tc))
+              seen_value_type = true;
+
+            def superTypes = InternalType.Object :: tc.GetSuperTypes();
+            def s = superTypes.FoldLeft( 
+                Set().Add(tc),
+                fun (e, s : Set [TypeInfo])
+                {
+                  match (e)
+                  {
+                    | FixedType.Class(tc, _) => s.Replace(tc)
+                  }
+                });
+
+            add_supertypes(s);
+            
+
+          | Array =>
+            seen_array_type = true;
+            def superTypes = Set()
+                  .Add(InternalType.Generic_ICollection_tc)
+                  .Add(InternalType.Generic_IList_tc)
+                  .Add(InternalType.Generic_IEnumerable_tc)
+                  .Add(InternalType.IEnumerable_tc)
+                  .Add(InternalType.IList_tc)
+                  .Add(InternalType.ICollection_tc)
+                  .Add(InternalType.Object_tc);
+
+            add_supertypes(superTypes);
+            
+
+          | _ => seen_non_class_type = true;
+        }
+
+        when (seen_non_class_type || (seen_array_type && !seen_class_type))
+        {
+          if (seen_object)
+            return InternalType.Object;
+          else match (lst)
+          {
+            | x :: xs =>
+              if (xs.ForAll(_.Unify(x)))
+                return x;
+              else
+              {
+                SaveError(messenger, $"common super type of types $lst is just `object', please upcast one of the types to `object' if this is desired");
+                return InternalType.Object;
+              }
+
+            | [] => Util.ice()
+          }
+        }
+
+        assert(!supertypes.IsEmpty);
+
+        def getMaximal(t, lst)
+        {
+          mutable seen_better = false;
+          
+          def testSuperType(ti : TypeInfo)
+          {
+            if (ti.IsDerivedFrom(t))
+            {
+              seen_better = true;
+              true
+            }
+            else if (t.IsDerivedFrom(ti))
+            {
+              assert(!seen_better);
+              false
+            }
+            else true
+          }
+
+          def lst = lst.RevFilter(testSuperType);
+
+          if (seen_better) lst else t :: lst
+        }
+
+        def supertypes1 = supertypes;
+        def maximal1    = supertypes1.Fold([], getMaximal);
+
+        def makeTyVars(tc : TypeInfo)
+        {
+          // reuse existing type if possible
+          mutable res = null;
+
+          foreach (x in lst)
+          {
+            | FixedType.Class(tc1, _) when tc1.Equals(tc) => res = x
+            | _ => ()
+          }
+
+          // and create fresh substitution if not
+          when (res == null)
+            res = tc.GetFreshType();
+            
+          foreach (x : FixedType in lst)
+            _ = x.Require(res);
+
+          res
+        }
+
+        def maximal2 = maximal1.RevMap(makeTyVars);
+
+
+        // if there are interfaces and class in the bag choose the class
+        def aint_interface(t) { !t.IsInterface }
+
+        def maximal3 =
+          if (maximal2.Exists(aint_interface))
+            maximal2.Filter(aint_interface)
+          else
+            maximal2;
+
+        match (maximal3)
+        {
+          | [t] when t.Equals(InternalType.ValueType) && !seen_value_type
+          | [t] when t.Equals(InternalType.Object)    && !seen_object =>
+            SaveError(messenger, $"common super type of types $lst is just `$t', please upcast one of the types to `$t' if this is desired");
+
+          | _ => ()
+        }
+
+        match (maximal3)
+        {
+          | [x] => x
+          | lst2 =>
+            //SaveError(messenger, 
+            //             $ "common super type of types $lst is a set of "
+            //               "interfaces $(lst2). This is not supported");
+            def res = FixedType.Intersection(lst2);
+            res.Validate();
+            res
+        }
+      }
+
+      if (t1 == null)      t2
+      else if (t2 == null) t1
+      else
+      {
+        t1.Validate();
+        t2.Validate();
+
+        match ((t1, t2))
+        {
+          | (FixedType.Intersection(tyList), FixedType.Intersection as t) =>
+            tyList.FoldLeft(InternalType.Object, (t2, a) => Intersect(a, Sum(t, t2)))
+
+          | (t, FixedType.Intersection(tyList)) | (FixedType.Intersection(tyList), t) =>
+            tyList.FoldLeft(InternalType.Object, 
+              (t2, a) => Intersect(a, sum_list([t, t2], allow_fake = true)))
+
+          // a little special case, for better speed
+          | ((FixedType.StaticTypeVarRef(tv)), (FixedType.Class(tc, _)) as t)
+          | ((FixedType.Class(tc, _)) as t, (FixedType.StaticTypeVarRef(tv))) =>
+            mutable res = true;
+            mutable seen = false;
+
+            foreach (FixedType.Class(tc2, _) as t2 in tv.Constraints)
+              when (!seen && tc2.IsDerivedFrom(tc))
+              {
+                res = t2.Require(t);
+                seen = true;
+                break;
+              }
+
+            if (seen && res)
+              t
+            else
+              sum_list([t1, t2])
+
+          | (FixedType.Class(tc1, []), FixedType.Class(tc2, [])) =>
+            if (tc1.Equals(tc2))
+              t1
+            else if (tc1.IsDerivedFrom(tc2))
+              t2
+            else if (tc2.IsDerivedFrom(tc1))
+              t1
+            else
+              sum_list([t1, t2])
+
+          | (t1, t2) =>
+            def res = sum_list([t1, t2]);
+            res
+        }
+      }
+    }    
+
+    public CurrentMessenger : Messenger
+    {
+      get { messenger }
+    }
+    
+    public IsTopLevel : bool
+    {
+      get { serial_stack_top == 0 }
+    }    
+    
+    public this(man : ManagerClass)
+    {
+      Manager = man;
+
+      dt_stack = Stack();
+      dt_store = Map();
+      
+      messenger = Messenger();
+
+      messenger.NeedMessage = true;
+      messenger.InErrorMode = true;
+
+      serial_stack     = array(500);
+      last_serial      = 1;
+      top_serial       = 1;
+      serial_stack[0]  = 1;
+      serial_stack_top = 0;
+      possibly_looping = 0;
+    }
+
+    #region Interface for DelayedTyping
+    internal mutable dt_store : Map [Typer.DelayedTyping, Typer.DelayedTyping.Kind];
+    dt_stack : Stack [Map [Typer.DelayedTyping, Typer.DelayedTyping.Kind]];
+    #endregion
+
+
+    internal         serial_stack     : array [int];
+    internal mutable serial_stack_top : int;
+    internal mutable top_serial       : int;
+    private  mutable last_serial      : int;
+    private  mutable possibly_looping : int;
+    internal mutable CyclicTypeCount  : int;
+    internal mutable InUse            : bool;
+
+             mutable current_rank     : int;
+                     messenger        : Messenger;
+  }
+}

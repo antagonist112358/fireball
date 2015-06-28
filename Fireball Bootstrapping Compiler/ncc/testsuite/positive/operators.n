@@ -1,0 +1,382 @@
+using System;
+using System.Console;
+using Nemerle;
+using OverloadedList;
+
+namespace IgnoreNullOperator
+{
+  class A { public i : int = 2; }
+  class B { public a : IgnoreNullOperator.A = null; }
+  class C { public a : IgnoreNullOperator.B = null; }
+  module Test
+  {
+    public Test() : void
+    {
+      WriteLine("--------- Begin '?.' test ---------");
+      def b1 = IgnoreNullOperator.B();
+      
+      WriteLine(b1?.a?.i);
+      
+      for (mutable str = null; str?.Length <= 4; str += "Test")
+      {
+        WriteLine(str?.ToString() + "s");
+        WriteLine(str?.Length);
+        //WriteLine(str?.[0]);
+      }
+      
+      WriteLine("--------- End '?.' test ---------");
+    }
+  }
+}
+class Foo {
+  public x : int;
+
+  public this (x : int) {
+    this.x = x
+  }
+
+  public static @+ (a : Foo, b : Foo) : Foo {
+    Foo (a.x + b.x + 1)
+  }
+
+  public static @| (a : Foo, b : Foo) : bool {
+    a.x + b.x > 0
+  }
+
+  public static @++ (a : Foo) : Foo {
+    Foo (a.x + 1)
+  }
+
+  public static @%^ (a : Foo, b : Foo) : void {
+    Nemerle.IO.printf ("want to %d ^ %d?\n", a.x, b.x)
+  }
+
+  public static prop : int {
+    set {
+      j = value + 1;
+    }  
+    get { j }
+  }
+  mutable static j : int;
+}
+
+
+class A { }
+class B : A {
+  public static @== (_ : B, _ : B) : bool { true }
+}
+
+class X {
+  public static Run () : void
+  {
+    assert(((A () : object) == (A () : object) ) == false);
+    assert(((A () : object) == A ()            ) == false);
+    assert((A () == null                       ) == false);
+    assert(((null : A) == null                 ) == true);
+    assert((B () == B ()                       ) == true);
+    assert((B () == (null : B)                 ) == true);
+    assert((B () == null                       ) == true);
+    assert(((B () : object) == null            ) == false);
+    assert(((B () : object) == (null : object) ) == false);
+    assert(((B () : object) == (B () : object) ) == false);
+  }
+}
+
+
+class Qux {
+        public static @== (x1 :Qux ,  x2 : Qux) : bool
+        {
+                if ((x1 : object) == (x2 : object))
+                  true
+                else
+                  if (x1 : object == null)
+                    true
+                  else
+                    false
+        }
+
+        static public Run (): void {
+                when (Qux () == null)
+                        System.Console.WriteLine ("nok");
+                when ((null : Qux) == Qux ())
+                        System.Console.WriteLine ("ok1");
+                when (Qux () == Qux ())
+                        System.Console.WriteLine ("nok1");
+                def x = Qux();
+                when (x == x)
+                        System.Console.WriteLine ("ok2");
+        }
+}
+
+class Operand {
+  public val : int;
+  public this (v : int) { val = v }
+  
+  public static @<-< (x : Operand, y : Operand) : Operand {
+    Operand (x.val + y.val);
+  }
+  
+  public static @* (x : Operand, y : Operand) : Operand {
+    Operand (x.val - y.val);
+  }
+}
+
+module Operators {
+  public boo () : void {
+    def x = Operand (2);
+    def y = Operand (3);
+    def z = x <-< y;
+    assert(z.val == 5);
+    def q = x * y * z;
+    assert(q.val == -6);
+
+    def l1 = [1,2,3];
+    def l2 = [7,8];
+    assert((l1 & l2).Length == 5);
+    assert((l1 <-:-> l2).Length == 8);
+  }
+  
+  public BooleanBitwise() : void
+  {
+    mutable sideVariable;
+    def sideEffect(r, v) { sideVariable = v; r; }
+    
+    sideVariable = true;
+    assert((sideEffect(true, true) & true) == true);
+    assert(sideVariable == true);
+    
+    assert((sideEffect(false, false) | true) == true);
+    assert(sideVariable == false);
+  }
+  
+  public BooleanBitwiseAssignment() : void
+  {
+    mutable sideVariable;
+    mutable x;
+    def sideEffect(r, v) { sideVariable = v; r; }
+    
+    x = true;
+    sideVariable = true;
+    x &= sideEffect(false, false);
+    assert(x == false);
+    assert(sideVariable == false);
+    
+    x = false;
+    sideVariable = true;
+    x &= sideEffect(false, false);
+    assert(x == false);
+    assert(sideVariable == false);
+    
+    x = true;
+    sideVariable = true;
+    x |= sideEffect(false, false);
+    assert(x == true);
+    assert(sideVariable == false);
+    
+    x = false;
+    sideVariable = true;
+    x |= sideEffect(false, false);
+    assert(x == false);
+    assert(sideVariable == false);
+  }
+  
+  public bug781 () : void {
+    def n = 0xF0000000;
+    _ = (n & n) == n; // ok
+    _ = n %&& n // was causing run-time exception: Arithmetoc operation resulted in an overflow.      
+  }
+}
+
+module OverloadedList {
+  public @& ['a] (l1 : list['a], l2 : list ['a]) : list ['a]
+  {
+    l1 + l2
+  }
+  
+  public @<-:->['a] (l1 : list['a], l2 : list ['a]) : list ['a]
+  {
+    l1 + l2 + l1
+  }
+}
+
+public class OpOverloaded {
+  public static @:> (_x : OpOverloaded) : int {  1 }
+  public static @:> (_x : OpOverloaded) : string { "ss" }
+  public static @:> (_x : int) : OpOverloaded {  null }
+  public static @: (_x : OpOverloaded) : int {  1 }
+  public static @: (_x : OpOverloaded) : string { "ss" }
+  public static @: (_x : int) : OpOverloaded {  null }
+}
+
+// and also bug #769
+namespace Bug415 {
+  class Ax {
+    mutable x : int;
+
+    public Buffer : Ax
+    {
+      get { System.Console.WriteLine ("Buffer_get called"); this }
+    }
+
+    public Foo () : void
+    {
+      Buffer.x += 3;
+    }
+  }
+
+  delegate Dx () : void;
+}
+
+class B1 {
+  static uncurried (f : int -> string -> bool) : void {
+    assert(f (1)("3"));
+  }
+
+  static ProperParsing () : void {
+    IO.printf ("----- proper parsing ----\n");
+    mutable x = 44;
+    x += 1 + 2;
+    x *= 2 + 3;
+    IO.printf ("%d\n", x);
+    x++;
+    IO.printf ("%d\n", x);    
+    x--;
+    IO.printf ("%d\n", x);
+    for (mutable i = 0; i < 3; i++) IO.printf ("for %d ", i);
+    IO.printf ("\n");
+
+    def f (_x : int * int * int, _y : string) {
+      IO.printf ("%s\n", _x.ToString ());
+    }
+    f ((1,2,3), null);
+    def g (_x : (int * int) * int, _u : object) {
+      IO.printf ("%s\n", _x.ToString ());
+    }
+    g (((1,2),3), null);
+    IO.printf ("%d\n", 2 * 3 * 4);
+    def fromdouble = 5 * 4.0 :> int;
+    IO.printf ("%d\n", fromdouble);
+
+    mutable a = 1U;
+    def b = 2U;
+    a=b-1U;
+    uncurried (fun (_ : int) { fun (_ : string) { true } });  
+  }
+
+  static Main () : void {
+    mutable a = Foo (1) + Foo (1);
+    Nemerle.IO.printf ("%d\n", a.x);
+    when (Foo (0) | Foo (1)) Nemerle.IO.printf ("good\n");
+    a++;
+    Nemerle.IO.printf ("%d\n", a.x);
+    ++a;
+    Nemerle.IO.printf ("%d\n", a.x);
+    a %^ Foo (10);
+    mutable x1 = 16; ++x1;
+    mutable x2 = 16b; ++x2;
+    mutable x3 = 16us; ++x3;
+    mutable x4 = 16l; ++x4;
+    mutable x5 = 16sb; --x5;
+    mutable x6 = 16ul; --x6;
+    System.Console.WriteLine ("{0} {1} {2}", x1, x2, x3);
+    System.Console.WriteLine ("{0} {1} {2}", x4, x5, x6);    
+    Foo.prop = 5;
+    Nemerle.IO.printf ("%d\n", Foo.prop);
+    ++Foo.prop;
+    Nemerle.IO.printf ("%d\n", Foo.prop);
+    def x = array [1,2,3,4, 5];
+    ++x[1];
+    Nemerle.IO.printf ("%d\n", x[1]);
+    x[2] = ~x[1];
+    Nemerle.IO.printf ("%d\n", x[2]);
+    def t = 5U;
+    Nemerle.IO.printf ("%s\n", (~t).ToString ()); 
+    System.Console.Write ("foo" + "bar" + "\n");
+    def z = System.Decimal (10 + 12) + System.Decimal (6 + 4 + 10);
+    when (42 == System.Decimal.ToInt32 (z)) IO.printf ("ok\n");
+
+    mutable mlist = [1,2,3];
+    mlist ::= 0;
+    IO.printf ("%s\n", mlist.ToString ());
+
+    X.Run ();
+
+    Qux.Run ();
+   
+    ProperParsing ();
+
+    Operators.boo ();
+
+
+    System.Console.WriteLine (int.op_Addition (1,2));
+    IO.printf ("%f\n", float.op_Division (1,2));
+    unchecked {
+    System.Console.WriteLine (int.op_Addition (int.MinValue,-1));
+    }
+    
+    Operators.bug781();
+    Operators.BooleanBitwise();
+    Operators.BooleanBitwiseAssignment();
+
+    Bug415.Ax().Foo();
+
+    // bug #693
+    {
+      def quicksort(l)
+      {
+          | [] => []
+          | x :: xs =>
+              quicksort($[y | y in xs, y<x])
+              + [x]
+              + quicksort($[y | y in xs, y>=x])
+      }
+      System.Console.WriteLine(quicksort([2,1,3]));
+	  
+	  IgnoreNullOperator.Test.Test();
+    }
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+3
+good
+4
+5
+want to 5 ^ 10?
+17 17 17
+17 15 15
+6
+8
+3
+-4
+4294967290
+foobar
+ok
+[0, 1, 2, 3]
+ok1
+ok2
+----- proper parsing ----
+235
+236
+235
+for 0 for 1 for 2
+(1, 2, 3)
+((1, 2), 3)
+24
+20
+3
+0.5
+2147483647
+Buffer_get called
+[1, 2, 3]
+--------- Begin '?.' test ---------
+0
+s
+0
+Tests
+4
+--------- End '?.' test ---------
+END-OUTPUT
+*/

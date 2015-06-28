@@ -1,0 +1,48 @@
+
+public module TestUnchecked
+{
+  private TestIt (x : int) : int
+  {
+    unchecked {      
+      def x = System.Int32.MaxValue + x + 20;
+      def y = System.Int32.MinValue * -1;
+      def z = System.Int32.MinValue - System.Int32.MaxValue + 2 * x;
+      def a = (System.Int32.MinValue :> uint);
+      def b = (a :> int);
+      def bited = ((((3 & 1) | 4) << 2) >> 1) + (~0) + 2000000000 + 2000000000 + 2000000000;
+      def constant_folded = 2000000000 + 2000000000;
+
+      System.Console.WriteLine ("{0} {1} {2}", System.Int32.MinValue, a, b);
+      System.Console.WriteLine (bited :> int);
+      System.Console.WriteLine (constant_folded :> int);      
+      
+      ((x : long) + y + z) :> int
+    }
+  }
+
+  TestTail () : void {
+    def f (n) {
+      def x = (1,2,3);
+      def (_, _, _) = x;
+      if (n < 100000)
+        unchecked f ((n + 1) * 1);
+      else
+        ()
+    };
+    f (0);
+  }
+  
+  public Main () : void
+  {
+    ignore (TestIt (10));
+    TestTail ();
+  }
+}
+
+/*
+BEGIN-OUTPUT
+-2147483648 2147483648 -2147483648
+1705032713
+-294967296
+END-OUTPUT
+*/

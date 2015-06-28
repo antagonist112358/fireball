@@ -1,0 +1,18 @@
+module M {
+  bar3 () : int
+  {
+    brk : { 
+      def qfoo () {
+        brk (42) // E: non local goto
+      }
+      qfoo();
+      qfoo();
+      1
+    }
+  }
+
+  Main () : void
+  {
+  }
+  
+}

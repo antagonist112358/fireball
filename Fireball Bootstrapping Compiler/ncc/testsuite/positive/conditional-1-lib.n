@@ -1,0 +1,17 @@
+﻿using System.Console;
+using System.Diagnostics;
+
+public module External
+{
+  [Conditional("Foo")]
+  public Foo() : void { WriteLine("OK"); }
+
+  [Conditional("Bar")]
+  public Bar() : void { WriteLine("Fail"); }
+}
+
+public class BaseClass
+{
+  [Conditional("Bar")]
+  public virtual X() : void {  };
+}
