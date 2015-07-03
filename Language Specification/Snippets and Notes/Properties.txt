@@ -1,0 +1,114 @@
+Properties
+
+-- Definition
+Properties give you a mechanism to expose values outside of a class. Like methods, they have 'public' access by default.
+Also like methods, they are evaluated each time they are accessed.
+
+-- Syntax
+
+def Property: double {
+	get => { ... },
+	set => { ... }
+}
+
+// The above is equivalent to:
+
+def Property: double = {
+	() => { ... },
+	(value) => { ... },
+}
+
+// Note: The 'get' function is defined as 'get: Void -> T' where T is the type of the property. The 'set' function is
+// defined as 'set: (value: T) -> void' where again T is the type of the property.
+
+// Properties can also be read-only and write-only, meaning they can either be used to read a value
+// (in the case of read-only) or write a value (in the case of write-only) but not both:
+
+// A read-only property:
+def Property: double {
+	get => { ... }
+}
+
+// A write-only property:
+def Property: double {
+	set => { ... }
+}
+
+// Properties are a function group with two functions:
+// Get: Returns a value (of the property's type)
+// Set: Takes a value (of the property's type) and returns void
+
+// Because properties are functional groups, when using the name of the function in the group that 
+// is being implemented, the functions can appear in any order (like named arguments for a function/method call).
+
+// Example:
+def PiApproximation: Decimal {
+	set(betterApproximation) => _pi = betterApproximation,
+	get => _pi
+}
+
+// Functions in function groups can either be defined by name or by position within the group.
+// This makes the following valid property definitions. For a read-only property:
+def Trash: Seq[Item] { () =>
+	...
+}
+
+// And for a write-only property:
+def Property: double { None, (d) =>
+	...
+}
+
+// In the above case, the 'None' is required to specify that there is no 'get' function defined. Since it
+// is the first function in the group, it must be specified first (in this case, it is defined to be 'None'.
+
+-- Auto Properties
+// Properties can automatically generate a private member field (variable) and tie/link it to the property being exposed.
+// To do this, use the following syntax:
+def AutoProperty: string { get, set } = expression for default value
+
+// This will define a private member field named '_autoProperty' and generate 'get' and 'set' functions
+// to assign and read this field automatically. Further, since Fireball does not like uninitialized values
+// or variables, you are required to initialize the value of the automatically generated field to something
+// which you do by providing the default value after the definition using an equals sign.
+// Note: The value expression is evaluated only once, when the class is instantiated.
+
+-- Access levels
+// Properties are unique in addition to the 'auto property' quality described above. They can also have
+// access modifiers assigned to any of the functions in the group. If you assign an access modifier to
+// either (or both) of the functions in the group, that access level will be used when a client attempts
+// to access that function in the group. For instance:
+
+private def ThisPropertyIsPrivate: string { get, set } = ""
+
+// In this case, the property (function group) is private, and can not be accessed from outside of the class.
+// But what if we wanted a property which could be read by outside-of-the-class clients and only written to
+// by members of the class defining it? You would use the following:
+
+def ThisPropertyIsPublic { get => ..., private set => ... }
+
+// So what is going on here? The function group is public, so outside clients can access it. What happens if
+// they try to call the 'set' function on the group? Well they have access to the set function, but it is tied
+// to a member implementation which is private, so they will get an error as expected.
+// Note: The access level can be applied to the group functions whether they are named or not, making this 
+// syntax completely valid:
+
+def ThisPropertyIsPublic {
+	() => ... ,
+	private (value) => ...
+}
+
+-- Attach to local variable/value
+// Finally properties can be tied/linked to member fields (variables or values), which works much like the
+// auto property mechanism. The compiler will automatically generate 'get' and 'set' functions to read and
+// assign the value of the field.
+
+def ThisPropertyIsTiedToAField = _memberVariable
+
+// Note: If the property is tied to a value, only a getter will be generated.
+
+// Note: You can still change the access level of the generated functions by using the '[PrivateGetter]' and
+// '[PrivateSetter]' attributes, like this:
+<PrivateSetter> def ThisPropertyIsTiedToAField = _memberVariable
+
+
+
