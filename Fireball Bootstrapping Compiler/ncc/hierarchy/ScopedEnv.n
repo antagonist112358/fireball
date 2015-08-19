@@ -1,0 +1,90 @@
+﻿using System;
+using Nemerle.Assertions;
+using Nemerle.Collections;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Imperative;
+using Nemerle.Surround;
+using Nemerle.Utility;
+
+using NSTree = Nemerle.Compiler.NamespaceTree;
+using PT     = Nemerle.Compiler.Parsetree;
+using SCG    = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  class ScopedEnv : GlobalEnv
+  {
+    private global_scope: GlobalEnv;
+      
+    public this(globalScope: GlobalEnv) {
+      base(globalScope, []);
+      global_scope = globalScope
+    }
+    
+    private this(newScope: GlobalEnv, globalScope: GlobalEnv) {
+      base(newScope, []);
+      global_scope = globalScope
+    }
+    
+    // Closes the current Scoped Environment
+    public override Close() : GlobalEnv {
+        global_scope
+    }
+        
+    public override AddNamespaceAlias (short_name : string, long_name : list [string], loc : Location) : GlobalEnv
+    {
+      def nodes_with_prefix = add_alias_nodes (short_name, long_name);
+      def entered = nodes_with_prefix.Map(x => x.Path([short_name]));
+      nameTree.referenced_namespace_nodes.Add ((entered, loc));
+      ScopedEnv(
+        GlobalEnv (NList.RevAppend (nodes_with_prefix, open_namespaces),
+                 current_namespace,
+                 (short_name, long_name.ToString (".")) :: namespace_aliases,
+                 SyntaxKeywords,
+                 Keywords,
+                 UnaryOperators,
+                 Operators,
+                 nameTree,
+                 Defines),
+        global_scope)
+    }    
+    
+    internal override CreateExtended (o : list [NamespaceTree.Node], c : NamespaceTree.Node,
+                             n : list [string * string],
+                             // note that only NEW extensions are specified here
+                             syntax_exts : list [list [SyntaxDefinition]]) : GlobalEnv
+    {
+      mutable syn_keys = SyntaxKeywords;
+      mutable keys = Keywords;
+      mutable uops = UnaryOperators;
+      mutable ops  = Operators;
+
+      foreach (x in syntax_exts)
+      {
+        syn_keys = MainParser.load_syntax (x, syn_keys);
+
+        foreach (ext in x)
+        {
+          | od is OperatorDefinition =>
+            when (LexerBase.HasKeywordChars (od.Start))
+              keys = keys.Replace (od.Start);
+
+            if (od.Keywords == null)
+              ops  = ops.Replace (od.Start, MainParser.BinaryOperatorInfo(od.Start, od.Left, od.Right))
+            else
+              uops = uops.Replace(od.Start, MainParser.UnaryOperatorInfo(od.Start, od.Left, od.Right));
+
+          | _ =>
+            foreach (k in ext.Keywords)
+              unless (Manager.Options.IsKeywordDisabled(k, o))
+                keys = keys.Replace (k);
+        }
+      }
+
+      ScopedEnv(
+        GlobalEnv(o, c, n, syn_keys, keys, uops, ops, nameTree, Defines),
+        global_scope)
+    }    
+  }
+}

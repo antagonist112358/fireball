@@ -59,7 +59,6 @@
     <Folder Include="ncc\completion" />
     <Folder Include="ncc\typing" />
     <Folder Include="Properties" />
-    <Folder Include="Properties" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ncc\CompilationOptions.n">
@@ -111,10 +110,11 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
-    <Reference Include="Nemerle, Version=1.2.0.446, Culture=neutral, PublicKeyToken=e080a9c724e2bfcd">
+    <Reference Include="Nemerle">
       <Name>Nemerle</Name>
       <AssemblyName>Nemerle.dll</AssemblyName>
       <HintPath>C:\Program Files (x86)\Nemerle\net-4.0\Nemerle.dll</HintPath>
+      <SpecificVersion>False</SpecificVersion>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -129,7 +129,9 @@
         <ReplacementValue>%(OutputAssemblyIdentity.Version)</ReplacementValue>
       </Token>
     </ItemGroup>
+	<!--
     <TemplateFile Template="ncc\policy.1.2.$(AssemblyName).config.template" OutputFilename="$(OutputPath)\policy.1.2.$(AssemblyName).config" Tokens="@(Token)" />
     <AL ToolPath="$(SDKBin)" LinkResources="$(OutputPath)\policy.1.2.$(AssemblyName).config" OutputAssembly="$(OutputPath)\policy.1.2.$(AssemblyName).dll" KeyFile="$(KeyOriginatorFile)" Platform="$(Platform)" />
+	-->
   </Target>
 </Project>

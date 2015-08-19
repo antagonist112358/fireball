@@ -94,8 +94,8 @@ public variant Token : IEnumerable [Token]
                 }  // ; ... ;
 
   | Namespace { Env : GlobalEnv; KeywordToken : Token; Body : Token; }
-  | Using { Env : GlobalEnv; KeywordToken : Token; Body : Token; }
-
+  | Import { Env : GlobalEnv; KeywordToken : Token; Body : Token; }
+  
   | EndOfFile
   | EndOfGroup
 
@@ -149,7 +149,7 @@ public variant Token : IEnumerable [Token]
         "namespace " + env.CurrentNamespace.GetDisplayName ()
         + " { " + PreParser.Dump (body, "") + " }"
 
-      | Using => "using import;"
+      | Import => "import namespace or class;"
       | WhiteSpace(name) => name
       | NewLine => "\\r\\n";
 
@@ -162,7 +162,7 @@ public variant Token : IEnumerable [Token]
     {
       | RoundGroup (child, _, _) | BracesGroup (child, _, _, _) | SquareGroup (child, _, _)
       | QuoteGroup (child, _, _) | LooseGroup (child)  | Namespace (_, _, child)
-      | Using (_, _, child) =>
+      | Import (_, _, child) =>
         def loop (current)
         {
           when (current != null)
@@ -231,7 +231,7 @@ public variant Token : IEnumerable [Token]
           else body.ToString (true)
 
         | Namespace => "namespace scoping"
-        | Using => "using declaration"
+        | Import => "import declaration"
       }
     else
       ToString ()
@@ -1588,10 +1588,10 @@ public abstract class LexerBase
       "match",      "matches",  "module",     /*"mutable",*/"namespace",  "new",        "null",
       "out",        "override", "params",     "partial",    "private",    "protected",  "public",
       "ref",        "sealed",   "static",     "struct",     "syntax",     "this",       "throw",
-      "true",       "try",      "typeof",     "using",      "variant",    "virtual",    "var",
+      "true",       "try",      "typeof",     /*"using",*/  "variant",    "virtual",    "var",
       "void",       "volatile", "when",       "where",      "with",       "val"
       // *NEW KEYWORDS*
-      , "record"
+      , "record",   "import"
     ];
     BaseKeywords = Set(tab);
 

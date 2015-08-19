@@ -436,7 +436,7 @@ namespace Nemerle.Compiler
         | Token.Identifier (_)
         | Token.IdentifierToComplete (_)                              => testToken (_tok.Next)
         | Token.SquareGroup
-        | Token.Namespace | Token.Using | null                        => true
+        | Token.Namespace | Token.Import | null                       => true
         | _                                                           => false
       }
 
@@ -650,12 +650,17 @@ namespace Nemerle.Compiler
       push_stream(first);
 
       def members = SCG.List();
+      def current_env = env;
 
       while (stream != null)
         ParseClassMember(parentType, members);
-
+      
       pop_stream("type member");
 
+      // reset environment
+      when (!env.Equals(current_env))
+        env = current_env;
+      
       members
     }
 
@@ -823,7 +828,7 @@ namespace Nemerle.Compiler
           env = begin_env;
           acc
 
-        | Token.Using (new_env, _, _) =>
+        | Token.Import (new_env, _, _) =>
           env = new_env;
           acc
 
@@ -1204,9 +1209,9 @@ namespace Nemerle.Compiler
     }
 
     ParseClassMember (parentType : string, members : SCG.List[ClassMember]) : void
-    {
+    { 
       def start_tok = get_token ();
-
+      
       match (start_tok)
       {
         | Token.LooseGroup (toks) =>
@@ -1231,7 +1236,7 @@ namespace Nemerle.Compiler
           mutable prmsOpenLoc;
           mutable prmsCloseLoc;
 
-          def tok = peek_token ();
+          def tok1 = peek_token ();
 
           def parseNestedTypeDeclaration()
           {
@@ -1245,189 +1250,201 @@ namespace Nemerle.Compiler
               members.Add(mem);
           }
 
-          match (tok)
-          {
-            | Token.Identifier("type") when peek_second_token() is Token.Identifier => parseNestedTypeDeclaration()
-            // Method or Property
-            | Token.Keyword("def") =>
-              // Read 'def' keyword  
-              _ = get_token();
-              // Read identifier
-              match(peek_token()) {
-                | Token.Identifier | Token.Operator("$") =>
-                  def id = get_splicable_id();
-                  mutable is_property = false;
-                  def (tyvars, (parms, parmsloc)) =
-                    match (peek_token(), peek_second_token())
-                    {
-                      | (Token.SquareGroup, Token.SquareGroup) =>
-                        is_property = true;
-                        (parse_tyvars (), parse_parameters ());
+          def loop(tok) {          
+            match (tok)
+            {
+              | Token.Import(new_env, _, _) =>
+                shift();
+                env = new_env;
+                unless (peek_token() is Token.EndOfGroup)
+                  loop(peek_token())
+                
+              | Token.Identifier("type") when peek_second_token() is Token.Identifier => parseNestedTypeDeclaration()
+              // Method or Property
+              | Token.Keyword("def") =>
+                // Read 'def' keyword  
+                _ = get_token();
+                // Read identifier
+                match(peek_token()) {
+                  | Token.Identifier | Token.Operator("$") =>
+                    def id = get_splicable_id();
+                    mutable is_property = false;
+                    def (tyvars, (parms, parmsloc)) =
+                      match (peek_token(), peek_second_token())
+                      {
+                        | (Token.SquareGroup, Token.SquareGroup) =>
+                          is_property = true;
+                          (parse_tyvars (), parse_parameters ());
 
-                      | (Token.SquareGroup, Token.RoundGroup) =>
-                        (parse_tyvars (), parse_parameters ());
+                        | (Token.SquareGroup, Token.RoundGroup) =>
+                          (parse_tyvars (), parse_parameters ());
 
-                      | (Token.SquareGroup, _) =>
-                        is_property = true;
-                        ((null, null, Location.Default), parse_parameters ());
+                        | (Token.SquareGroup, _) =>
+                          is_property = true;
+                          ((null, null, Location.Default), parse_parameters ());
 
-                      | (Token.RoundGroup, _) =>
-                        ((null, null, Location.Default), parse_parameters ());
+                        | (Token.RoundGroup, _) =>
+                          ((null, null, Location.Default), parse_parameters ());
 
-                      | _ =>
-                        is_property = true; // most probably it is a field or property
-                        ((null, null, Location.Default), ([], Location.Default))
-                    };
+                        | _ =>
+                          is_property = true; // most probably it is a field or property
+                          ((null, null, Location.Default), ([], Location.Default))
+                      };
                   
-                  prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
-                                                    parmsloc.Line,    parmsloc.Column + 1);
-                  prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
-                                                    parmsloc.EndLine, parmsloc.EndColumn);
-                  def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
-                  def typarms  = parse_where_constraints (tyvars);
+                    prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
+                                                      parmsloc.Line,    parmsloc.Column + 1);
+                    prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
+                                                      parmsloc.EndLine, parmsloc.EndColumn);
+                    def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
+                    def typarms  = parse_where_constraints (tyvars);
 
-                  if (is_property)
-                    // property can contain embedded (nested) fields we should take it into account
-                    parse_property (parentType, members, start_tok.Location, mods, customs, id, ret_type,
-                                    parms, typarms, prmsOpenLoc, prmsCloseLoc);
-                  else
+                    if (is_property)
+                      // property can contain embedded (nested) fields we should take it into account
+                      parse_property (parentType, members, start_tok.Location, mods, customs, id, ret_type,
+                                      parms, typarms, prmsOpenLoc, prmsCloseLoc);
+                    else
+                    {
+                      def header = PFunHeader (start_tok.Location.FromStart() + parmsloc + ret_type.Location,
+                                                typarms, id, ret_type, parms, prmsOpenLoc, prmsCloseLoc);
+                      take_attributes_out (ref customs, System.AttributeTargets.Method, false, mods);
+
+                      def return_value_mods = AttributesAndModifiers();
+                      take_attributes_out (ref customs, System.AttributeTargets.ReturnValue, true, return_value_mods);
+
+                      def met = parse_method (header, mods, return_value_mods);
+                      when (met != null)
+                        members.Add(met);
+                    }                  
+                  | x => Error(x, "expecting identifier after 'def' keyword in property or function declaration.");
+                }
+              
+              // Field
+              | Token.Keyword("var") with mut = true
+              | Token.Keyword("val") with mut = false =>
+                // Read 'val/var' keyword  
+                _ = get_token();
+                // Read identifier
+                match(peek_token()) {
+                  | Token.Identifier | Token.Operator("$") =>
+                    def id = get_splicable_id();
+                    def parmsloc = Location.Default;
+                    prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
+                                                      parmsloc.Line,    parmsloc.Column + 1);
+                    prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
+                                                      parmsloc.EndLine, parmsloc.EndColumn);
+                    def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());                  
+                    parse_field(parentType, members, start_tok.Location, mods, id, mut, ret_type) 
+                  | x => Error(x, "expecting identifier after 'val' or 'var' keyword.");
+                }
+              
+              | Token.Operator ("$") | Token.Identifier =>
+                def id = get_splicable_id ();
+                mutable is_property = false;
+                def (tyvars, (parms, parmsloc)) =
+                  match (peek_token(), peek_second_token())
                   {
-                    def header = PFunHeader (start_tok.Location.FromStart() + parmsloc + ret_type.Location,
-                                             typarms, id, ret_type, parms, prmsOpenLoc, prmsCloseLoc);
-                    take_attributes_out (ref customs, System.AttributeTargets.Method, false, mods);
+                    | (Token.SquareGroup, Token.SquareGroup) =>
+                      is_property = true;
+                      (parse_tyvars (), parse_parameters ());
 
-                    def return_value_mods = AttributesAndModifiers();
-                    take_attributes_out (ref customs, System.AttributeTargets.ReturnValue, true, return_value_mods);
+                    | (Token.SquareGroup, Token.RoundGroup) =>
+                      (parse_tyvars (), parse_parameters ());
 
-                    def met = parse_method (header, mods, return_value_mods);
-                    when (met != null)
-                      members.Add(met);
-                  }                  
-                | x => Error(x, "expecting identifier after 'def' keyword in property or function declaration.");
-              }
-              
-            // Field
-            | Token.Keyword("var") with mut = true
-            | Token.Keyword("val") with mut = false =>
-              // Read 'def' keyword  
-              _ = get_token();
-              // Read identifier
-              match(peek_token()) {
-                | Token.Identifier | Token.Operator("$") =>
-                  def id = get_splicable_id();
-                  def parmsloc = Location.Default;
-                  prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
-                                                    parmsloc.Line,    parmsloc.Column + 1);
-                  prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
-                                                    parmsloc.EndLine, parmsloc.EndColumn);
-                  def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());                  
-                  parse_field(parentType, members, start_tok.Location, mods, id, mut, ret_type) 
-                | x => Error(x, "expecting identifier after 'val' or 'var' keyword.");
-              }
-              
-            | Token.Operator ("$") | Token.Identifier =>
-              def id = get_splicable_id ();
-              mutable is_property = false;
-              def (tyvars, (parms, parmsloc)) =
-                match (peek_token(), peek_second_token())
+                    | (Token.SquareGroup, _) =>
+                      is_property = true;
+                      ((null, null, Location.Default), parse_parameters ());
+
+                    | (Token.RoundGroup, _) =>
+                      ((null, null, Location.Default), parse_parameters ());
+
+                    | _ =>
+                      is_property = true; // most probably it is a field or property
+                      ((null, null, Location.Default), ([], Location.Default))
+                  };
+
+                prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
+                                                  parmsloc.Line,    parmsloc.Column + 1);
+                prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
+                                                  parmsloc.EndLine, parmsloc.EndColumn);
+                def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
+                def typarms  = parse_where_constraints (tyvars);
+
+                if (is_property)
+                  // property can contain embedded (nested) fields we should take it into account
+                  parse_property (parentType, members, start_tok.Location, mods, customs, id, ret_type,
+                                  parms, typarms, prmsOpenLoc, prmsCloseLoc);
+                else
                 {
-                  | (Token.SquareGroup, Token.SquareGroup) =>
-                    is_property = true;
-                    (parse_tyvars (), parse_parameters ());
+                  def header = PFunHeader (start_tok.Location.FromStart() + parmsloc + ret_type.Location,
+                                            typarms, id, ret_type, parms, prmsOpenLoc, prmsCloseLoc);
+                  take_attributes_out (ref customs, System.AttributeTargets.Method, false, mods);
 
-                  | (Token.SquareGroup, Token.RoundGroup) =>
-                    (parse_tyvars (), parse_parameters ());
+                  def return_value_mods = AttributesAndModifiers();
+                  take_attributes_out (ref customs, System.AttributeTargets.ReturnValue, true, return_value_mods);
 
-                  | (Token.SquareGroup, _) =>
-                    is_property = true;
-                    ((null, null, Location.Default), parse_parameters ());
+                  def met = parse_method (header, mods, return_value_mods);
+                  when (met != null)
+                    members.Add(met);
+                }
 
-                  | (Token.RoundGroup, _) =>
-                    ((null, null, Location.Default), parse_parameters ());
+              | Token.Keyword ("this") =>
+                shift ();
+                def (parms, paramsLoc) = parse_parameters ();
+                prmsOpenLoc  = Location(paramsLoc, paramsLoc.Line,    paramsLoc.Column,
+                                                    paramsLoc.Line,    paramsLoc.Column + 1);
+                prmsCloseLoc = Location(paramsLoc, paramsLoc.EndLine, paramsLoc.EndColumn - 1,
+                                                    paramsLoc.EndLine, paramsLoc.EndColumn);
+                def header = PFunHeader (start_tok.Location.FromStart() + paramsLoc,
+                                          Typarms.Empty, MkSplicableName(".ctor", tok.Location),
+                                          PExpr.Void(), parms, prmsOpenLoc, prmsCloseLoc);
+                take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
+                def mem = parse_method (header, mods, null);
+                when (mem != null)
+                  members.Add(mem);
 
-                  | _ =>
-                    is_property = true; // most probably it is a field or property
-                    ((null, null, Location.Default), ([], Location.Default))
-                };
+              | Token.Keyword ("event") =>
+                shift ();
+                def mem = parse_event (start_tok.Location.FromStart(), mods, customs);
+                when (mem != null)
+                  members.Add(mem);
 
-              prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
-                                                parmsloc.Line,    parmsloc.Column + 1);
-              prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
-                                                parmsloc.EndLine, parmsloc.EndColumn);
-              def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
-              def typarms  = parse_where_constraints (tyvars);
+              | Token.Operator ("|") =>
+                shift ();
+                def target =
+                  if (in_variant) System.AttributeTargets.Class else System.AttributeTargets.Field;
+                take_attributes_out (ref customs, target, true, mods);
 
-              if (is_property)
-                // property can contain embedded (nested) fields we should take it into account
-                parse_property (parentType, members, start_tok.Location, mods, customs, id, ret_type,
-                                parms, typarms, prmsOpenLoc, prmsCloseLoc);
-              else
-              {
-                def header = PFunHeader (start_tok.Location.FromStart() + parmsloc + ret_type.Location,
-                                         typarms, id, ret_type, parms, prmsOpenLoc, prmsCloseLoc);
-                take_attributes_out (ref customs, System.AttributeTargets.Method, false, mods);
+                when (mods.Attributes != NemerleModifiers.None && mods.Attributes != NemerleModifiers.Partial)
+                  Error (tok, "modifiers not allowed on options");
+                def mem = parse_option (mods);
 
-                def return_value_mods = AttributesAndModifiers();
-                take_attributes_out (ref customs, System.AttributeTargets.ReturnValue, true, return_value_mods);
+                when (mem is ClassMember.TypeDeclaration(td))
+                  td._headerLocation = start_tok.Location.FromStart() + td.NameLocation;
 
-                def met = parse_method (header, mods, return_value_mods);
-                when (met != null)
-                  members.Add(met);
-              }
+                when (mem != null)
+                  members.Add(mem);
 
-            | Token.Keyword ("this") =>
-              shift ();
-              def (parms, paramsLoc) = parse_parameters ();
-              prmsOpenLoc  = Location(paramsLoc, paramsLoc.Line,    paramsLoc.Column,
-                                                 paramsLoc.Line,    paramsLoc.Column + 1);
-              prmsCloseLoc = Location(paramsLoc, paramsLoc.EndLine, paramsLoc.EndColumn - 1,
-                                                 paramsLoc.EndLine, paramsLoc.EndColumn);
-              def header = PFunHeader (start_tok.Location.FromStart() + paramsLoc,
-                                       Typarms.Empty, MkSplicableName(".ctor", tok.Location),
-                                       PExpr.Void(), parms, prmsOpenLoc, prmsCloseLoc);
-              take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
-              def mem = parse_method (header, mods, null);
-              when (mem != null)
-                members.Add(mem);
+              | Token.EndOfGroup as end when parsed_some_top_extension =>
+                take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
+                def loc = start_tok.Location.Combine(end.Location).AsGenerated();
+                def tmpName = MkTempSplicableName("custom_member", "custom_member", loc);
+                def h = PFunHeader(loc, Typarms.Empty, tmpName, PExpr.Void(), []);
+                def dummy_method = ClassMember.Function (header = h, name = h.ParsedSplicableName,  modifiers = mods,
+                                      loc = loc, body = FunBody.Parsed(<[]>), implemented = []);
+                members.Add(dummy_method);
 
-            | Token.Keyword ("event") =>
-              shift ();
-              def mem = parse_event (start_tok.Location.FromStart(), mods, customs);
-              when (mem != null)
-                members.Add(mem);
-
-            | Token.Operator ("|") =>
-              shift ();
-              def target =
-                if (in_variant) System.AttributeTargets.Class else System.AttributeTargets.Field;
-              take_attributes_out (ref customs, target, true, mods);
-
-              when (mods.Attributes != NemerleModifiers.None && mods.Attributes != NemerleModifiers.Partial)
-                Error (tok, "modifiers not allowed on options");
-              def mem = parse_option (mods);
-
-              when (mem is ClassMember.TypeDeclaration(td))
-                td._headerLocation = start_tok.Location.FromStart() + td.NameLocation;
-
-              when (mem != null)
-                members.Add(mem);
-
-            | Token.EndOfGroup as end when parsed_some_top_extension =>
-              take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
-              def loc = start_tok.Location.Combine(end.Location).AsGenerated();
-              def tmpName = MkTempSplicableName("custom_member", "custom_member", loc);
-              def h = PFunHeader(loc, Typarms.Empty, tmpName, PExpr.Void(), []);
-              def dummy_method = ClassMember.Function (header = h, name = h.ParsedSplicableName,  modifiers = mods,
-                                    loc = loc, body = FunBody.Parsed(<[]>), implemented = []);
-              members.Add(dummy_method);
-
-            | _ => parseNestedTypeDeclaration()
+              | _ => parseNestedTypeDeclaration()
+            }
+          
           }
-
+          
+          loop(tok1);
+          
           pop_stream ("class member");
 
         | _ => ()
       }
+      
     }
 
     parse_method (h : PFunHeader, modifiers : AttributesAndModifiers, return_value_modifiers : AttributesAndModifiers) : ClassMember
@@ -2644,6 +2661,8 @@ namespace Nemerle.Compiler
     public ParseBlock (tok : Token.BracesGroup, parms : list [PParameter]) : PExpr
     {
       def loc = tok.Location;
+      def block_env = env;
+      
       mutable res =
         match (tok.Child)
         {
@@ -2692,6 +2711,9 @@ namespace Nemerle.Compiler
         p.ResetPatternHack();
       }
 
+      when (!env.Equals(block_env))
+        env = block_env;  
+      
       res
     }
 
@@ -2885,6 +2907,12 @@ namespace Nemerle.Compiler
                   
                   loop();
               }
+              
+            | Token.Import(new_env, _, _) =>
+              _ = get_token();
+              env = new_env;
+              loop ()
+              
             | _ =>
               def expr = parse_embedded_expr (stop);
               _expr_stack = expr :: _expr_stack;
@@ -3602,7 +3630,7 @@ namespace Nemerle.Compiler
               match (env.SyntaxKeywords.Find (k))
               {
                 | Some (syntax_definition) when syntax_definition.Target %&& ((1 << 15) :> MacroTargets) => parse_syntax_definition(syntax_definition, stop)
-                | _ => fatal_error(tok, "unexpected keyword in expression context");
+                | _ => fatal_error(tok, $"unexpected keyword ($k) in expression context");
               }            
             | _ => fatal_error(tok, "expecting expression");
           };

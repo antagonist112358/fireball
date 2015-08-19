@@ -1,7 +1,7 @@
 namespace Fireball.Tests {
 
-	using System;
-	using SGC = System.Collections.Generic;
+	import System;
+	import SGC = System.Collections.Generic;
 
   class TestClass {
     // Fields

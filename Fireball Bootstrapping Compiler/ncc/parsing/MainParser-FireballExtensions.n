@@ -63,7 +63,7 @@ namespace Nemerle.Compiler
     }
     
     // Generate method perutations from default valued arguments
-    generateMethodPerutations(loc: Location, h : PFunHeader, modifiers : AttributesAndModifiers, body: FunBody, impl: list[PExpr], gen_subsets: bool = false) : list[ClassMember.Function] {
+    static generateMethodPerutations(loc: Location, h : PFunHeader, modifiers : AttributesAndModifiers, body: FunBody, impl: list[PExpr], gen_subsets: bool = false) : list[ClassMember.Function] {
       mutable parms_with_default_value = [];
       mutable parms_without_default_value = [];
       

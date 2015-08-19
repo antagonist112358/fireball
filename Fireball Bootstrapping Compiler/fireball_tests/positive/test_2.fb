@@ -1,6 +1,6 @@
 namespace Fireball.Tests {
 
-	using System;
+	import System;
 	
 	// Test normal class decl
 	class NoDefaultConstructor {

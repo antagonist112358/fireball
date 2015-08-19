@@ -44,9 +44,9 @@ namespace Nemerle.Compiler
   [ManagerAccess]
   public class GlobalEnv
   {
-    [Accessor] open_namespaces : list [NamespaceTree.Node];
-    current_namespace : NamespaceTree.Node;
-    [Accessor] namespace_aliases : list [string * string];
+    [Accessor] protected open_namespaces : list [NamespaceTree.Node];
+    protected current_namespace : NamespaceTree.Node;
+    [Accessor] protected namespace_aliases : list [string * string];
     mutable macro_ctx_cache : int;
 
     /// this is a map of keywords, which trigger syntax extensions
@@ -60,7 +60,7 @@ namespace Nemerle.Compiler
 
     public Defines : Map[string, bool];
 
-    [Accessor] nameTree : NamespaceTree;
+    [Accessor] protected nameTree : NamespaceTree;
 
     internal static CreateCore(nameTree : NamespaceTree) : GlobalEnv
     {
@@ -98,7 +98,7 @@ namespace Nemerle.Compiler
         nameTree.Manager.Options.CommandDefines);
     }
 
-    this(           open_namespaces   : list[NamespaceTree.Node],
+    internal this(  open_namespaces   : list[NamespaceTree.Node],
                     current_namespace : NamespaceTree.Node,
                     namespace_aliases : list[string * string],
                     syntax_keys       : Map[string, GrammarElement],
@@ -168,8 +168,8 @@ namespace Nemerle.Compiler
       }
     }
 
-
-    internal CreateExtended (o : list [NamespaceTree.Node], c : NamespaceTree.Node,
+    
+    internal virtual CreateExtended (o : list [NamespaceTree.Node], c : NamespaceTree.Node,
                              n : list [string * string],
                              // note that only NEW extensions are specified here
                              syntax_exts : list [list [SyntaxDefinition]]) : GlobalEnv
@@ -623,7 +623,7 @@ namespace Nemerle.Compiler
       CreateExtended (new_opened, current_namespace, namespace_aliases, exts)
     }
 
-    public AddNamespaceAlias (short_name : string, long_name : list [string],
+    public virtual AddNamespaceAlias (short_name : string, long_name : list [string],
                                 loc : Location) : GlobalEnv
     {
       def nodes_with_prefix = add_alias_nodes (short_name, long_name);
@@ -720,7 +720,7 @@ namespace Nemerle.Compiler
         using _tmp1;
      */
     [Nemerle.Assertions.Requires (short_name != "")]
-    add_alias_nodes (short_name : string, long_name : list [string]) : list [NamespaceTree.Node]
+    protected add_alias_nodes (short_name : string, long_name : list [string]) : list [NamespaceTree.Node]
     {
       mutable all_opened = [];
       // in case we are inside some namespace, we must open every namespace path
@@ -832,5 +832,9 @@ namespace Nemerle.Compiler
       "GlobalEnv(" + current_namespace.GetDisplayName () + ": " +
                      open_namespaces.Map (_.GetDisplayName ()).ToString () + ")"
     }
+    
+    public virtual Close() : GlobalEnv { this }
+    
+    public CreateScope() : GlobalEnv { ScopedEnv(this) }
   }
 }

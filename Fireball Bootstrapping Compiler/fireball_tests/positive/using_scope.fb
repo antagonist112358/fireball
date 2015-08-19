@@ -1,0 +1,78 @@
+// Tests various scoping with 'Using' imports in Fireball
+
+namespace Fireball.Tests {
+
+  import System
+    
+  class ScopeSpecific {
+  
+    import System.Linq;
+  
+    def SomeScopedMethod() : String {
+    
+      import System.Collections.Generic;
+      
+      val aList = List();
+      
+      aList.Add("Hello");
+      aList.Add("World");
+      
+      String.Join(" ", {
+        aList.Select(x => x.ToLower())
+          .ToArray()
+      })
+    }
+  
+  }
+  
+  class LayeredImports {
+    
+    import STT = System.Threading.Tasks;
+    import System.Threading;
+    
+    def Layer1() : void {
+    
+      import SC = System.Collections;
+    
+      def Layer2() : void {
+        
+        import SGC = System.Collections.Generic;
+        
+        val aList = SGC.Dictionary();
+        aList.Add(1, "string");
+    
+        Thread.Sleep(1);
+    
+        val someHash = SC.Hashtable();
+        someHash.Add(1, "string"); 
+      }
+    
+    }
+  
+  }
+    
+
+  module Program {
+    
+    public def Main(args: array[String]) : void {
+    
+      import System.Console;
+      
+      WriteLine("Creating a ScopedClass");
+      
+      val newInstance = ScopeSpecific();
+      
+      Write("Testing Output: ");
+      WriteLine(newInstance.SomeScopedMethod());
+    }
+
+  }
+
+}
+
+/*
+BEGIN-OUTPUT
+Creating a ScopedClass
+Testing Output: hello world
+END-OUTPUT
+*/

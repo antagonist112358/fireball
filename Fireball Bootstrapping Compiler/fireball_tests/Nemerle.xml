@@ -64,7 +64,7 @@
     <member name="M:Nemerle.Diagnostics.NDebug.ToStringWitoutNs(System.Object)" />
     <member name="M:Nemerle.Diagnostics.NDebug.PrintStackTrace" />
     <member name="T:Nemerle.Diagnostics.CompileStatistic" />
-    <member name="F:Nemerle.Diagnostics.CompileStatistic._N_Key_3473" />
+    <member name="F:Nemerle.Diagnostics.CompileStatistic._N_Key_3474" />
     <member name="M:Nemerle.Diagnostics.CompileStatistic.get_Key" />
     <member name="P:Nemerle.Diagnostics.CompileStatistic.Key" />
     <member name="M:Nemerle.Diagnostics.CompileStatistic.#ctor(System.String)" />
@@ -76,15 +76,15 @@
 </para>
       </summary>
     </member>
-    <member name="M:Nemerle.Utility.Getopt._N_parse_opts_12144(Nemerle.Utility.Getopt._N_closureOf_Parse_12017,Nemerle.Core.list{System.String})" />
-    <member name="M:Nemerle.Utility.Getopt._N_parse_opt_12138(Nemerle.Utility.Getopt._N_closureOf_Parse_12017,System.String,Nemerle.Core.option{System.String})" />
-    <member name="M:Nemerle.Utility.Getopt._N_need_following_arg_12118(Nemerle.Utility.Getopt._N_closureOf_Parse_12017,System.String)" />
-    <member name="M:Nemerle.Utility.Getopt._N_is_option_12102(Nemerle.Utility.Getopt._N_closureOf_Parse_12017,System.String)" />
-    <member name="M:Nemerle.Utility.Getopt._N_argument_name_12084(System.String)" />
-    <member name="M:Nemerle.Utility.Getopt._N_option_name_12064(System.String)" />
-    <member name="M:Nemerle.Utility.Getopt._N_stdsuff_11902(Nemerle.Utility.Getopt._N_closureOf_describe_11885)" />
-    <member name="M:Nemerle.Utility.Getopt._N_stdpref_11894(Nemerle.Utility.Getopt._N_closureOf_describe_11885,Nemerle.Utility.Getopt._N_closureOf_Usage_11861)" />
-    <member name="M:Nemerle.Utility.Getopt._N_concat_11867(Nemerle.Utility.Getopt._N_closureOf_Usage_11861,System.String,Nemerle.Core.list{System.String})" />
+    <member name="M:Nemerle.Utility.Getopt._N_parse_opts_12165(Nemerle.Utility.Getopt._N_closureOf_Parse_12038,Nemerle.Core.list{System.String})" />
+    <member name="M:Nemerle.Utility.Getopt._N_parse_opt_12159(Nemerle.Utility.Getopt._N_closureOf_Parse_12038,System.String,Nemerle.Core.option{System.String})" />
+    <member name="M:Nemerle.Utility.Getopt._N_need_following_arg_12139(Nemerle.Utility.Getopt._N_closureOf_Parse_12038,System.String)" />
+    <member name="M:Nemerle.Utility.Getopt._N_is_option_12123(Nemerle.Utility.Getopt._N_closureOf_Parse_12038,System.String)" />
+    <member name="M:Nemerle.Utility.Getopt._N_argument_name_12105(System.String)" />
+    <member name="M:Nemerle.Utility.Getopt._N_option_name_12085(System.String)" />
+    <member name="M:Nemerle.Utility.Getopt._N_stdsuff_11923(Nemerle.Utility.Getopt._N_closureOf_describe_11906)" />
+    <member name="M:Nemerle.Utility.Getopt._N_stdpref_11915(Nemerle.Utility.Getopt._N_closureOf_describe_11906,Nemerle.Utility.Getopt._N_closureOf_Usage_11882)" />
+    <member name="M:Nemerle.Utility.Getopt._N_concat_11888(Nemerle.Utility.Getopt._N_closureOf_Usage_11882,System.String,Nemerle.Core.list{System.String})" />
     <member name="M:Nemerle.Utility.Getopt.Usage(Nemerle.Core.list{Nemerle.Utility.Getopt.CliOption})" />
     <member name="M:Nemerle.Utility.Getopt.Parse(Nemerle.Builtins.FunctionVoid{System.String},Nemerle.Core.list{Nemerle.Utility.Getopt.CliOption},Nemerle.Core.list{System.String})">
       <summary>
@@ -576,7 +576,7 @@ d) list if there are more fields than tuple can hold.
 
 </member>
     <member name="T:Nemerle.Extensions.Anonymous" />
-    <member name="F:Nemerle.Extensions.Anonymous._N_cache_6941" />
+    <member name="F:Nemerle.Extensions.Anonymous._N_cache_6959" />
     <member name="M:Nemerle.Extensions.Anonymous.FieldsAreEqual(System.Collections.ObjectModel.ReadOnlyCollection{System.String},System.Collections.ObjectModel.ReadOnlyCollection{System.String})" />
     <member name="M:Nemerle.Extensions.Anonymous.Equals(Nemerle.Extensions.IAnonymous,Nemerle.Extensions.IAnonymous)" />
     <member name="T:Nemerle.ICloneable`1" />
@@ -1497,31 +1497,31 @@ d) list if there are more fields than tuple can hold.
     <member name="M:Nemerle.Internal.NemerleAttribute.#ctor" />
     <member name="T:Nemerle.Internal.MacroInfoAttribute" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.#ctor(System.String,System.Boolean,System.String)" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Name_4983" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Name_4984" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_Name" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_Name(System.String)" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.Name" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Syntactical_4990" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Syntactical_4991" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_Syntactical" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_Syntactical(System.Boolean)" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.Syntactical" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterNames_4997" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterNames_4998" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_ParameterNames" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_ParameterNames(System.String[])" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.ParameterNames" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterTypes_5004" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterTypes_5005" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_ParameterTypes" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_ParameterTypes(System.String[])" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.ParameterTypes" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterDefaultValues_5011" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_ParameterDefaultValues_5012" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_ParameterDefaultValues" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_ParameterDefaultValues(System.String[])" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.ParameterDefaultValues" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_IsParamArrays_5018" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_IsParamArrays_5019" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_IsParamArrays" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_IsParamArrays(System.Boolean[])" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.IsParamArrays" />
-    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Usage_5025" />
+    <member name="F:Nemerle.Internal.MacroInfoAttribute._N_Usage_5026" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.get_Usage" />
     <member name="M:Nemerle.Internal.MacroInfoAttribute.set_Usage(System.String)" />
     <member name="P:Nemerle.Internal.MacroInfoAttribute.Usage" />
@@ -1773,6 +1773,8 @@ If called Value calling thread is waiting for operation to compleate
     <member name="M:Nemerle.Collections.LightList`1.ToList" />
     <member name="M:Nemerle.Collections.LightList`1.ToArray" />
     <member name="M:Nemerle.Collections.LightList`1.ToNList" />
+    <member name="M:Nemerle.Collections.LightList`1.GetEnumerator" />
+    <member name="T:Nemerle.Collections.LightList`1.Enumerator`0" />
     <member name="T:Nemerle.Collections.LinkedList`1">
       <summary>
         <para>Doubly linked mutable list.
@@ -2271,10 +2273,10 @@ If called Value calling thread is waiting for operation to compleate
     <member name="T:Nemerle.Core.list`1.Cons`0" />
     <member name="T:Nemerle.Core.list`1.Nil`0" />
     <member name="T:Nemerle.Collections.NList" />
-    <member name="M:Nemerle.Collections.NList._N_extend_21139``1(Nemerle.Collections.NList._N_closureOf_SubsetsPartitions_21122{``0},``0,Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}},Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}})" />
-    <member name="M:Nemerle.Collections.NList._N_push_21130``1(``0,Nemerle.Core.list{Nemerle.Core.list{``0}},Nemerle.Core.list{Nemerle.Core.list{``0}},Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}})" />
-    <member name="M:Nemerle.Collections.NList._N_extend_21026``1(Nemerle.Core.list{``0},Nemerle.Core.list{``0},Nemerle.Core.list{Nemerle.Core.list{``0}})" />
-    <member name="M:Nemerle.Collections.NList._N_walk_20789``1(Nemerle.Collections.NList._N_closureOf_Group_20781{``0},Nemerle.Core.list{``0},Nemerle.Core.list{``0})" />
+    <member name="M:Nemerle.Collections.NList._N_extend_21189``1(Nemerle.Collections.NList._N_closureOf_SubsetsPartitions_21172{``0},``0,Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}},Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}})" />
+    <member name="M:Nemerle.Collections.NList._N_push_21180``1(``0,Nemerle.Core.list{Nemerle.Core.list{``0}},Nemerle.Core.list{Nemerle.Core.list{``0}},Nemerle.Core.list{Nemerle.Core.list{Nemerle.Core.list{``0}}})" />
+    <member name="M:Nemerle.Collections.NList._N_extend_21076``1(Nemerle.Core.list{``0},Nemerle.Core.list{``0},Nemerle.Core.list{Nemerle.Core.list{``0}})" />
+    <member name="M:Nemerle.Collections.NList._N_walk_20839``1(Nemerle.Collections.NList._N_closureOf_Group_20831{``0},Nemerle.Core.list{``0},Nemerle.Core.list{``0})" />
     <member name="M:Nemerle.Collections.NList.Equals``1(Nemerle.Core.list{``0},Nemerle.Core.list{``0})">
       <summary>
         <para>Tests equality of two lists.  Uses Equal method of
@@ -2667,7 +2669,7 @@ If called Value calling thread is waiting for operation to compleate
       </summary>
     </member>
     <member name="M:Nemerle.Collections.ListEnumerator`1.System#Collections#IEnumerator#get_Current" />
-    <member name="M:Nemerle.Collections.ListEnumerator`1._N_doMove_21416(Nemerle.Collections.ListEnumerator._N_closureOf_MoveNext_21408{`0})" />
+    <member name="M:Nemerle.Collections.ListEnumerator`1._N_doMove_21466(Nemerle.Collections.ListEnumerator._N_closureOf_MoveNext_21458{`0})" />
     <member name="M:Nemerle.Collections.ListEnumerator`1.#ctor(Nemerle.Core.list{`0})" />
     <member name="M:Nemerle.Collections.ListEnumerator`1.Dispose" />
     <member name="M:Nemerle.Collections.ListEnumerator`1.MoveNext">
@@ -2761,16 +2763,16 @@ If called Value calling thread is waiting for operation to compleate
     <member name="M:Nemerle.Collections.Map`2.ToString" />
     <member name="T:Nemerle.Collections.Map`2.Node`0" />
     <member name="T:Nemerle.Internal.MappedMemberAttribute" />
-    <member name="F:Nemerle.Internal.MappedMemberAttribute._N_Name_5768" />
+    <member name="F:Nemerle.Internal.MappedMemberAttribute._N_Name_5786" />
     <member name="M:Nemerle.Internal.MappedMemberAttribute.get_Name" />
     <member name="P:Nemerle.Internal.MappedMemberAttribute.Name" />
     <member name="M:Nemerle.Internal.MappedMemberAttribute.#ctor(System.String)" />
     <member name="T:Nemerle.Collections.Seq`1" />
     <member name="T:Nemerle.Collections.NCollectionsExtensions" />
-    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24958``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_FoldRight2_24948{``0,``1,``2},Nemerle.Core.list{``1},System.Int32,``2)" />
-    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24925``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_FoldRight2_24915{``0,``1,``2},Nemerle.Core.list{``0},System.Int32,``2)" />
-    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24822``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_Map2_24812{``0,``1,``2},Nemerle.Core.list{``1},System.Int32)" />
-    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24791``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_Map2_24781{``0,``1,``2},Nemerle.Core.list{``0},System.Int32)" />
+    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_25008``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_FoldRight2_24998{``0,``1,``2},Nemerle.Core.list{``1},System.Int32,``2)" />
+    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24975``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_FoldRight2_24965{``0,``1,``2},Nemerle.Core.list{``0},System.Int32,``2)" />
+    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24872``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_Map2_24862{``0,``1,``2},Nemerle.Core.list{``1},System.Int32)" />
+    <member name="M:Nemerle.Collections.NCollectionsExtensions._N_loop_24841``3(Nemerle.Collections.NCollectionsExtensions._N_closureOf_Map2_24831{``0,``1,``2},Nemerle.Core.list{``0},System.Int32)" />
     <member name="M:Nemerle.Collections.NCollectionsExtensions.Grouping``3(System.Collections.Generic.IEnumerable{``0},Nemerle.Builtins.Function{``0,Nemerle.Builtins.Tuple{``1,``2}})" />
     <member name="M:Nemerle.Collections.NCollectionsExtensions.Flatten``2(System.Collections.Generic.IEnumerable{``0})" />
     <member name="M:Nemerle.Collections.NCollectionsExtensions.ZipLazy``2(System.Collections.Generic.IEnumerable{``0},System.Collections.Generic.IEnumerable{``1})" />
@@ -3219,8 +3221,8 @@ If called Value calling thread is waiting for operation to compleate
 </para></remarks></member>
     <member name="T:Nemerle.Utility.NStringBuilder" />
     <member name="T:Nemerle.Utility.NStringBuilderExtensions" />
-    <member name="M:Nemerle.Utility.NStringBuilderExtensions._N_loop_25797(Nemerle.Utility.NStringBuilderExtensions._N_closureOf_AppendNTimes_25785,System.Int32)" />
-    <member name="M:Nemerle.Utility.NStringBuilderExtensions._N_loop_25764``1(Nemerle.Utility.NStringBuilderExtensions._N_closureOf_AppendNTimes_25752{``0},System.Int32)" />
+    <member name="M:Nemerle.Utility.NStringBuilderExtensions._N_loop_25847(Nemerle.Utility.NStringBuilderExtensions._N_closureOf_AppendNTimes_25835,System.Int32)" />
+    <member name="M:Nemerle.Utility.NStringBuilderExtensions._N_loop_25814``1(Nemerle.Utility.NStringBuilderExtensions._N_closureOf_AppendNTimes_25802{``0},System.Int32)" />
     <member name="M:Nemerle.Utility.NStringBuilderExtensions.AppendSeq``1(System.Text.StringBuilder,System.Collections.Generic.IEnumerable{``0},System.String)">
       <summary>
         <para>Appends the string representation of a specified list items to the end of a <see cref="NStringBuilder"></see> instance.</para>

@@ -1,6 +1,6 @@
 namespace Fireball.Tests {
 
-	using System;
+	import System;
 
 	public interface Dummy { }
 	

@@ -1,0 +1,43 @@
+namespace Fireball.Tests {
+
+  import System;
+
+  class HasTheImport {
+  
+    import System.Collections.Generic;
+    
+    def DoesNothing() : void {
+      ()
+    }
+  
+  }
+
+  class NeedsTheImport {
+  
+    def ShouldError() : void {
+      val aList = List(); //E: unbound name `List'
+      aList.Add("Hello");
+      aList.Add("World");
+    }
+    
+  }
+  
+  class LayeredImports {
+    
+    import System.Collections;
+      
+    def TestOneLevel() : void {
+      val table = Hashtable();
+      table.Add(1, "string");
+    
+      def TestLevelTwo() : void {
+        import SGC = System.Collections.Generic;
+        
+        val t = 5;
+      }
+      
+      val bList = Dictionary(); //E: unbound name `Dictionary'
+      bList.Add(2, "another string");
+    }
+  }
+}
