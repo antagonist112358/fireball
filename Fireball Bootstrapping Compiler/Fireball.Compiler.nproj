@@ -43,6 +43,8 @@
   </PropertyGroup>
   <Import Project="$(Nemerle)\Nemerle.MSBuild.targets" />
   <ItemGroup>
+    <Folder Include="fbcc\extensions" />
+    <Folder Include="fbcc\parsing" />
     <Folder Include="ncc" />
     <Folder Include="ncc\codedom" />
     <Folder Include="ncc\completion" />
@@ -58,9 +60,16 @@
     <Folder Include="ncc\typing" />
     <Folder Include="ncc\completion" />
     <Folder Include="ncc\typing" />
+    <Folder Include="fbcc" />
     <Folder Include="Properties" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="fbcc\extensions\ToOptionExtension.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fbcc\parsing\Keywords.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="ncc\CompilationOptions.n">
       <SubType>Code</SubType>
     </Compile>
@@ -120,6 +129,13 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Xml" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="Fireball.Internal\Fireball.nproj">
+      <Name>Fireball</Name>
+      <Project>{1c7e9f0f-bfe7-4ba4-b00f-535464a3307f}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
   <Target Name="AfterBuild">
     <GetAssemblyIdentity AssemblyFiles="$(OutputPath)\$(AssemblyName).dll">
       <Output TaskParameter="Assemblies" ItemName="OutputAssemblyIdentity" />
@@ -129,7 +145,7 @@
         <ReplacementValue>%(OutputAssemblyIdentity.Version)</ReplacementValue>
       </Token>
     </ItemGroup>
-	<!--
+    <!--
     <TemplateFile Template="ncc\policy.1.2.$(AssemblyName).config.template" OutputFilename="$(OutputPath)\policy.1.2.$(AssemblyName).config" Tokens="@(Token)" />
     <AL ToolPath="$(SDKBin)" LinkResources="$(OutputPath)\policy.1.2.$(AssemblyName).config" OutputAssembly="$(OutputPath)\policy.1.2.$(AssemblyName).dll" KeyFile="$(KeyOriginatorFile)" Platform="$(Platform)" />
 	-->

@@ -1,0 +1,95 @@
+using System
+// Todo: Fix using spans multiple lines
+// e.g. This does not work...
+/*
+using System
+			.Collections
+			.Generic
+*/	
+	
+// Todo: Fix namespace spans multiple lines
+namespace Fireball.Tests
+
+{
+	/*
+	class TestMutipleNewlines
+	
+	
+	{
+	
+	
+	
+	}
+	*/
+
+	internal
+	class 
+	EchoTerminal
+	{
+		using System.Console		
+		
+		def this(title: String = "EchoTerminal") { 
+			if (String.IsNullOrEmpty(title)) Title = "EchoTerminal" else Title = title
+		}
+		
+		def Run() : void 
+		{
+			var 
+			done 
+			= 
+			false
+			do 
+			{
+				var consoleInput = ReadFromConsole()
+				if (
+						String.IsNullOrWhiteSpace(
+																			consoleInput
+																			)
+						)
+							done
+							=
+							true
+				else 
+					try {
+						WriteLine (
+							Execute (
+								consoleInput
+							)
+						)
+					}
+					catch
+					{
+						case e : Exception
+							=> WriteLine(e
+									.Message)
+					}
+			}
+			while(!done)
+			
+			WriteLine ( "Goodbye" 
+			)
+		}
+		
+		private 
+		def 
+		ReadFromConsole
+		() 
+		: 
+		String
+		{
+			Console
+			.WriteLine
+				("console> "
+				)
+			Console
+				.ReadLine()
+		}
+		
+		private def Execute(command: String) : String {
+			$"Executing the $command command..."
+		}
+	}
+	
+
+
+}

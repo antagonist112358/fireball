@@ -589,7 +589,8 @@ public abstract class LexerBase
       | ')' => Token.EndRound ()
       | ',' => Token.Comma ()
       | ';' => Token.Semicolon (generated = false)
-      | '\r' | '\n' => Token.NewLine("NewLine")
+      | '\r' => when (peek() == '\n') { ignore (read()) }; Token.NewLine("NewLine")
+      | '\n' => when (peek() == '\n') { ignore (read()) }; Token.NewLine("NewLine")
       | '<' when peek () == '[' => ignore (read ()); Token.BeginQuote ()
       | '<' when peek () == '#' => ignore (read ()); get_recursive_string ()
 
@@ -1581,19 +1582,19 @@ public abstract class LexerBase
 
   static this ()
   {
+    /*
     def tab = array [
       "_",          "abstract", "and",        "array",      "as",         "base",       "catch",
       "class",      "def",      "delegate",   "enum",       "event",      "extern",     "false",
       "finally",    "fun",      "implements", "interface",  "internal",   "is",         "macro",
-      "match",      "matches",  "module",     /*"mutable",*/"namespace",  "new",        "null",
+      "match",      "matches",  "module",     "mutable",    "namespace",  "new",        "null",
       "out",        "override", "params",     "partial",    "private",    "protected",  "public",
       "ref",        "sealed",   "static",     "struct",     "syntax",     "this",       "throw",
-      "true",       "try",      "typeof",     /*"using",*/  "variant",    "virtual",    "var",
-      "void",       "volatile", "when",       "where",      "with",       "val"
-      // *NEW KEYWORDS*
-      , "record",   "import"
+      "true",       "try",      "typeof",     "using",      "variant",    "virtual",    "var",
+      "void",       "volatile", "when",       "where",      "with",       "val",        "record"
     ];
-    BaseKeywords = Set(tab);
+    */
+    BaseKeywords = Set(Keywords.BaseKeywords);
 
     def tab = array ['=', '<', '>', '@', '^', '&', '-', '+', '|', '*',
                      '/', '$', '%', '!', '?', '~', '.', ':', '#', '\\', '`'];

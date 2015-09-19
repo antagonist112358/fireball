@@ -1,10 +1,10 @@
 namespace Fireball.Tests {
 
-  import System;
+  using System;
 
-  class HasTheImport {
+  class HasTheusing {
   
-    import System.Collections.Generic;
+    using System.Collections.Generic;
     
     def DoesNothing() : void {
       ()
@@ -12,7 +12,7 @@ namespace Fireball.Tests {
   
   }
 
-  class NeedsTheImport {
+  class NeedsTheusing {
   
     def ShouldError() : void {
       val aList = List(); //E: unbound name `List'
@@ -22,16 +22,16 @@ namespace Fireball.Tests {
     
   }
   
-  class LayeredImports {
+  class Layeredusings {
     
-    import System.Collections;
+    using System.Collections;
       
     def TestOneLevel() : void {
       val table = Hashtable();
       table.Add(1, "string");
     
       def TestLevelTwo() : void {
-        import SGC = System.Collections.Generic;
+        using SGC = System.Collections.Generic;
         
         val t = 5;
       }

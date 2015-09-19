@@ -32,6 +32,7 @@ using Nemerle.Compiler.Parsetree;
 using Nemerle.Surround;
 using Nemerle.Utility;
 using SCG = System.Collections.Generic;
+using System.Linq;
 
 namespace Nemerle.Compiler
 {
@@ -52,7 +53,7 @@ namespace Nemerle.Compiler
   public class PreParser
   {
     protected lexer : LexerBase;
-    protected mutable last_token : Stack [Token] = Stack(5);
+    protected mutable token_buffer : Stack [Token] = Stack(2);
     private mutable last_declaration_token : Token = null;
     mutable Env : GlobalEnv;
 
@@ -95,12 +96,21 @@ namespace Nemerle.Compiler
       when (doc_comments != null) doc_comments = doc_comments.Replace (loc, "");
     }
 
-    /** Fetch next token (from one token buffer or lexer if it's empty */
-    protected virtual get_token() : Token
+    // Gets the next token (optionally skipping newline tokens)
+    protected virtual get_token(skip_newlines: bool = false) : Token {
+      mutable tok = read_token();
+      while (skip_newlines && tok is Token.NewLine) {
+        tok = read_token();
+      }
+      tok
+    }
+    
+    // Reads the next token from either the token_buffer or the lexer stream
+    private read_token() : Token
     {
-      if (!last_token.IsEmpty)
+      if (!token_buffer.IsEmpty)
       {
-        def result = last_token.Pop();
+        def result = token_buffer.Pop();
         result;
       }
       else
@@ -120,7 +130,7 @@ namespace Nemerle.Compiler
               "source files should be in UTF8 (or UTF16/32 when BOM is given) encoding");
           | e is LexerBase.Error =>
             Message.Error (lexer.Location, e.Message + " " + e.StackTrace);
-            get_token ()
+            read_token()
         }
       }
     }
@@ -128,14 +138,67 @@ namespace Nemerle.Compiler
     /** Store token in our mini one token buffer */
     push_back(tok : Token) : void
     {
-        last_token.Push(tok);
+        token_buffer.Push(tok);
     }
 
+    // Peek ahead one token in the token stream
     peek_token() : Token
     {
       def tok = get_token();
       push_back(tok);
       tok
+    }
+    
+    // Reads and consumes the next token if it is a newline
+    swallow_newlines() : void {
+      while(peek_token() is Token.NewLine)
+      {
+        _ = get_token()
+      }
+    }
+    
+    // Checks to see if a newline can be interpreted as a semicolon / statement terminator
+    private terminates_statement(_: Token.NewLine) : bool {
+      // Read through any additional newline characters
+      swallow_newlines();
+      
+      // Get the last token seen
+      def prevOption = current_stream.LastOrDefault().ToOption();
+      
+      // Get the next token
+      def next = peek_token();
+      
+      // Can the last token terminate a statement?
+      def prev_terminates() : bool {
+        match(prevOption)  {
+          | None => false
+          | Some(prev) => match(prev) {
+            | Token.CharLiteral | Token.DecimalLiteral | Token.DoubleLiteral | Token.FloatLiteral | Token.IntegerLiteral | Token.StringLiteral
+            | Token.Identifier | Token.QuotedIdentifier 
+            | Token.BracesGroup | Token.QuoteGroup | Token.RoundGroup | Token.SquareGroup => true
+            | Token.Import => true
+            | Token.Keyword(kw) when Keywords.TerminalKeywords.Contains(kw) => true
+            | _ => false
+          }
+        }
+      }
+      
+      // Can the next token start a new statement?
+      def next_starts_new() : bool {
+        match(next) {
+          // Skip all the begin group tokens, since they will start new groups
+          | Token.BeginSquare | Token.BeginBrace | Token.BeginQuote | Token.BeginRound
+          // Skip all the end group tokens, since they end a group
+          | Token.EndBrace | Token.EndQuote | Token.EndRound | Token.EndSquare
+          // Operators never start a new statement
+          | Token.Operator => false
+          | Token.Keyword(kw) when Keywords.KeywordsWhichNeverStartNewStatement.Contains(kw) => false
+          | _ => true
+        }
+      }
+      
+      // Check
+      prev_terminates() && next_starts_new()
     }
     
     /** links Tokens from specified subarray to form a list and return its head */
@@ -192,7 +255,7 @@ namespace Nemerle.Compiler
     finish_current (current_begin : int, separator_token : Token = null) : void
     {
       if (current_begin == current_stream.Count)
-        when (separator_token != null && !(separator_token is Token.Semicolon))
+        when (separator_token != null && !(separator_token is Token.Semicolon) && !(separator_token is Token.NewLine))
         {
           def loose = Token.LooseGroup (separator_token.Location, separator_token);
           parent_stream.Add (loose);
@@ -211,124 +274,19 @@ namespace Nemerle.Compiler
       }
     }            
     
-    peek_ahead_newline() : option[Token] {
-        def next = peek_token();
-        if (next is Token.NewLine) Some(next)
-        else None()
-    }
-    
-    /** Checks to see if the newline should be continued or can be interpreted as
-        an implicit semicolon.
-        Has to eat the newline character also, since this will screw-up the Parser.
-    */
-    check_ahead_newline(last_tok: Token, tok: Token) : void {
-        
-        // If we are in this method, then the current token is a Token.NewLine token.
-        def last = last_tok;
-        
-        /*** Keeps reading tokens until we have something that isn't a newline or an indent */
-        def get_next() { 
-            mutable t = get_token(); 
-            while(t is Token.NewLine || t is Token.Indent)
-                t = get_token();
-            t
-        }
-        
-        def implicit_semicolon() {
-            push_back(Token.Semicolon(tok.Location, true));
-        }                        
-        
-        when (last != null && !(last is Token.NewLine)) {
-        
-            //Message.Debug($"Checking token: $(get_token_type(last, true))");
-            
-            match(last) {
-                /* Error Cases */
-                | Token.BeginBrace => throw System.Exception("Should not be here.")
-                
-                // dangling operators
-                | Token.Operator => ()
-            
-                // dangling namespaces
-                | Token.Namespace => ()
-            
-                // Identifiers (are tricky)
-                | Token.Identifier => {
-                    def next = get_next();
-                    match (next) {
-                        // Operators
-                        | Token.Operator => push_back(next)
-                        // Method call
-                        | Token.BeginRound => push_back(next)
-                        // Generics
-                        | Token.BeginSquare => push_back(next)
-                        // Properties and Classes
-                        | Token.BeginBrace => push_back(next)                 
-                        // Else
-                        | _ =>
-                          Message.Debug("Adding implicit semicolon (for identifier).");
-                          push_back(next);
-                          implicit_semicolon();
-                    }
-                }
-            
-                // End of round-group
-                | Token.EndRound => {
-                    def next = get_next();
-                    match(next) {
-                        | Token.Operator => push_back(next)
-                        | Token.BeginBrace => push_back(next)
-                        | Token.Semicolon => push_back(next)
-                        | Token.EndOfFile => push_back(next)
-                        | _ => 
-                          Message.Debug("Adding implicit semicolon (for round-group).");                          
-                          push_back(next);
-                          implicit_semicolon();
-                    }                    
-                }
-                
-                // Keywords
-                | Token.Keyword => ()                        
-            
-                // All others - Implicit semicolon
-                | _ => {
-                    def next = get_next();
-                    match(next) {
-                        | Token.Semicolon => push_back(next)
-                        | Token.EndOfFile => push_back(next)
-                        | _ => 
-                          Message.Debug("Adding implicit semicolon (for other).");                          
-                          push_back(next);
-                          implicit_semicolon();
-                    }
-                }
-            }
-        }
-        
-    }
-    
-    //static get_token_type(tok: Token, _: bool = false) : string {
-    //    if (tok != null) {
-    //       def tokStr = "[" + tok.GetType().Name + "]: " + tok.ToString();
-    //       //if(linenum) 
-    //       //  "[" + tok.Location.ToString() + "]: " + tok.ToString()
-    //       //else
-    //       //  tok.ToString()
-    //       tokStr
-    //    } else "{Unknown}"
-    //}
-    
     /** Handle standard situations when new bracket group is beginning
         or there is erronous situation. Any non bracket token is
         appended to current LooseGroup.
 
         Throws PreParserException when there is unmatched end bracket.
      */
-    handle_default_token (current_begin : int, tok : Token, braces_cut_current = true, scan_ahead_for_replacements = true) : void
+    handle_default_token (current_begin : int, tok : Token, braces_cut_current = true, newlines_enabled = true) : void
     {
       match (tok)
       {
         | Token.BeginBrace(generated) as openBrace =>
+          // Eat any trailing newlines
+          swallow_newlines();
           def brace_group = parse_brace_group(tok.Location, openBrace, true, generated);
           //Message.Debug($"Writing: $(get_token_type(brace_group))");
           current_stream.Add(brace_group);
@@ -351,6 +309,8 @@ namespace Nemerle.Compiler
           current_stream.Add(square_group);
 
         | Token.BeginQuote as openBrace =>
+          // Eat any trailing newlines
+          swallow_newlines();
           def quote_group = parse_quote_group(tok.Location, openBrace);
           //Message.Debug($"Writing: $(get_token_type(quote_group))");
           current_stream.Add(quote_group);
@@ -366,16 +326,11 @@ namespace Nemerle.Compiler
           doc_comments = doc_comments.Replace (tok.Location, comment);
 
         | Token.Comment => ()
-        | Token.NewLine => ()
-        | _ => {
-            when (scan_ahead_for_replacements)
-              match(peek_ahead_newline()) {
-                | Some(next) => check_ahead_newline(tok, next)
-                | None => { }
-              }
-            //Message.Debug($"Writing: $(get_token_type(tok))"); 
-            current_stream.Add (tok);
-        }
+        | Token.NewLine as nl =>
+          when (newlines_enabled && terminates_statement(nl)) {
+            finish_current(current_begin, tok);
+          }
+        | _ => current_stream.Add (tok);
       }
     }
 
@@ -407,9 +362,8 @@ namespace Nemerle.Compiler
             loop()
 
           // Import statement
-          | Token.Keyword("import") =>
+          | Token.Keyword("using") =>
             parse_nested_using(current_begin, tok);
-            //finish_current(current_begin);
             loop()
           
           | Token.EndOfFile when !expect_endbrace =>
@@ -437,22 +391,17 @@ namespace Nemerle.Compiler
       def current_begin = current_stream.Count;
 
       def loop () {
-        def tok = get_token ();
+        def tok = get_token (true);
         match (tok) {
           // finish entire round group
           | Token.EndRound as closeBrace =>
             def round_group = finish_parent (parent_begin, current_begin);          
-            match(peek_ahead_newline()) {
-              | Some(next) => check_ahead_newline(tok, next)
-              | None => { }
-            }
             Token.RoundGroup (loc + tok.Location, round_group, openBrace, closeBrace);
-
           // finish current loose group
           | Token.Comma =>
             finish_current (current_begin, tok);
             loop ()
-          | Token.NewLine => loop()
+          // Otherwise...
           | _ => handle_default_token (current_begin, tok, false, false); loop ()
         }
       }
@@ -476,7 +425,7 @@ namespace Nemerle.Compiler
       def current_begin = current_stream.Count;
 
       def loop () {
-        def tok = get_token ();
+        def tok = get_token (true);
         match (tok) {
           // finish entire brace group
           | Token.EndSquare as closeBrace =>
@@ -488,7 +437,8 @@ namespace Nemerle.Compiler
 
           // finish current loose group
           | Token.Comma => finish_current (current_begin, tok); loop ()
-          | Token.NewLine => loop()
+          
+          // Otherwise...
           | _ => handle_default_token (current_begin, tok, false, false); loop ()
         }
       }
@@ -520,7 +470,6 @@ namespace Nemerle.Compiler
 
           // finish current loose group
           | Token.Semicolon => finish_current (current_begin, tok); loop ()
-          | Token.NewLine => loop()
           | _ => handle_default_token (current_begin, tok); loop ()
         }
       }
@@ -533,17 +482,17 @@ namespace Nemerle.Compiler
       }
     }
 
-    get_qualified_tokens () : list [string] * list [Location] * list[Token]
+    get_qualified_tokens (read_through_newlines : bool = false) : list [string] * list [Location] * list[Token]
     {
-      def tok1 = get_token ();
+      def tok1 = get_token (read_through_newlines);
       match (tok1)
       {
           | Token.Identifier (x) =>
-          def tok2 = get_token();//skip_newlines(get_token());
+          def tok2 = get_token();
           match (tok2)
           {
               | Token.Operator (".") =>
-              def (ident, locs, toks) = get_qualified_tokens ();
+              def (ident, locs, toks) = get_qualified_tokens (true);
               match (ident)
               {
                   | [] => ([x], [tok1.Location, tok2.Location], [tok1, tok2])
@@ -559,103 +508,110 @@ namespace Nemerle.Compiler
     }
     
     parse_nested_using(current_begin: int, tok: Token) : void {
-        
-      finish_current(current_begin);
-        
-      def (id, idLocs, idToks) = get_qualified_tokens ();
       
-      mutable currentNsEnv = Env; // GlobalEnv of current namespace        
-      mutable tokens_in_body = idToks;
-
-      def create_body_token()
-      {
-        def body = tokens_in_body.Rev();
-        mutable next = body.Tail;
-        mutable loc = body.Head.Location;
-
-        body.Iter(current =>
-          {
-            current.Next = match (next) { | [] => null | _ => next.Head };
-            unless (next == []) next = next.Tail;
-            loc += current.Location;
-          });
-        Token.LooseGroup(loc, body.Head);
-      }
-
       def make_before_location (location)
       {
         Location(location.FileIndex, location.Line, location.Column);
       }      
       
-      match (get_token ()) {
-        | Token.NewLine as st | Token.Semicolon as st => 
-            def loc = tok.Location;
-            Env = Env.AddOpenNamespace (id, loc);
-            lexer.Keywords = Env.Keywords;
+      
+      // Check if this is a 'using (resource) { ... }' block
+      if(peek_token() is Token.BeginRound)
+      {
+        current_stream.Add(tok);
+      } else {
+        finish_current(current_begin);
+      
+        def (id, idLocs, idToks) = get_qualified_tokens ();
+      
+        mutable currentNsEnv = Env; // GlobalEnv of current namespace        
+        mutable tokens_in_body = idToks;        
+        
+        def create_body_token()
+        {
+          def body = tokens_in_body.Rev();
+          mutable next = body.Tail;
+          mutable loc = body.Head.Location;
 
-            def using_tok = Token.Import (loc, Env, tok, create_body_token());
-            current_stream.Add (using_tok);
-            when (st is Token.NewLine) {
-                current_stream.Add (Token.Semicolon(st.Location, true));
-            }
-            lexer.Manager.OnAfterUsingDirectiveParse(loc + make_before_location (st.Location), id, idLocs,
-              "", Location.Default, currentNsEnv, Env);
-
-          | Token.Operator ("=") as eq =>
-            def (id2, idLocs2, idToks2) = get_qualified_tokens ();
-
-            tokens_in_body = (eq :: tokens_in_body).Append(idToks2);
-
-            def st = get_token ();
-            def ty =
-              match (st)
-              {
-                | Token.Semicolon | Token.NewLine => null
-                | Token.BeginSquare => parseTypeName(idToks2, st)
-                | _ =>
-                  push_back (st);
-                  Message.Error(st.Location, "expecting `;' after using alias");
-                  null
-              };
-
-            match (id)
+          body.Iter(current =>
             {
-              | [name] when ty == null =>
-                Env = Env.AddNamespaceAlias (name, id2, tok.Location);
-                lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
-                  + make_before_location (st.Location), id2, idLocs2,
-                  name, idLocs.Head, currentNsEnv, Env);
-                assert(idLocs.Length == 1);
+              current.Next = match (next) { | [] => null | _ => next.Head };
+              unless (next == []) next = next.Tail;
+              loc += current.Location;
+            });
+          Token.LooseGroup(loc, body.Head);
+        }               
+      
+        match (get_token ()) {
+          | Token.NewLine as st | Token.Semicolon as st =>
+              swallow_newlines();
+              def loc = tok.Location;
+              Env = Env.AddOpenNamespace (id, loc);
+              lexer.Keywords = Env.Keywords;
 
-              | [_name] => ()
-                // make generic type alias...
-
-              | [] => // occur if syntax error
-                lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
-                  + make_before_location (st.Location), id2, idLocs2,
-                  "", Location.Default, currentNsEnv, Env);
-
-              | _ =>
-                Message.Error (tok.Location, "using alias must be simple name without dots");
-                lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
-                  + make_before_location (st.Location), id2, idLocs2,
-                  id.ToString(), idLocs.Head + idLocs.Last, currentNsEnv, Env);
-            }
-
-            def using_tok = Token.Import (tok.Location + st.Location, Env, tok, create_body_token());
-            //Message.Debug($"Writing token: $(get_token_type(using_tok))");
-            current_stream.Add (using_tok);              
+              def using_tok = Token.Import (loc, Env, tok, create_body_token());
+              current_stream.Add (using_tok);
               
-        | x =>
-          push_back (x);
-          // The error message must point to last using token
-          def loc1 = match (idLocs) { | [] => tok.Location | _ => idLocs.Last };
-          def loc2 = Location(loc1.FileIndex, loc1.EndLine, loc1.EndColumn);
-          Message.Error (loc2, "expecting `;' or `='");  
-          // In notification location must point before first token of next directive
-          lexer.Manager.OnAfterUsingDirectiveParse(tok.Location + x.Location.FromStart(),
-            id, idLocs, "", Location.Default, currentNsEnv, Env);          
-      }
+              lexer.Manager.OnAfterUsingDirectiveParse(loc + make_before_location (st.Location), id, idLocs,
+                "", Location.Default, currentNsEnv, Env);
+
+            | Token.Operator ("=") as eq =>
+              def (id2, idLocs2, idToks2) = get_qualified_tokens ();
+
+              tokens_in_body = (eq :: tokens_in_body).Append(idToks2);
+
+              def st = get_token ();
+              def ty =
+                match (st)
+                {
+                  | Token.Semicolon | Token.NewLine => swallow_newlines(); null
+                  | Token.BeginSquare => parseTypeName(idToks2, st)
+                  | _ =>
+                    push_back (st);
+                    Message.Error(st.Location, "expecting `;' after using alias");
+                    null
+                };
+
+              match (id)
+              {
+                | [name] when ty == null =>
+                  Env = Env.AddNamespaceAlias (name, id2, tok.Location);
+                  lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
+                    + make_before_location (st.Location), id2, idLocs2,
+                    name, idLocs.Head, currentNsEnv, Env);
+                  assert(idLocs.Length == 1);
+
+                | [_name] => ()
+                  // make generic type alias...
+
+                | [] => // occur if syntax error
+                  lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
+                    + make_before_location (st.Location), id2, idLocs2,
+                    "", Location.Default, currentNsEnv, Env);
+
+                | _ =>
+                  Message.Error (tok.Location, "using alias must be simple name without dots");
+                  lexer.Manager.OnAfterUsingDirectiveParse(tok.Location
+                    + make_before_location (st.Location), id2, idLocs2,
+                    id.ToString(), idLocs.Head + idLocs.Last, currentNsEnv, Env);
+              }
+
+              def using_tok = Token.Import (tok.Location + st.Location, Env, tok, create_body_token());
+              //Message.Debug($"Writing token: $(get_token_type(using_tok))");
+              current_stream.Add (using_tok);              
+              
+          | x =>
+            push_back (x);
+            // The error message must point to last using token
+            def loc1 = match (idLocs) { | [] => tok.Location | _ => idLocs.Last };
+            def loc2 = Location(loc1.FileIndex, loc1.EndLine, loc1.EndColumn);
+            Message.Error (loc2, "expecting `;' or `=' or EOL");
+            // In notification location must point before first token of next directive
+            lexer.Manager.OnAfterUsingDirectiveParse(tok.Location + x.Location.FromStart(),
+              id, idLocs, "", Location.Default, currentNsEnv, Env);          
+        }
+        
+      }      
       
     }
     
@@ -718,7 +674,8 @@ namespace Nemerle.Compiler
         }
 
         match (get_token ()) {
-          | Token.NewLine as st => 
+          | Token.NewLine as st =>
+            swallow_newlines();
             def loc = tok.Location;
             Env = Env.AddOpenNamespace (id, loc);
             lexer.Keywords = Env.Keywords;
@@ -726,7 +683,7 @@ namespace Nemerle.Compiler
             def using_tok = Token.Import (loc, Env, tok, create_body_token());
             //Message.Debug($"Writing token: $(get_token_type(using_tok))");
             current_stream.Add (using_tok);
-            current_stream.Add (Token.Semicolon(st.Location, true));                       
+            current_stream.Add (Token.Semicolon(st.Location, true));                
             
             lexer.Manager.OnAfterUsingDirectiveParse(loc
               + make_before_location (st.Location), id, idLocs,
@@ -755,11 +712,12 @@ namespace Nemerle.Compiler
             def ty =
               match (st)
               {
-                | Token.Semicolon | Token.NewLine => null
+                | Token.Semicolon => null
+                | Token.NewLine => swallow_newlines(); null
                 | Token.BeginSquare => parseTypeName(idToks2, st)
                 | _ =>
                   push_back (st);
-                  Message.Error(st.Location, "expecting `;' after using alias");
+                  Message.Error(st.Location, "expecting `;' or EOL after using alias");
                   null
               };
 
@@ -796,7 +754,7 @@ namespace Nemerle.Compiler
             // The error message must point to last using token
             def loc1 = match (idLocs) { | [] => tok.Location | _ => idLocs.Last };
             def loc2 = Location(loc1.FileIndex, loc1.EndLine, loc1.EndColumn);
-            Message.Error (loc2, "expecting `;' or `='");
+            Message.Error (loc2, "expecting `;' or `=' or EOL");
             // In notification location must point before first token of next directive
             lexer.Manager.OnAfterUsingDirectiveParse(tok.Location + x.Location.FromStart(),
               id, idLocs, "", Location.Default, currentNsEnv, Env);
@@ -812,7 +770,7 @@ namespace Nemerle.Compiler
           Env = Env.SetDefines(lexer.Defines);
         match (tok)
         {
-          | Token.Keyword ("import") => parse_using_directive (tok); loop ()
+          | Token.Keyword ("using") => parse_using_directive (tok); loop ()
 
           | Token.Keyword ("namespace") =>
             finish_current (current_begin);
@@ -823,7 +781,7 @@ namespace Nemerle.Compiler
             def (id, idLocs) = get_qualified_identifier ();
             def headerLocation = if (idLocs.IsEmpty) tok.Location else tok.Location + idLocs.Last;
 
-            match (get_token ())
+            match (get_token (true))
             {
               | Token.BeginBrace as br =>
                 last_declaration_token = null;
@@ -870,7 +828,13 @@ namespace Nemerle.Compiler
 
           // finish current loose group
           | Token.Semicolon => finish_current (current_begin, tok); loop ()
-
+          
+          | Token.NewLine as nl => 
+            when(terminates_statement(nl)) {
+              finish_current(current_begin, tok)
+            }
+            loop()
+          
           | Token.EndOfFile when parent_begin == 0 =>
             // check #region/#endregion completion
             match (lexer.IncompleteRegions)
@@ -902,7 +866,7 @@ namespace Nemerle.Compiler
     indention_based_copy () : PreParser
     {
       def copy = PreParserIndent (lexer);
-      last_token.Iter(copy.last_token.Push(_));
+      token_buffer.Iter(copy.token_buffer.Push(_));
       copy.Env = Env;
       copy.finished = finished;
       copy

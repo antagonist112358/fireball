@@ -887,7 +887,7 @@ namespace Nemerle.Compiler
     }
     
     // Parses default constructors for classes, mixins, and record types
-    processConstructor(body: Token.RoundGroup, baseTok: Token, members: SCG.List.[ClassMember], fieldMods: NemerleModifiers = NemerleModifiers.Private) : void {
+    processConstructor(body: Token.RoundGroup, baseTok: Token, members: SCG.List.[ClassMember], ctorMods: NemerleModifiers) : void {
       
       //id.Location, id, AttributesAndModifiers(fieldMods, []), typeExpr
       def add_field(id, mods, typeExpr, maybeValue) {
@@ -940,7 +940,7 @@ namespace Nemerle.Compiler
           mutable ctorParms = []; 
           foundArgs.Iter(elem => {
             def (id, typeExpr, value) = elem;
-            add_field(id, AttributesAndModifiers(fieldMods, []), typeExpr, value);
+            add_field(id, AttributesAndModifiers(NemerleModifiers.Private, []), typeExpr, value);
             bodyStatements.Add(<[ this.$(id.GetName() : name) = $(id.GetName() : name); ]>);
             ctorParms ::= PParameter(loc = id.Location.Combine(typeExpr.Location), 
                 name = id, 
@@ -955,7 +955,7 @@ namespace Nemerle.Compiler
           bodyStatements.Reverse();
           def fun_body = FunBody.Parsed(<[ {..$bodyStatements} ]>);
           
-          generateMethodPerutations(baseTok.Location, header, AttributesAndModifiers(NemerleModifiers.Public, []), fun_body, [], gen_subsets).Iter(ctor => {
+          generateMethodPerutations(baseTok.Location, header, AttributesAndModifiers(ctorMods, []), fun_body, [], gen_subsets).Iter(ctor => {
             members.Add(ctor);
             ctor._env = env;
           });
@@ -982,14 +982,16 @@ namespace Nemerle.Compiler
         def defaultCtorMembers = SCG.List();
         
         // Check for default constructor
-        when(key == "record" || key == "class") {       
+        when(key == "record" || key == "class" || key == "mixin") {       
+          mutable modifiers = get_modifiers();
+          when (modifiers == NemerleModifiers.None) { modifiers = NemerleModifiers.Public }
           match(peek_token()) 
           {
             | Token.RoundGroup(children, _, _) =>
               // Read the round group
               def body = get_token() :> Token.RoundGroup;
               // Process the ctor
-              processConstructor(body, children, defaultCtorMembers);            
+              processConstructor(body, children, defaultCtorMembers, modifiers);
             | _ => ()
           }
         }
@@ -1314,7 +1316,23 @@ namespace Nemerle.Compiler
                       def met = parse_method (header, mods, return_value_mods);
                       when (met != null)
                         members.Add(met);
-                    }                  
+                    }             
+                    
+                  | Token.Keyword ("this") =>
+                    shift ();
+                    def (parms, paramsLoc) = parse_parameters ();
+                    prmsOpenLoc  = Location(paramsLoc, paramsLoc.Line,    paramsLoc.Column,
+                                                        paramsLoc.Line,    paramsLoc.Column + 1);
+                    prmsCloseLoc = Location(paramsLoc, paramsLoc.EndLine, paramsLoc.EndColumn - 1,
+                                                        paramsLoc.EndLine, paramsLoc.EndColumn);
+                    def header = PFunHeader (start_tok.Location.FromStart() + paramsLoc,
+                                              Typarms.Empty, MkSplicableName(".ctor", tok.Location),
+                                              PExpr.Void(), parms, prmsOpenLoc, prmsCloseLoc);
+                    take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
+                    def mem = parse_method (header, mods, null);
+                    when (mem != null)
+                      members.Add(mem);        
+                      
                   | x => Error(x, "expecting identifier after 'def' keyword in property or function declaration.");
                 }
               
@@ -1387,28 +1405,13 @@ namespace Nemerle.Compiler
                     members.Add(met);
                 }
 
-              | Token.Keyword ("this") =>
-                shift ();
-                def (parms, paramsLoc) = parse_parameters ();
-                prmsOpenLoc  = Location(paramsLoc, paramsLoc.Line,    paramsLoc.Column,
-                                                    paramsLoc.Line,    paramsLoc.Column + 1);
-                prmsCloseLoc = Location(paramsLoc, paramsLoc.EndLine, paramsLoc.EndColumn - 1,
-                                                    paramsLoc.EndLine, paramsLoc.EndColumn);
-                def header = PFunHeader (start_tok.Location.FromStart() + paramsLoc,
-                                          Typarms.Empty, MkSplicableName(".ctor", tok.Location),
-                                          PExpr.Void(), parms, prmsOpenLoc, prmsCloseLoc);
-                take_attributes_out (ref customs, System.AttributeTargets.Method, true, mods);
-                def mem = parse_method (header, mods, null);
-                when (mem != null)
-                  members.Add(mem);
-
               | Token.Keyword ("event") =>
                 shift ();
                 def mem = parse_event (start_tok.Location.FromStart(), mods, customs);
                 when (mem != null)
                   members.Add(mem);
 
-              | Token.Operator ("|") =>
+              | Token.Keyword ("case") =>
                 shift ();
                 def target =
                   if (in_variant) System.AttributeTargets.Class else System.AttributeTargets.Field;
@@ -3137,7 +3140,7 @@ namespace Nemerle.Compiler
       def pats =
         match (peek_token ())
         {
-          | Token.Operator ("|") as tok =>
+          | Token.Keyword ("case") as tok =>
             patternsLocation = tok.Location;
             shift ();
             match (maybe_parse_ellipsis ())
@@ -3222,7 +3225,7 @@ namespace Nemerle.Compiler
                 | x => fatal_error(x, "expecting `(..)' after `typeof'");
               }
 
-            | Token.Keyword("array") =>
+            | Token.Identifier("Array") =>
               def rank =
                 match (peek_token ())
                 {
@@ -3445,7 +3448,7 @@ namespace Nemerle.Compiler
                   match (h.patterns)
                   {
                     | [PExpr.TypeEnforcement(PExpr.Wildcard as wc, t) as p] =>
-                      Message.Warning (602, wc.Location, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
+                      //Message.Warning (602, wc.Location, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
                       TryCase.Catch(p.Location, MkWildcardSplicableName(wc.Location), t, h.body) :: cases
 
                     | [PExpr.Is(PExpr.Wildcard as wc, t) as p] =>
@@ -3455,7 +3458,7 @@ namespace Nemerle.Compiler
                       TryCase.Filter(p.Location, MkWildcardSplicableName(var.Location), t, cond, h.body) :: cases
 
                     | [PExpr.TypeEnforcement(PExpr.Ref (Location = loc,  name = id), t) as p] =>
-                      Message.Warning (602, loc, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
+                      //Message.Warning (602, loc, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
                       TryCase.Catch(p.Location, Splicable.Name(loc, id), t, h.body) :: cases
 
                     | [PExpr.Is(PExpr.Ref (Location = loc, name = id), t) as p] =>
@@ -3477,7 +3480,7 @@ namespace Nemerle.Compiler
                       TryCase.Filter(p.Location, MkWildcardSplicableName(var.Location), <[ System.Exception ]>, cond, h.body) :: cases
 
                     | [PExpr.TypeEnforcement(PExpr.Spliced (Location = loc, body = id), t) as p] =>
-                      Message.Warning (602, loc, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
+                      //Message.Warning (602, loc, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
                       TryCase.Catch(p.Location, Splicable.Expression (id, env), t, h.body) :: cases
 
                     | [PExpr.Is(PExpr.Spliced (Location = loc, body = id), t) as p] =>

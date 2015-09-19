@@ -148,11 +148,11 @@ namespace Nemerle.Compiler
     }
 
     /** Fetch next token (from one token buffer or lexer if it's empty */
-    protected override get_token () : Token
+    protected override get_token (_ : bool = false) : Token
     {
       // last_token has priority over tokens_pending
-      if (last_token != null) {
-        def result = last_token.Pop();
+      if (token_buffer != null) {
+        def result = token_buffer.Pop();
         result;
       } else if (! tokens_pending.IsEmpty) {
         def t = tokens_pending.Take ();

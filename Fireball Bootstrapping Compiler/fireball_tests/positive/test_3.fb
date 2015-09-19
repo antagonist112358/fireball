@@ -1,28 +1,28 @@
 namespace Fireball.Tests {
 
-	import System;
-
-	public interface Dummy { }
+	using System
 	
-	public class Idiot(name: String) : Dummy {};
+	public abstract class Dummy { }
+	
+	public class Idiot(name: String) : Dummy { }
 	
 	// Field tests
 	public class AccessorTests(a: int = 5) {	
 		// Immutable fields are allowed to be public
-		public val test: String = "Breakin' hard";
+		public val test: String = "Breakin' hard"
 		
 		// Mutable fields are not allowed to be public.
-		protected var breaks : int = 7;
+		protected var breaks : int = 7
 		
 		// vals without assignment are not allowed
-		val villageIdiot: Dummy = Idiot("Paul");
+		val villageIdiot: Dummy = Idiot("Paul")
 		
 		// vars without assignment are not allowed
-		var anotherIdiot: Dummy = Idiot("Rebecca");
+		var anotherIdiot: Dummy = Idiot("Rebecca")
 		
 		// Test tuple assignment
-		var tupleVar = (5, "string");
-		val tupleVal = (10, "string");		
+		var tupleVar = (5, "string")
+		val tupleVal = (10, "string")
 	}
 		
 }

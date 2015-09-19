@@ -1,0 +1,202 @@
+﻿using Nemerle.Compiler;
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Utility;
+using SCG = System.Collections.Generic;
+using System.Linq;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of FBPreParser.
+  /// </summary>
+  public class FBPreParser
+  {
+    private lexer : LexerBase;
+    private mutable last_token : Stack [Token] = Stack(5);
+    
+    [Accessor(flags = WantSetter)]
+    mutable _env : GlobalEnv;
+
+    mutable finished : bool = false;
+
+    /** Parent stream is the stack of processed token nodes,
+        which are already assigned to be in currently build sequence.
+        For example:
+          a; b; c (); d e _we_are_here_
+        'a, b, c()', are alredy known to be in parent sequence,
+        while 'd e' are in current temporary sequence, which might
+        get added to parent_stream if separator (e.g. ';') occurs
+     */
+    private parent_stream : SCG.List [Token] = SCG.List (100);
+
+    /** Currently builded stream of token nodes is an array of
+        loose tokens, which have occured after last separator.
+        It will probably form LooseGroup as an element of parent
+        sequence or all elements will constitue parent
+     */
+    private current_stream : SCG.List [Token] = SCG.List (50);
+    
+    public this (lex : LexerBase) {
+      this (lex, lex.Manager.CoreEnv);
+    }
+
+    public this (lex : LexerBase, env : GlobalEnv) {
+      Env = env;
+      lex.Keywords = Env.Keywords;
+      lexer = lex;
+    }
+    
+    private parse_brace_group(loc : Location, openBrace : Token.BeginBrace, expect_endbrace : bool, generated : bool) : void {
+      
+      def parent_begin = parent_stream.Count;
+      def current_begin = current_stream.Count;
+      Env = Env.CreateScope();
+      
+      def loop() {
+        def tok = get_token();
+        match (tok) {
+          // Newline
+          | Token.NewLine =>
+            // Nothing useful read
+            match(peek_token()) {
+              // Operator
+              | Token.Operator
+              // Keywords which never start a new line of code
+              | Token.Keyword(kw) when Keywords.KeywordsWhichNeverStartNewStatement.Contains(kw) => loop()
+              // Anything else
+              | _ => 
+                make_loose_group(current_begin, tok);
+                loop()
+            }
+          
+          // Semicolon
+          | Token.Semicolon =>
+            make_loose_group(current_begin, tok);
+            loop()
+            
+          // Using keyword
+          | Token.Keyword("using") =>
+            parse_using(tok);
+            loop();
+            
+          // Any unexpected ending brace
+          | Token.EndQuote | Token.EndRound | Token.EndSquare => 
+            push_back(tok);
+            throw PreParserException (tok.Location, $"unexpected closing bracket '$(tok)'");
+          
+          | _ => ()
+          
+        }
+      }
+    }
+    
+    private parse_using(tok: Token) : void {
+    }
+    
+    #region Helper Methods
+    
+    // Converts the current_stream into a LooseGroup
+    private make_loose_group(index: int, separator: Token = null) : void {
+      when(index > current_stream.Count) {
+        def loose_group = make_list (current_stream, index);
+        def location    = if (separator != null)
+                            loose_group.Location + separator.Location.FromStart();
+                          else
+                            list_location (current_stream, index);
+        def loose       = Token.LooseGroup(location, loose_group, separator);
+
+        parent_stream.Add (loose);
+        current_stream.RemoveRange (index, current_stream.Count - index);
+      }
+    }
+    
+    // Gets the next token (optionally skipping newline tokens)
+    private get_token(skip_newlines: bool = false) : Token {
+      mutable tok = read_token();
+      while (!skip_newlines || !(tok is Token.NewLine)) {
+        tok = read_token();
+      }
+      tok
+    }
+    
+    // Reads the next token from either the last_token buffer or the lexer stream
+    private read_token() : Token
+    {
+      if (!last_token.IsEmpty)
+      {
+        def result = last_token.Pop();
+        result;
+      }
+      else
+      {
+        try        
+        {
+          match (lexer.GetToken ())
+          {
+            | QuotedIdentifier (x) as q => Token.Identifier (q.Location, x)
+            | t => t
+          }
+        }
+        catch
+        {
+          | _ is System.Text.DecoderFallbackException =>
+            Message.FatalError (lexer.Location, $"detected unsupported encoding of national characters in file `$(lexer.Location.File)', "
+              "source files should be in UTF8 (or UTF16/32 when BOM is given) encoding");
+          | e is LexerBase.Error =>
+            Message.Error (lexer.Location, e.Message + " " + e.StackTrace);
+            read_token()
+        }
+      }
+    }
+    
+    // Stores a token in the token buffer
+    private push_back(tok : Token) : void
+    {
+        last_token.Push(tok);
+    }
+
+    // Peeks at the next token in the token stream
+    private peek_token() : Token
+    {
+      def tok = get_token();
+      push_back(tok);
+      tok
+    }
+    
+    /** links Tokens from specified subarray to form a list and return its head */
+    static make_list (tokens : SCG.List [Token], start : int) : Token
+    {
+      for (mutable i = tokens.Count - 2; i >= start; --i)
+        tokens [i].Next = tokens [i + 1];
+      tokens [start]
+    }
+
+    /** returns a combined location of the subarray inside a token list */
+    static list_location ( tokens : SCG.List [Token], start : int) : Location
+    {
+      assert(tokens.Count > 0);
+      assert(start < tokens.Count);
+      tokens [start].Location + tokens [tokens.Count - 1].Location
+    }
+    
+    #endregion
+    
+    public static Dump (tok : Token, ident : string) : string
+    {
+      def (open, close, sepstr, elements) =
+        match (tok) {
+          | Token.RoundGroup => ("(", ")", ", ", tok)
+          | Token.BracesGroup => ("{\n" + ident, "}", ";\n" + ident, tok)
+          | Token.SquareGroup => ("[", "]", ", ", tok)
+          | Token.QuoteGroup  => ("<[\n", "]>", "; ", tok)
+          | Token.LooseGroup  => ("", "", " ", tok)
+
+          | _ => ("", tok.ToString (false), "", null)
+        }
+
+      $"$open..$(elements; sepstr)$close"
+    }
+    
+  }
+}

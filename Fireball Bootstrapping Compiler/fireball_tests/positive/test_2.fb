@@ -1,6 +1,6 @@
 namespace Fireball.Tests {
 
-	import System;
+	using System;
 	
 	// Test normal class decl
 	class NoDefaultConstructor {
@@ -44,7 +44,7 @@ namespace Fireball.Tests {
 	}
 	
 	module Program {
-    public def Main(args: array[String]) : void {      
+    public def Main(args: Array[String]) : void {      
 			val tester = DefaultConstructorTest(5);
 			val testMethodVal = tester.PrintOutA();
 			Console.WriteLine($"Value from test method: $testMethodVal");

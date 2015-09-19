@@ -1,0 +1,87 @@
+﻿using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball
+{
+  // Builtin array type
+  public type Array = System.Array;
+  
+  /*  
+  // Generic array type
+  public struct Array[T] : System.Collections.Generic.IEnumerable[T]
+  {
+    private _internal : array[T];
+    
+    public this(items: IEnumerable[T]) {
+      _internal = items.ToArray();            
+    }
+    
+    public this(params items: array[T]) {
+      _internal = items;
+    }
+    
+    public Item[index: int] : T {
+      get { _internal[index]; }
+      set { _internal[index] = value; }
+    }
+    
+    public IsFixedSize : bool {
+      get { true; }
+    }
+    
+    public IsReadOnly : bool {
+      get { false; }
+    }
+    
+    public Length : int {
+      get { _internal.Length; }
+    }        
+    
+    public Count : int {
+      get { _internal.Length; }
+    }
+    
+    public Contains(item: T) : bool {
+      _internal.Contains(item);
+    }
+    
+    public GetEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator {
+      _internal.GetEnumerator();
+    }
+    
+    public GetGenericEnumerator() : System.Collections.Generic.IEnumerator[T] implements System.Collections.Generic.IEnumerable[T].GetEnumerator {
+      _internal.ToList().GetEnumerator();
+    }
+    
+    public override Equals(other: Object) : bool {
+      if (other is Array[T])
+        _internal.Equals((other :> Array[T])._internal)
+      else if (other is array[T])
+        _internal.Equals(other)
+      else
+        false
+    }
+    
+    public override GetHashCode() : int {
+      _internal.GetHashCode()
+    }
+    
+    #region Conversions
+    
+    public static @: (arr: array[T]) : Array[T] {
+      Array(arr)
+    }
+    
+    public static @: (fromArr: Array[T]) : array[T] {
+      fromArr._internal
+    }
+    
+    #endregion
+  }
+  */
+}

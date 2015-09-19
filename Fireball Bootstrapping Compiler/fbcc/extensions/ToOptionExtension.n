@@ -1,0 +1,22 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of ToOptionExtension.
+  /// </summary>
+  public module ToOptionExtension
+  {
+    public ToOption[T](this obj: T) : option[T] where T : class {
+      | _ when obj != null => Some(obj)
+      | _ => None()
+    }
+  }
+}

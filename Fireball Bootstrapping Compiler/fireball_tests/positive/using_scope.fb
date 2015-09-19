@@ -1,16 +1,16 @@
-// Tests various scoping with 'Using' imports in Fireball
+// Tests various scoping with 'Using' usings in Fireball
 
 namespace Fireball.Tests {
 
-  import System
+  using System
     
   class ScopeSpecific {
   
-    import System.Linq;
+    using System.Linq;
   
     def SomeScopedMethod() : String {
     
-      import System.Collections.Generic;
+      using System.Collections.Generic;
       
       val aList = List();
       
@@ -25,18 +25,18 @@ namespace Fireball.Tests {
   
   }
   
-  class LayeredImports {
+  class Layeredusings {
     
-    import STT = System.Threading.Tasks;
-    import System.Threading;
+    using STT = System.Threading.Tasks;
+    using System.Threading;
     
     def Layer1() : void {
     
-      import SC = System.Collections;
+      using SC = System.Collections;
     
       def Layer2() : void {
         
-        import SGC = System.Collections.Generic;
+        using SGC = System.Collections.Generic;
         
         val aList = SGC.Dictionary();
         aList.Add(1, "string");
@@ -54,9 +54,9 @@ namespace Fireball.Tests {
 
   module Program {
     
-    public def Main(args: array[String]) : void {
+    public def Main(args: Array[String]) : void {
     
-      import System.Console;
+      using System.Console;
       
       WriteLine("Creating a ScopedClass");
       

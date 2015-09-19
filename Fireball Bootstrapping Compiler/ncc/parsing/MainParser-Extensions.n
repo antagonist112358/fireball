@@ -441,6 +441,13 @@ namespace Nemerle.Compiler
             loop (acc, next)
 
           | GrammarElement.Expression =>
+            // Check for a nested expression
+            when(peek_token() is Token.EndOfGroup) {
+              pop_stream("nested expression");
+              shift();
+              assert(stream is Token.LooseGroup);
+              push_stream((stream :> Token.LooseGroup).Child)
+            }
             def expr = parse_expr (stop);
             loop (SyntaxElement.Expression (expr) :: acc, next)
 

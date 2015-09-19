@@ -607,6 +607,7 @@ namespace Nemerle.Compiler
           LibrariesManager.AddLibrary("System", true);
           LibrariesManager.AddLibrary("Nemerle", true);
           LibrariesManager.AddLibrary("System.Xml", true);
+          LibrariesManager.AddLibrary("Fireball", true);
         }
 
         mutable exception : System.Exception;

@@ -42,6 +42,7 @@ using SR = System.Reflection;
 using SRE = System.Reflection.Emit;
 using SCG = System.Collections.Generic;
 using NC = Nemerle.Compiler;
+using FBC = Fireball;
 
 namespace Nemerle.Compiler
 {
@@ -74,6 +75,7 @@ namespace Nemerle.Compiler
         :: assembly_dir (typeof (System.Text.RegularExpressions.Match))
         :: assembly_dir (typeof (LibraryReferenceManager))
         :: assembly_dir (typeof (System.Object))
+        :: assembly_dir (typeof (Fireball.Array))
         :: lib_paths;
     }
 

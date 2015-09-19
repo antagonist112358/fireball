@@ -9,6 +9,8 @@ Project("{EDCC3B85-0BAD-11DB-BC1A-00112FDE8B61}") = "Fireball.Macros", "Fireball
 EndProject
 Project("{EDCC3B85-0BAD-11DB-BC1A-00112FDE8B61}") = "Fireball.Compiler.Tester", "test_framework\Fireball.Compiler.Tester.nproj", "{688AC17C-D7D3-4384-BA19-9C67602C7F08}"
 EndProject
+Project("{EDCC3B85-0BAD-11DB-BC1A-00112FDE8B61}") = "Fireball", "Fireball.Internal\Fireball.nproj", "{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,14 @@ Global
 		{688AC17C-D7D3-4384-BA19-9C67602C7F08}.Release|Any CPU.Build.0 = Release|Any CPU
 		{688AC17C-D7D3-4384-BA19-9C67602C7F08}.Release|x64.ActiveCfg = Release|Any CPU
 		{688AC17C-D7D3-4384-BA19-9C67602C7F08}.Release|x86.ActiveCfg = Release|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Release|x64.ActiveCfg = Release|Any CPU
+		{1C7E9F0F-BFE7-4BA4-B00F-535464A3307F}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
