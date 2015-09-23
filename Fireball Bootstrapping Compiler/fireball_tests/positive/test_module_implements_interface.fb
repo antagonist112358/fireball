@@ -1,0 +1,43 @@
+namespace Fireball.Tests {
+
+	using System
+	
+	public trait ITest {
+		def MustImplement(a: int) : void
+	}
+	
+	module TestModule {
+	
+		private class FB_ITest_Implementation : ITest {
+			public def MustImplement(a: int) : void {
+				Console.WriteLine($"You specified the number: $a")
+			}			
+		}
+
+		public def ITest : ITest
+		{
+			get { FB_ITest_Implementation() }
+		}
+	
+	}
+	
+	module Program {
+    public def Main(args: Array[String]) : void {
+			using System.Console
+			
+			val tester : ITest = TestModule.ITest
+			
+			tester.MustImplement(5)					
+			
+			//Console.WriteLine("\nPress any key...")
+			//Console.ReadKey(true)
+    }
+  }
+
+}
+
+/*
+BEGIN-OUTPUT
+You specified the number: 5
+END-OUTPUT
+*/

@@ -1216,7 +1216,8 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         Message.Error ("constructor cannot implement anything");
 
       | (_ :: _, _) when IsStatic =>
-        Message.Error ("static function cannot implement anything");
+        //Message.Error ("static function cannot implement anything");
+        ()
 
       | (_ :: _ as impl, name) when is_property =>
         // update names of explicitly implemented accessor methods

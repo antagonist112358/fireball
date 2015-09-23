@@ -424,7 +424,7 @@ namespace Nemerle.Compiler
             // Adding record type
             | "public" | "private" | "static" | "internal"
             | "abstract" | "sealed" | "partial" | "class" | "module" | "variant" | "record"
-            | "enum" | "interface" | "struct" | "delegate" | "macro"  => true
+            | "enum" | "trait" | "struct" | "delegate" | "macro"  => true
             | _                                                       => false
           }
 
@@ -1125,7 +1125,7 @@ namespace Nemerle.Compiler
               expect_empty ("type alias declaration");
               TopDeclaration.Alias (locAll, name, mods, typarms, t)
 
-            | "interface" => TopDeclaration.Interface (locAll, name, mods, typarms, t_extends, members2)
+            | "trait" => TopDeclaration.Interface (locAll, name, mods, typarms, t_extends, members2)
             | "variant" => TopDeclaration.Variant (locAll, name, mods, typarms, t_extends, members2)
             | "enum" => TopDeclaration.Enum (locAll, name, mods, typarms, t_extends, members2)
             | _ => Util.ice ()
@@ -1172,7 +1172,7 @@ namespace Nemerle.Compiler
             match (key)
             {
               // Adding record type
-              | "class" | "struct" | "module" | "interface" | "enum" | "variant" | "record" => processType(key)
+              | "class" | "struct" | "module" | "trait" | "enum" | "variant" | "record" => processType(key)
               | "delegate" =>
                 def h = parse_fun_header (null);
                 def td = TopDeclaration.Delegate(startLocation + h.Location, h.ParsedSplicableName, mods, h.ParsedTypeParameters, h);
@@ -1288,7 +1288,7 @@ namespace Nemerle.Compiler
                         | (Token.RoundGroup, _) =>
                           ((null, null, Location.Default), parse_parameters ());
 
-                        | _ =>
+                        | _ =>                          
                           is_property = true; // most probably it is a field or property
                           ((null, null, Location.Default), ([], Location.Default))
                       };

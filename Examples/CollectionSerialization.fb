@@ -1,0 +1,87 @@
+namespace Fireball.Tests {
+
+	using System
+	using System.Runtime.Serialization
+	
+	/*
+	This example / test shows how easy it is using Fireball to add binary serialization support to every
+	collection / IEnumerable in the CLR universe using the BinaryFormatter.
+	*/
+	module CollectionSerialization {
+
+		#region Serialization
+		
+		
+		trait BinarySerializer[T] {
+			def Serialize(item: T) : Array [ byte ]
+		}
+		
+		// We want an extension method on every IEnumerable[T] called 'ToByteArray', which will write out the bytes in the array.
+		implicit class CollectionSerializationExtensions[A : ISerializable, T : IEnumerable[A]](collection: T) {
+			def ToByteArray(resolve serializer: BinarySerializer[T]) { serializer.Serialize(collection) }
+		}
+		
+		private class BinaryFormatterCollectionSerializer[T : IEnumerable[T]]
+			implements BinarySerializer[T] {
+			
+			val collectionTypeName = typeof(T).FullName
+			val binFmt = new BinaryFormatter
+			
+			def Serialize(collection : T) : Array [ byte ] {
+				using (memStream = new MemorymemStream) {
+					using(writer = new BinaryWriter(memStream)) {
+						writer.Write($"SerializedCollection:$collectionTypeName")
+						binFmt.Serialize(memStream, collection.ToArray)
+						memStream.ToArray
+					}
+				}
+			}
+			
+		}
+		
+		// Make the BinaryFormatterCollectionSerializer resolvable
+		resolved BinarySerializer[T : IEnumerable[T]] = new BinaryFormatterCollectionSerializer
+		
+		#endregion
+		
+		#region Deserialization
+		
+		using Fireball.Collection		// For Builder[IEnumerable[T], CollectionsOf[T]]
+		
+		trait BinaryDeserializer[T] {
+			def Deserialize(data : Array [ byte ]) : Array [T]
+		}
+		
+		
+		private class BinaryFormatterCollectionDeserializer[T : ISerializable]
+			implements BinaryDeserializer[T] {		
+			
+			val binFmt = new BinaryFormatter
+			
+			def Deserialize(data : Array [ byte ]) : Array [T] {
+				using (memStream = new MemoryStream(data)) {
+					using (reader = new BinaryReader(memStream)) {
+						assert(reader.GetString().StartsWith("SerializedCollection:"))
+						val obj = binFmt.Deserialize(memStream)
+						obj :> Array [T]
+					}
+				}
+			}
+			
+		}
+		
+		
+		resolved BinaryDeserializer[A : ISerializable] = new BinaryFormatterCollectionDeserializer
+		
+		def Deserialize[A: ISerializable, T : IEnumerable[A]](data : Array [ byte ])(resolve deserializer : BinaryDeserializer[A], builder : Builder[IEnumerable[A], T]) {				
+			builder.Build(deserializer.Deserialize(data).AsEnumerable)
+		}
+		
+		
+		#endregion
+		
+	}
+	
+	
+		
+}

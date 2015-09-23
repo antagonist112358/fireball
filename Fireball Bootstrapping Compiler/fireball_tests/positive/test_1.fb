@@ -5,7 +5,7 @@ namespace Fireball.Tests {
 
   class TestClass {
     // Fields
-    protected var text: String = "Hello World"
+    protected var text: string = "Hello World"
     val numTimes: int = 5
 
 		// Class level inference (for literal value)
