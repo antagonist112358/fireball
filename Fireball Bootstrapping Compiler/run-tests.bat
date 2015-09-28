@@ -8,9 +8,6 @@ SET FBCCPath=%RootPath%bin\Debug
 SET FBCCExe="fbcc.exe"
 SET FBTester="Fireball.Compiler.Tester.exe"
 
-rem ECHO Using FBCC @ %FBCCPath%
-rem ECHO Using FBCC Executable %FBCCExe%
-
 ECHO Using Tests in %TestPath%
 ECHO Using FB Tester Executable %FBTester%
 
@@ -28,6 +25,8 @@ ECHO Running Negative tests...
 
 "%TestPath%\%FBTester%" -p:-nowarn:10003,168 -d:"%TestPath%\output"
 
+ECHO Cleaning up...
 @DEL /Q "%TestPath%\output\*.*"
+
 pause
 
