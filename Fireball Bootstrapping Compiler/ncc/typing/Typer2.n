@@ -1331,11 +1331,24 @@ namespace Nemerle.Compiler
                       else
                         null;
 
+                    def areSameType = (e1.Type.Equals(e2.Type));
+                    def simpleDowncast = {
+                      if (typer != null) {
+                        if (t1.TypeInfo.IsDerivedFrom(t2.TypeInfo)) {
+                          p1.expr = typer.TypeExpr(<[ $(p1.expr : typed) : $(t2 : typed)]>);
+                          true
+                        } else if (t2.TypeInfo.IsDerivedFrom(t1.TypeInfo)) {
+                          p2.expr = typer.TypeExpr(<[ $(p2.expr : typed) : $(t1 : typed)]>);
+                          true
+                        } else false
+                      } else false
+                    };
+                        
                     if (prob != null)
                       Message.Error($"comparing a value type $prob to System.Object (a `null' literal?) with reference equality");
-                    else when (!t1.IsSystemObject && !t2.IsSystemObject)
+                      
+                    else when (!t1.IsSystemObject && !t2.IsSystemObject && !areSameType && !simpleDowncast)
                       Message.Warning(10011, $"comparing values of types $t1 and $t2 with reference equality");
-
                     TExpr.Call(Unfold(func), parms, false)
 
                   | _ => assert(false)

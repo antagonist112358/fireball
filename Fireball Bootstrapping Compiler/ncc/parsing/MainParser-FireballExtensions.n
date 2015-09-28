@@ -125,6 +125,114 @@ namespace Nemerle.Compiler
       }            
     }
     
+    private with_separated_list[T](f : void -> T) : list[T]
+    {
+      def loop(acc)
+      {
+        match (peek_token())
+        {
+          | Token.Keyword("with") => shift(); loop(f() :: acc)
+          | _           => NList.Rev(acc)
+        }
+      }
+
+      loop([f()])
+    }
     
+    private ParseGenericParameters() : Typarms
+    {      
+      def parseNextTyparamName() : option[PExpr] {
+        match(maybe_parse_ellipsis()) {
+          | Some(e) => Some(e)
+          | None =>
+          match(peek_token()) {
+            | Token.Identifier | Token.Operator("+") | Token.Operator("-") => Some(parse_expr(TokenStoppers.Colon | TokenStoppers.ColonLess))
+            | _ => None()
+          }
+        }
+      }
+      
+      def parseConstraint(tyvar : PExpr) : Splicable * list[Constraint] {
+        mutable constraints = [];
+        mutable isLowerConstraint = false;
+        
+        def splicableTyvar = match(tyvar) {
+          | <[ + $inner ]> =>
+              def tv = make_splicable (inner);
+              constraints ::= Constraint(tv, <[ @+ ]>, true);
+              tv;
+          | <[ - $inner ]> =>
+              def tv = make_splicable (inner);
+              constraints ::= Constraint(tv, <[ @- ]>, true);
+              tv
+          | _ => make_splicable (tyvar)
+        }
+        
+        match(peek_token()) {
+          | Token.Operator(":") as t
+          | Token.Operator(":>") as t =>
+            shift();
+            when(t is Token.Operator(":>")) { isLowerConstraint = true; }
+            match(maybe_parse_ellipsis()) {
+              | Some(e) => constraints ::= Constraint(null, <[ ($tyvar, $e) ]>, false)
+              | None => constraints += with_separated_list( () =>
+                  match(peek_token()) {
+                    | Token.Keyword("enum"   as key) as tok
+                    | Token.Keyword("class"  as key) as tok
+                    | Token.Keyword("struct" as key) as tok =>
+                      shift();
+                      //(true, PExpr.Ref(tok.Location, MkName(key, tok.Location)))
+                      Constraint(splicableTyvar, PExpr.Ref(tok.Location, MkName(key, tok.Location)), true)
+
+                    | Token.Keyword("new") as tok =>
+                      shift();
+                      match (get_token ())
+                      {
+                        | Token.RoundGroup(null, _, _) => ()
+                        | t => Error(t, "expected `()' after `new' in generic constraint")
+                      }
+                      //(true, PExpr.Ref(tok.Location, MkName("new", tok.Location)))
+                      Constraint(splicableTyvar, PExpr.Ref(tok.Location, MkName("new", tok.Location)), true)
+                    | _ => 
+                      //(false, parse_expr(TokenStoppers.Braces | TokenStoppers.Where | TokenStoppers.Equal))
+                      Constraint(splicableTyvar, parse_expr(TokenStoppers.Braces | TokenStoppers.With | TokenStoppers.Equal), false, isLowerConstraint)
+                });
+              
+          }
+          | _ => ()
+        }
+        
+        (splicableTyvar, constraints)
+      }            
+      
+      def loop() : Splicable * list[Constraint] {
+        match(parseNextTyparamName()) {
+          | Some(tyvar) => parseConstraint(tyvar);            
+          | None => 
+            Error(get_token(), "expecting type variable declaration");
+            (null, [])
+        }        
+      }
+      
+      match (peek_token ())
+      {
+        | Token.SquareGroup (null, _, _) as t =>
+          shift ();
+          Error (t, "expecting type variables"); 
+          Typarms.Empty
+
+        | Token.SquareGroup (children, _, _) as group when children != null =>
+            shift (); // now we are after whole '[..]' group
+            def (names, constraints) = TokenMap(group, loop).FoldLeft( ([], []), (nameAndCons, acc) => {
+              def (nameAcc, consAcc) = acc;
+              def (name, cons) = nameAndCons;
+              (name :: nameAcc, cons + consAcc)
+            });
+              
+            Typarms(names.Reverse(), constraints)
+
+        | _ => Typarms.Empty
+      };
+    }
   }
 }

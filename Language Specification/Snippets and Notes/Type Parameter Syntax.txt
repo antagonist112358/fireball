@@ -1,0 +1,12 @@
+Generic Type Parameters Syntax
+
+Single Type Parameter: 								[ T ]
+Multiple Type Parameters: 						[ A, B ]
+Type Parameter with Upper Bound:			[ T : SomeClass ]
+Type Parameter with Lower Bound:  		[ T :> SomeClass ]
+Type Parameter with Multiple Bounds:	[ T : SomeClass with IComparable[SomeClass] with new() ]
+
+// Not yet supported (might not be...)
+Range Bounds													[ Numeric[_] :> T : ValueType ]
+
+

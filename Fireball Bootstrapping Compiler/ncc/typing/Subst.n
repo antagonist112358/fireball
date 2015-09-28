@@ -181,9 +181,9 @@ namespace Nemerle.Compiler
       }
     }
 
-    public static Fresh(vars : list[StaticTypeVar]) : Subst * list[TypeVar]
+    public static Fresh(vars : list[StaticTypeVar], currSub : Subst = null) : Subst * list[TypeVar]
     {
-      def res = Subst ();
+      def res = currSub ?? Subst ();
 
       if (vars.IsEmpty)
         (res, [])
@@ -208,9 +208,14 @@ namespace Nemerle.Compiler
               tv.HasReferenceTypeConstraint = true;
 
             def lb = v.LowerBound;
+            def ub = v.SuperTypeConstraint;
             when (!lb.Equals (tv.Manager.InternalType.Object) && !lb.Equals (tv.Manager.InternalType.ValueType)) {
               def ok = tv.Require (res.Apply (lb));
-              Util.cassert (was_error || ok, $ "req fail, $tv $(res.Apply (v.LowerBound))");
+              Util.cassert (was_error || ok, $ "require fail, $tv $(res.Apply (v.LowerBound))");
+            }
+            when(ub.HasValue) {
+              def ok = tv.Provide (res.Apply(ub.Value));
+              Util.cassert (was_error || ok, $ "provide fail, $tv $(res.Apply (v.LowerBound))");
             }
           });
         (res, vars2)

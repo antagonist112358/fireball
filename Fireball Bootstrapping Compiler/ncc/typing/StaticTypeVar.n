@@ -48,6 +48,7 @@ namespace Nemerle.Compiler
                       name            : string;
     mutable           special         : GenericParameterAttributes;
     mutable           constraints     : list[FixedType];
+    mutable           supertype       : option[FixedType] = None();
     internal  mutable current_type    : NC.TypeInfo = null;
     internal  mutable current_method  : IMethod = null;
 
@@ -116,6 +117,11 @@ namespace Nemerle.Compiler
       }
     }
     
+    public SuperTypeConstraint : option[FixedType]
+    {
+      get { supertype }
+      set { supertype = value; }
+    }       
 
     public Name : string { get { name } }
 
@@ -402,6 +408,7 @@ namespace Nemerle.Compiler
       {
         typesToCheckBounds : list[TypeVar];
         constraints        : Hashtable[int, GenericParameterAttributes * list[FixedType]];
+        supertype          : option[int * FixedType];
       }
     | Clone  { sourceTypeParms : list[StaticTypeVar] }
     | Copy
@@ -415,7 +422,7 @@ namespace Nemerle.Compiler
       {
         match (this)
         {
-          | Parsed(_, constraints) => TypeParams.Exists(tp => constraints.Contains(tp.id))
+          | Parsed(_, constraints, supertype) => TypeParams.Exists(tp => constraints.Contains(tp.id)) || supertype.HasValue
           | Clone(sourceTypeParms) => sourceTypeParms.Exists(_.HasConstraints)
           | Copy                   => TypeParams.Exists(_.HasConstraints)
         }
@@ -431,9 +438,18 @@ namespace Nemerle.Compiler
     {
       match (this)
       {
-        | Parsed(typesToCheckBounds, constraints) =>
-          foreach (tv in TypeParams)
+        | Parsed(typesToCheckBounds, constraints, supertype) =>
+          foreach (tv in TypeParams) {
+            match (supertype)
+            {
+              | Some(tup) =>
+                def (id, fixedtype) = tup;
+                when (id == tv.id)
+                  tv.SuperTypeConstraint = Some(fixedtype)
+              | None => ()
+            }
             tv.SetConstraints(constraints.GetValueOrDefault(tv.id, (GenericParameterAttributes.None, [])));
+          }
           foreach (tv in typesToCheckBounds)
             TypeBuilder.check_bound_type(tv);
 

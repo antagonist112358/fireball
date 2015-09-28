@@ -1,0 +1,38 @@
+namespace Fireball.Tests {
+
+	using System
+	
+	// Simple class hierarchy
+	class Super { virtual def Depth : int { get { 1 } } }
+	class Child1 : Super { override def Depth : int { get { 2 } } }
+	class Child2 : Super { override def Depth : int { get { 2 } } }
+	class SubChild1 : Child1 { override def Depth : int { get { 3 } } }
+
+	// A class with an upper-type bound
+	class ClassHierarchyPrinter[T : Super] {
+		using System.Console
+		
+		def PrintHierarchy[U : T](collection : list[U]) : void {
+			val cnt = 0
+			foreach(item in collection) {
+				val tabs = if (item.Depth > 1) String('\t', item.Depth - 1) else String.Empty
+				WriteLine(tabs + item.GetType().Name)
+			}
+		}
+	}
+	
+	public module Program
+	{
+		def Main(args : Array[String]) : void {
+			val objects = [
+				Super(), Child2(), Child1(), SubChild1()
+			]
+			val children = [ SubChild1(), SubChild1() ]
+			
+			val printer = ClassHierarchyPrinter.[Super]()
+			val printer2 = ClassHierarchyPrinter.[Super]()
+			printer.PrintHierarchy(objects)
+			printer2.PrintHierarchy(children)
+		}
+	}
+}

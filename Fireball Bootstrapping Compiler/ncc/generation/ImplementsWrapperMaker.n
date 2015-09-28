@@ -46,8 +46,9 @@ namespace Nemerle.Compiler
       {
         //Message.Debug($"compare: $(declaring_type.GetMemType().TypeOfMember(impl_meth))     ======     $(this.GetFreshType())");
         def sameTyParLen = impl_meth.GetHeader().TypeParameters.Length == fun_header.TypeParameters.Length;
+        def membType = ifaceType.TypeOfMember(impl_meth);
         
-        if (sameTyParLen && ifaceType.TypeOfMember(impl_meth).TryUnify(this.GetFreshType()[0]))
+        if (sameTyParLen && membType.TryUnify(this.GetFreshType()[0]))
             true
         else
         {

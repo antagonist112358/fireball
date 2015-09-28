@@ -28,5 +28,6 @@ ECHO Running Negative tests...
 
 "%TestPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
 
+@DEL /Q "%TestPath%\output\*.*"
 pause
 

@@ -194,10 +194,28 @@ namespace Nemerle.Compiler
         }
 
         def msg = if (messenger.NeedMessage) $"needed a $ftype, got $(parm.expr.Type)" else null;
+        def tvr : FixedType.StaticTypeVarRef = if (fparm != null && fparm.Type != null && fparm.Type is FixedType.StaticTypeVarRef) fparm.Type :> FixedType.StaticTypeVarRef else null;
 
         def is_ok =
           if (fparm != null && fparm.kind != ParmKind.Normal)
             parm.expr.Type.Unify(ftype)
+          // Check for lower-bound on the type parameter
+          else if (tvr != null && tvr.tyvar.SuperTypeConstraint.HasValue && !parm.expr.Type.TryRequire(ftype)) {
+            mutable isAllNestedDelayedTypingResolved;
+            
+            // Check to see if there is an implicit conversion to the function type
+            def expr = match(typer.DoSubtypingOrImplicitConversion(parm.expr, ftype, out isAllNestedDelayedTypingResolved)) {
+              | Some(expr) => expr
+              | None =>
+                // Downcast the parameter to 'object'
+                parm.expr = typer.TypeExpr(<[ $(parm.expr : typed) : $(InternalType.Object : typed) ]>);
+                typer.TryAddCastTo(parm.expr, ftype, out isAllNestedDelayedTypingResolved, !is_final);
+            }
+
+            IsAllNestedDelayedTypingResolved &= isAllNestedDelayedTypingResolved;
+            when(is_final) { parm.expr = expr; }
+            true
+          }
           else
           {
             mutable isAllNestedDelayedTypingResolved;

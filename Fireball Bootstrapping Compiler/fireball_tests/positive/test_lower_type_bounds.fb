@@ -1,0 +1,131 @@
+/* Test generic type variable bounds */
+namespace Fireball.Tests
+{
+	using System
+	using System.Collections
+	using System.Collections.Generic
+
+	// Some test types
+	class Super { }
+	class Child1 : Super { }
+	class Child2 : Super { }
+	class SubChild1 : Child1 { }
+	
+	// Test lower-type bounds
+	public trait ListNode[+T] : IEnumerable[T]
+	{
+		def Head : T { get }
+		def Tail : ListNode[T] { get }
+		def Prepend[U :> T](item : U) : ListNode[U]
+	}
+
+	module DefaultListNode[T] {
+	
+		private class EmptyListNode : ListNode[T]
+		{
+			def Head : T {
+				get { throw NotImplementedException() }
+			}
+			
+			def Tail : ListNode[T] {
+				get { throw NotImplementedException() }
+			}
+			
+			def Prepend[U :> T](item : U) : ListNode[U] { throw NotImplementedException() }
+			def GetEnumerator() : IEnumerator[T] { throw NotImplementedException() }
+			def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator { throw NotImplementedException() }
+		}
+		
+		public val Empty : ListNode[T] = EmptyListNode()
+	}
+	
+	
+	class RealListNode[T](head : T, tail : ListNode[T] = DefaultListNode[T].Empty) : ListNode[T] {
+		
+		private class RealListNodeEnumerator[T2](node : ListNode[T2]) : IEnumerator[T2] {
+			var currentNode : ListNode[T2] = node
+			var hasMovedOnce : bool = false
+			
+			def MoveNext() : bool {
+				if (!hasMovedOnce)
+					hasMovedOnce = true
+				else 
+					currentNode = currentNode.Tail
+				
+				if (object.ReferenceEquals(currentNode, DefaultListNode[T2].Empty)) false
+				else true
+			}
+			
+			def Current : T2
+			{
+				get { currentNode.Head }
+			}
+			
+			def Dispose() : void { }
+			def Reset() : void { }
+		}
+		
+		def Head : T { get { head } }
+		def Tail : ListNode[T] { get { tail } }
+		
+		def Prepend[U :> T](item : U) : ListNode[U]
+		{
+			def convertRecursive(inListNode : ListNode[T]) : ListNode[U] {
+				if(inListNode == DefaultListNode[T].Empty)
+					RealListNode(head :> U, convertRecursive(inListNode.Tail))
+				else
+					RealListNode(head :> U, DefaultListNode[U].Empty)
+			}
+			
+			RealListNode(item, convertRecursive(this))
+		}
+		
+		def GetEnumerator() : IEnumerator[T] { RealListNodeEnumerator(this) }
+		def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator {
+			RealListNodeEnumerator(this)
+		}
+				
+	}
+		
+	// Test upper-type bounds
+	public trait Container[T]
+	{
+		def Value : T { get }
+		def Replace[U :> T](item : U) : Container[U]
+	}
+	
+	class RealContainer[T](item : T) : Container[T] {
+		def Value : T { get { item } }
+		def Replace[U :> T](newItem : U) : Container[U] { RealContainer(newItem) }
+	}
+	
+	class Stringable {
+		override def ToString() : string {
+			"Lower-bound casting finally works!"
+		}
+	}
+	
+	public module Program
+	{
+		def Main(args : Array[String]) : void {
+			val aList = RealListNode(Stringable())
+			val bList = aList.Prepend("Hello World")
+
+			foreach(item in bList) {
+				Console.WriteLine(item)
+			}
+			
+			val subChild = SubChild1()
+			val cont = RealContainer(Child1())
+			val cont2 = cont.Replace(subChild)
+			
+			assert(cont2.Value == subChild)
+		}
+	}
+}
+/*
+BEGIN-OUTPUT
+Hello World
+Lower-bound casting finally works!
+END-OUTPUT
+*/

@@ -735,16 +735,18 @@ namespace Nemerle.Compiler.Parsetree
 
   public class Constraint
   {
-    public this(tyvar : Splicable, ty : PExpr, isSpecial : bool = true)
+    public this(tyvar : Splicable, ty : PExpr, isSpecial : bool = true, isLowerBound : bool = false)
     {
       this.tyvar     = tyvar;
       this.ty        = ty;
       this.IsSpecial = isSpecial;
+      this.IsLowerBound = isLowerBound;
     }
 
     public tyvar     : Splicable;
     public ty        : PExpr;
     public IsSpecial : bool { get; }
+    public IsLowerBound : bool { get; }
 
     public TypeParameterName : Splicable { get { tyvar } }
     public Expression        : PExpr     { get { ty } }

@@ -626,9 +626,10 @@ namespace Nemerle.Compiler
       def tenv = TypeVarEnv (Manager, m);
       tenv.triggerObsolete = this.triggerObsolete;
 
-      def constraints = Hashtable ();
+      def constraints = Hashtable ();      
 
       mutable to_check = [];
+      mutable supertype = None();
 
       // bind constraints to what they really are
       foreach (c in tp.constraints)
@@ -638,7 +639,7 @@ namespace Nemerle.Compiler
           | Some (tv) =>
             def     cons    = constraints.GetValueOrDefault(tv.id, (GenericParameterAttributes.None, []));
             mutable special = Pair.First(cons);
-            mutable subtype = Pair.Second(cons);
+            mutable subtype = Pair.Second(cons);            
 
             match (c.ty)
             {
@@ -647,7 +648,8 @@ namespace Nemerle.Compiler
                 special |= GenericParameterAttributes.NotNullableValueTypeConstraint;
                 special |= GenericParameterAttributes.DefaultConstructorConstraint;
                 def ty = tenv.BindFixedType(env, currentType, <[ System.ValueType ]>, check_parms = false);
-                subtype ::= ty; 
+                if (!c.IsLowerBound) subtype ::= ty 
+                else Message.Error($"constraint `$ty' is a lower-bounds constraint and cannot be applied to a value-type constrained type variable.")
               | <[ @new ]>    when c.IsSpecial => special |= GenericParameterAttributes.DefaultConstructorConstraint;
               | <[ @+ ]>      when c.IsSpecial => special |= GenericParameterAttributes.Covariant;
               | <[ @- ]>      when c.IsSpecial => special |= GenericParameterAttributes.Contravariant;
@@ -668,9 +670,15 @@ namespace Nemerle.Compiler
                 if (subtype.Contains(ty))
                   Message.Error($"constraint `$ty' is already declared for $tv");
                 else if (isBadConstraint)
-                  Message.Error($"`$(c.ty)' is not a valid constraint. A type used as a constraint must be an interface, a non-sealed class or a type parameter");
-                else
-                  subtype = ty :: subtype;
+                  Message.Error($"`$(c.ty)' is not a valid constraint. A type used as a constraint must be an interface, a non-sealed class or a type parameter.");
+                else {
+                  if (!c.IsLowerBound)
+                    subtype = ty :: subtype;
+                  else if (c.IsLowerBound && supertype.HasValue)
+                    Message.Error($"`$(c.ty)' already had a lower-bound constraint of $(supertype.Value). Only one lower-bound constraint can be specified per type variable.");
+                  else
+                    supertype = Some((tv.id, ty));
+                }
             }
             constraints [tv.id] = (special, subtype);
 
@@ -751,7 +759,7 @@ namespace Nemerle.Compiler
           _ = constraints.Remove(tv.id);
       }
 
-      StaticTypeVarContainer.Parsed(tenv, tyParams, to_check, constraints)
+      StaticTypeVarContainer.Parsed(tenv, tyParams, to_check, constraints, supertype)
     }
   }
 }

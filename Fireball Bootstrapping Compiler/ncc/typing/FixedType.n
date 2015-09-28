@@ -903,9 +903,9 @@ namespace Nemerle.Compiler
           // FIXME: VladD2: По идее здесь ti должен быть == method.DeclaringType. Таким обрзом следующая строка бессмысленна.
           def s1 = ti.SubtypingSubst(method.DeclaringType);
           def s2 = ti.MakeSubst(args);
-          def (s3, vars) = Subst.Fresh(method.GetHeader().TypeParameters);
-          s2.AddSubst(s3);
-          (s2.Apply(s1.Apply(method.GetMemType()).Fix()), vars)
+          def (s3, vars) = Subst.Fresh(method.GetHeader().TypeParameters, s2);
+          def ft = s1.Apply(method.GetMemType()).Fix();
+          (s3.Apply(ft), vars)
 
         | StaticTypeVarRef => (TypeOfMember(method), []) // i'm not sure that this is safe operation
         | _ => Util.ice($ "unsupported type: for member $(method) with dt $(method.DeclaringType) -- am in $(this)")
@@ -921,12 +921,11 @@ namespace Nemerle.Compiler
         | Class (ti, args) =>
           def s1 = ti.SubtypingSubst(method.DeclaringType);
           def s2 = ti.MakeSubst(args);
-          def (s3, _vars) = Subst.Fresh(method.GetHeader().TypeParameters);
-          s2.AddSubst(s3);
+          def (s3, _vars) = Subst.Fresh(method.GetHeader().TypeParameters, s2);
           // FIXME we use it for method implementation
           // Util.cassert (method.GetHeader ().typarms.IsEmpty,
           //              $ "TypeOfMethod used for $method");
-          s2.Apply(s1.Apply(method.GetMemType()).Fix())
+          s3.Apply(s1.Apply(method.GetMemType()).Fix())
 
         | _ => assert(false, $ "unsupported type: $(this)")
       }

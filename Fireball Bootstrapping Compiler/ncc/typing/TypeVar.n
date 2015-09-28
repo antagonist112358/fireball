@@ -130,7 +130,6 @@ namespace Nemerle.Compiler
         AddRelation(t, this, rev = false)
     }
 
-
     /// Provide type [t] as the maximal type for [this].
     ///
     /// To be called when value of type [t] is assigned to cell of type

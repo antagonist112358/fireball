@@ -837,6 +837,11 @@ public abstract class TypeInfo : MemberInfo, IMember,
 
               unless (val.Require(res.Apply(tp.LowerBound)))
                 ReportError (messenger, $ "typing constraint on $(tp.Name) not satisfied, upon instantiation of $tc");
+                
+              when(tp.SuperTypeConstraint.HasValue) {
+                unless(val.Provide(res.Apply(tp.SuperTypeConstraint.Value)))
+                ReportError (messenger, $"typing constraint on $(tp.Name) not satisfied, upon instantiation of $tc");
+              }
             });
         }
         else

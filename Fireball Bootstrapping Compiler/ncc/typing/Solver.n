@@ -276,10 +276,28 @@ namespace Nemerle.Compiler
                   seen = true;
                 }
               }
+              
+              // Check that the constraints are not free type variables
+              foreach(FixedType.StaticTypeVarRef(tv2) as t3 in tv.Constraints)
+              {
+                when(!seen && tv2.LowerBound.TypeInfo.IsDerivedFrom(tc)) {
+                  res = t3.Require(t);
+                  seen = true;
+                }
+              }
+              
 
               unless (seen && res)
                 SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection, tyvar]");
 
+              when(tv.SuperTypeConstraint.HasValue) {
+                def superConst = tv.SuperTypeConstraint.Value;
+                when(tc.IsDerivedFrom(superConst.TypeInfo)) {
+                  unless(t2.Provide(t))
+                    SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection, tyvar]");
+                }
+              }
+                
               [tvr : FixedType]
 
             | (FixedType.Array, FixedType.Intersection)
@@ -412,7 +430,8 @@ namespace Nemerle.Compiler
                 return x;
               else
               {
-                SaveError(messenger, $"common super type of types $lst is just `object', please upcast one of the types to `object' if this is desired");
+                // This is allowed
+                //SaveError(messenger, $"common super type of types $lst is just `object', please upcast one of the types to `object' if this is desired");
                 return InternalType.Object;
               }
 

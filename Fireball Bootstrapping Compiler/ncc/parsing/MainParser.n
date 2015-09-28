@@ -43,15 +43,16 @@ namespace Nemerle.Compiler
   [System.Flags]
   public enum TokenStoppers
   {
-    | None   = 0x0000
-    | Pipe   = 0x0001 // |
-    | Equal  = 0x0002 // =
-    | Braces = 0x0004 // {}
-    | Arrow  = 0x0008 // =>
-    | Colon  = 0x0010 // :
-    | Dollar = 0x0020 // $
-    | Where  = 0x0040 // where
-    | All = (Pipe | Equal | Braces | Arrow | Where)
+    | None      = 0x0000
+    | Pipe      = 0x0001 // |
+    | Equal     = 0x0002 // =
+    | Braces    = 0x0004 // {}
+    | Arrow     = 0x0008 // =>
+    | Colon     = 0x0010 // :
+    | ColonLess = 0x0080 // :>
+    | Dollar    = 0x0020 // $
+    | With      = 0x0040 // with
+    | All = (Pipe | Equal | Braces | Arrow | With)
   }
 
   /** Parser class, which transforms preparsed token tree into Nemerle parse trees.
@@ -593,6 +594,15 @@ namespace Nemerle.Compiler
         | _ => false
       }
     }
+    
+    flag_operator(op : string) : bool
+    {
+      match(peek_token())
+      {
+        | Token.Operator(opStr) when opStr == op => shift(); true
+        | _ => false
+      }
+    }
 
     flag_sibling_keyword (kw : string) : bool
     {
@@ -621,12 +631,13 @@ namespace Nemerle.Compiler
             | "="  when stop %&& TokenStoppers.Equal
             | "=>" when stop %&& TokenStoppers.Arrow
             | "$"  when stop %&& TokenStoppers.Dollar
-            | ":"  when stop %&& TokenStoppers.Colon => true
-            | _                                      => false
+            | ":"  when stop %&& TokenStoppers.Colon 
+            | ":>" when stop %&& TokenStoppers.ColonLess => true
+            | _                                          => false
           }
           
         | Token.BracesGroup       => stop %&& TokenStoppers.Braces
-        | Token.Keyword ("where") => stop %&& TokenStoppers.Where
+        | Token.Keyword ("with") => stop %&& TokenStoppers.With
         | _ => false
       }
     }
@@ -643,7 +654,7 @@ namespace Nemerle.Compiler
       }
 
       loop([f()])
-    }
+    }    
 
     ParseClassMembers[T](first : Token, parentType : string) : SCG.List[ClassMember]
     {
@@ -977,7 +988,14 @@ namespace Nemerle.Compiler
         def name = get_splicable_id ();
         mutable end_loc = name.Location;
         // now generic type parameters
-        def tyvars = parse_tyvars();
+        //def tyvars = parse_tyvars();
+
+        def tyvarsLocation = match(peek_token()) {
+          | Token.SquareGroup(children, _, _) as group when children != null => group.Location
+          | _ => Location.Default
+        }
+
+        def typarms = ParseGenericParameters();
         
         def defaultCtorMembers = SCG.List();
         
@@ -996,7 +1014,6 @@ namespace Nemerle.Compiler
           }
         }
         
-        def (_, _, tyvarsLocation) = tyvars;
         when (tyvarsLocation != Location.Default)
           end_loc = tyvarsLocation;
 
@@ -1046,7 +1063,7 @@ namespace Nemerle.Compiler
           end_loc = t_extends.Last.Location;
 
         // where constraints for specified generic type parameters
-        def typarms = parse_where_constraints (tyvars);
+        //def typarms = parse_where_constraints (tyvars);
         parse_top_extensions (mods, MacroTargets.Class);
         
         mutable bodyBracesGroup;
@@ -1271,26 +1288,26 @@ namespace Nemerle.Compiler
                   | Token.Identifier | Token.Operator("$") =>
                     def id = get_splicable_id();
                     mutable is_property = false;
-                    def (tyvars, (parms, parmsloc)) =
+                    def (typarms, (parms, parmsloc)) =
                       match (peek_token(), peek_second_token())
                       {
                         | (Token.SquareGroup, Token.SquareGroup) =>
                           is_property = true;
-                          (parse_tyvars (), parse_parameters ());
+                          (ParseGenericParameters(), parse_parameters ());
 
                         | (Token.SquareGroup, Token.RoundGroup) =>
-                          (parse_tyvars (), parse_parameters ());
+                          (ParseGenericParameters(), parse_parameters ());
 
                         | (Token.SquareGroup, _) =>
                           is_property = true;
-                          ((null, null, Location.Default), parse_parameters ());
+                          (Typarms.Empty, parse_parameters ());
 
                         | (Token.RoundGroup, _) =>
-                          ((null, null, Location.Default), parse_parameters ());
+                          (Typarms.Empty, parse_parameters ());
 
                         | _ =>                          
                           is_property = true; // most probably it is a field or property
-                          ((null, null, Location.Default), ([], Location.Default))
+                          (Typarms.Empty, ([], Location.Default))
                       };
                   
                     prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
@@ -1298,7 +1315,7 @@ namespace Nemerle.Compiler
                     prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
                                                       parmsloc.EndLine, parmsloc.EndColumn);
                     def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
-                    def typarms  = parse_where_constraints (tyvars);
+                    //def typarms  = parse_where_constraints (tyvars);
 
                     if (is_property)
                       // property can contain embedded (nested) fields we should take it into account
@@ -1358,26 +1375,26 @@ namespace Nemerle.Compiler
               | Token.Operator ("$") | Token.Identifier =>
                 def id = get_splicable_id ();
                 mutable is_property = false;
-                def (tyvars, (parms, parmsloc)) =
+                def (typarms, (parms, parmsloc)) =
                   match (peek_token(), peek_second_token())
                   {
                     | (Token.SquareGroup, Token.SquareGroup) =>
                       is_property = true;
-                      (parse_tyvars (), parse_parameters ());
+                      (ParseGenericParameters(), parse_parameters ());
 
                     | (Token.SquareGroup, Token.RoundGroup) =>
-                      (parse_tyvars (), parse_parameters ());
+                      (ParseGenericParameters(), parse_parameters ());
 
                     | (Token.SquareGroup, _) =>
                       is_property = true;
-                      ((null, null, Location.Default), parse_parameters ());
+                      (Typarms.Empty, parse_parameters ());
 
                     | (Token.RoundGroup, _) =>
-                      ((null, null, Location.Default), parse_parameters ());
+                      (Typarms.Empty, parse_parameters ());
 
                     | _ =>
                       is_property = true; // most probably it is a field or property
-                      ((null, null, Location.Default), ([], Location.Default))
+                      (Typarms.Empty, ([], Location.Default))
                   };
 
                 prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
@@ -1385,7 +1402,7 @@ namespace Nemerle.Compiler
                 prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
                                                   parmsloc.EndLine, parmsloc.EndColumn);
                 def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());
-                def typarms  = parse_where_constraints (tyvars);
+                //def typarms  = parse_where_constraints (tyvars);
 
                 if (is_property)
                   // property can contain embedded (nested) fields we should take it into account
@@ -2437,8 +2454,8 @@ namespace Nemerle.Compiler
 
         | _ => (null, null, Location.Default)
       };
-    }
-
+    }    
+    
     /** `splicing_type' is for noting, that there are spliced tyvars
      * if yes, it's PType.Spliced with expression describing their list
      * else it's PType.Void ()
@@ -2473,7 +2490,7 @@ namespace Nemerle.Compiler
                     }
                     (true, PExpr.Ref(tok.Location, MkName("new", tok.Location)))
 
-                  | _ => (false, parse_expr(TokenStoppers.Braces | TokenStoppers.Where | TokenStoppers.Equal))
+                  | _ => (false, parse_expr(TokenStoppers.Braces | /*TokenStoppers.Where |*/ TokenStoppers.Equal))
                 });
               def acc = types.FoldLeft(acc, ((isSpecial, t), acc) => Constraint(tv, t, isSpecial) :: acc);
               loop(acc)
@@ -2525,7 +2542,7 @@ namespace Nemerle.Compiler
       when (name == null)
         name = get_splicable_id ();
 
-      def tyvars = parse_tyvars ();
+      def typarms = ParseGenericParameters();
       def postHeaderLoc =
         match (peek_token())
         {
@@ -2540,7 +2557,7 @@ namespace Nemerle.Compiler
 
       def (parms, parmsloc) = parse_parameters (allow_patterns = allow_patterns);
       def ret_type = parse_return_type(true, postHeaderLoc);
-      def typarms  = parse_where_constraints (tyvars);
+      //def typarms  = parse_where_constraints (tyvars);
       def g = parmsloc;
       def prmsOpenLoc  = Location(g, g.Line,    g.Column,        g.Line,    g.Column + 1);
       def prmsCloseLoc = Location(g, g.EndLine, g.EndColumn - 1, g.EndLine, g.EndColumn);
@@ -2647,7 +2664,7 @@ namespace Nemerle.Compiler
             | Token.BracesGroup | Token.Keyword ("where")
             | Token.Semicolon | Token.Operator ("=") => PExpr.Error (colon.Location.FromEnd())
             | _ =>
-              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal | TokenStoppers.Where)
+              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal /*| TokenStoppers.Where */)
           }
 
         | t =>
@@ -3351,13 +3368,13 @@ namespace Nemerle.Compiler
               }
 
             | Token.Keyword ("fun") =>
-              def tyvars   = parse_tyvars ();
+              def typarms   = ParseGenericParameters();
               def (parms, parmsloc) = parse_parameters (allow_patterns = true, allow_omit = true);
               def g = parmsloc;
               def prmsOpenLoc  = Location(g, g.Line,    g.Column,        g.Line,    g.Column + 1);
               def prmsCloseLoc = Location(g, g.EndLine, g.EndColumn - 1, g.EndLine, g.EndColumn);
               def ret_type = parse_return_type(true, Location.Default);
-              def typarms  = parse_where_constraints (tyvars);
+              //def typarms  = parse_where_constraints (tyvars);
               def h        = PFunHeader(loc.Combine(parmsloc).Combine(ret_type.Location), typarms,
                                         MkSplicableName("", tok.Location), ret_type, parms,
                                         prmsOpenLoc, prmsCloseLoc);
