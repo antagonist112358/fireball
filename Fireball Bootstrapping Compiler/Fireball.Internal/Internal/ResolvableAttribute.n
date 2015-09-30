@@ -1,0 +1,23 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  [System.AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter, Inherited = false)]
+  public sealed class ResolvedAttribute : FireballInternalAttribute
+  {
+    public this() { base(true) }
+  }
+  
+  [System.AttributeUsage(AttributeTargets.Field, Inherited = false)]
+  public sealed class ResolveAttribute : FireballInternalAttribute
+  {
+    public this() { base(true) }
+  }
+}

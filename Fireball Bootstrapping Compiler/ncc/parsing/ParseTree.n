@@ -1194,6 +1194,7 @@ namespace Nemerle.Compiler.Parsetree
 
     public DefaultValue      : option[PExpr] {get; set;}
     public ParsedDefaultValue  : option[PExpr];
+    public IsResolved : bool { get; set; default false }
 
     public new TypedObject : T.TParameter { get { base.TypedObject :> T.TParameter } }
 

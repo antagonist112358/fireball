@@ -50,6 +50,7 @@ namespace Nemerle.Compiler
       [Accessor]
       protected handle  : SR.FieldInfo;
       protected tt_type : FixedType;
+      protected resolvable : bool;
 
       public this (tenv : Map [string, StaticTypeVar], lib : LibraryReference, h : SR.FieldInfo)
       {
@@ -58,6 +59,8 @@ namespace Nemerle.Compiler
        
         tt_type = library.TypeOfType (tenv, handle.FieldType);
         set_attributes ();
+        
+        resolvable = HasAttribute(typeof(Fireball.Internal.ResolveAttribute));
       }
 
       set_attributes () : void
@@ -99,6 +102,8 @@ namespace Nemerle.Compiler
         get { true }
         set { base.HasBeenUsed = value }
       }
+      
+      public IsResolvable : bool { get { resolvable } }
       
       public IsLiteral : bool { get { handle.IsLiteral } }
 

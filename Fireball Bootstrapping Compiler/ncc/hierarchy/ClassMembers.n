@@ -506,6 +506,7 @@ public partial class FieldBuilder : MemberBuilder, IField
   [Accessor (flags = WantSetter)]
   mutable const_value : Literal;
   mutable has_been_assigned = false;
+  private isResolvable : bool = false;
 
   /// Parsed representation (AST) of field.
   public new Ast : PT.ClassMember.Field { get { base.Ast :> PT.ClassMember.Field } }
@@ -515,7 +516,9 @@ public partial class FieldBuilder : MemberBuilder, IField
     base (par, fieldAst);
 
     _initializerLocation = fieldAst.BodyLocation;
-
+    
+    isResolvable = this.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute");
+    
     // check if field's type is valid
     match (fieldAst.ty) {
       | <[ _ ]> => //Message.Error ("type inference for fields is available only when assigning literal value to them")
@@ -544,6 +547,11 @@ public partial class FieldBuilder : MemberBuilder, IField
 
   [Accessor] mutable _initializerLocation  : Location;
 
+  public IsResolvable : bool
+  {
+    get { isResolvable }
+  }
+  
   public IsInitializerPresent : bool
   {
     get { InitializerLocation.FileIndex != 0 }
@@ -1142,13 +1150,15 @@ public partial class MethodBuilder : MemberBuilder, IMethod
           | PT.PExpr.TypedType(FixedType.Out as t) with k = ParmKind.Out => (k, t)
           | <[ $t ]> => (ParmKind.Normal, bind (p.Location, t))
         };
+      def canBeResolved = p.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolvedAttribute", this.Env);
       def fp =
         TParameter(loc = p.Location,
                    name      = name.Id, nameLocation = name.Location,
                    color     = name.color,
                    ty        = ty, typeLocation = p.Type.Location,
                    modifiers = p.modifiers,
-                   kind      = kind);
+                   kind      = kind,
+                   resolved  = canBeResolved);
 
       match (p.DefaultValue)
       {

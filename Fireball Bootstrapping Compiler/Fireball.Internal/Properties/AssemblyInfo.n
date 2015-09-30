@@ -34,3 +34,11 @@ using System.Runtime.InteropServices;
 //
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
+
+// Make the internals visible to the compiler
+[assembly: InternalsVisibleTo("Fireball.Compiler, PublicKey=" + 
+                              "00240000048000009400000006020000002400005253413100040000010001002ba64b9db4ace0" +
+                              "db8699ed205045dd2bf2f036e15582787288d122daeb218f0743b39013e2bacb73df2f778c80db" +
+                              "550ff64dc64d8204a7c3284fc251d986799a129d6eda821e8a3432c0a7e5e67c43db2fde094236" +
+                              "2f8674a45f215966f1b65f5dac939d12e1efee3de03585ac7e821be4232bb371e8f37193185a76" +
+                              "6ee1e4d4")]

@@ -1191,7 +1191,7 @@ namespace Nemerle.Compiler
               // Adding record type
               | "class" | "struct" | "module" | "trait" | "enum" | "variant" | "record" => processType(key)
               | "delegate" =>
-                def h = parse_fun_header (null);
+                def h = parse_fun_header (null, allow_resolved = true);
                 def td = TopDeclaration.Delegate(startLocation + h.Location, h.ParsedSplicableName, mods, h.ParsedTypeParameters, h);
                 expect_empty ("delegate declaraion");
                 td
@@ -1237,7 +1237,7 @@ namespace Nemerle.Compiler
           push_stream (toks);
 
           mutable customs = get_customs ();
-          def mods = AttributesAndModifiers(get_modifiers (), []);
+          def mods = get_keywords_and_modifiers();
 
           mutable parsed_some_top_extension = false;
           def collect_type_macro_inv = AttributesAndModifiers();
@@ -1293,14 +1293,14 @@ namespace Nemerle.Compiler
                       {
                         | (Token.SquareGroup, Token.SquareGroup) =>
                           is_property = true;
-                          (ParseGenericParameters(), parse_parameters ());
+                          (ParseGenericParameters(), parse_parameters (allow_resolved = false));
 
                         | (Token.SquareGroup, Token.RoundGroup) =>
                           (ParseGenericParameters(), parse_parameters ());
 
                         | (Token.SquareGroup, _) =>
                           is_property = true;
-                          (Typarms.Empty, parse_parameters ());
+                          (Typarms.Empty, parse_parameters (allow_resolved = false));
 
                         | (Token.RoundGroup, _) =>
                           (Typarms.Empty, parse_parameters ());
@@ -1380,14 +1380,14 @@ namespace Nemerle.Compiler
                   {
                     | (Token.SquareGroup, Token.SquareGroup) =>
                       is_property = true;
-                      (ParseGenericParameters(), parse_parameters ());
+                      (ParseGenericParameters(), parse_parameters (allow_resolved = false));
 
                     | (Token.SquareGroup, Token.RoundGroup) =>
                       (ParseGenericParameters(), parse_parameters ());
 
                     | (Token.SquareGroup, _) =>
                       is_property = true;
-                      (Typarms.Empty, parse_parameters ());
+                      (Typarms.Empty, parse_parameters (allow_resolved = false));
 
                     | (Token.RoundGroup, _) =>
                       (Typarms.Empty, parse_parameters ());
@@ -2383,7 +2383,55 @@ namespace Nemerle.Compiler
       mods.custom_attrs           = if (attrs == null || attrs.IsEmpty) parsedCustomAttrs
                                     else attrs + parsedCustomAttrs;
     }
+    
+    get_keywords_and_modifiers () : AttributesAndModifiers
+    {
+      def loop (attr : list[PExpr], acc : NemerleModifiers)
+      {
+        def tok = peek_token ();
+        match (tok)
+        {
+          | Token.Keyword (key) =>
+            def add_and_loop (attribs : list[PExpr], mods : NemerleModifiers)
+            {
+              shift ();
+              when (mods %&& acc)
+                Error (tok, "attribute '" + key + "' specified more than once");
 
+              def distAttribs = attribs.RemoveDuplicates();
+                
+              loop (distAttribs, mods %| acc)
+            }
+            match (key)
+            {
+              | "resolve"  => add_and_loop(<[Fireball.Internal.Resolved]> :: attr, NemerleModifiers.None)
+              | "public"    => add_and_loop(attr, NemerleModifiers.Public)
+              | "private"   => add_and_loop(attr, NemerleModifiers.Private)
+              | "static"    => add_and_loop(attr, NemerleModifiers.Static)
+              | "new"       => add_and_loop(attr, NemerleModifiers.New)
+              | "protected" => add_and_loop(attr, NemerleModifiers.Protected)
+              | "internal"  => add_and_loop(attr, NemerleModifiers.Internal)
+              | "abstract"  => add_and_loop(attr, NemerleModifiers.Abstract)
+              | "sealed"    => add_and_loop(attr, NemerleModifiers.Sealed)
+              | "override"  => add_and_loop(attr, NemerleModifiers.Override)
+              | "virtual"   => add_and_loop(attr, NemerleModifiers.Virtual)
+              | "volatile"  => add_and_loop(attr, NemerleModifiers.Volatile)
+              | "partial"   => add_and_loop(attr, NemerleModifiers.Partial)
+              | "extern"    => add_and_loop(attr, NemerleModifiers.Extern)
+              | _           => (attr, acc)
+            }
+          | _ =>
+            // perform some sanity checks on the declared attributes
+            when ((acc %&& NemerleModifiers.Virtual) && (acc %&& NemerleModifiers.Override))
+              Message.Warning (tok.Location, "the `virtual' attribute is redundant, `override' implies `virtual'");
+            (attr, acc)
+        }
+      }
+
+      def (attr, mods) = loop ([], NemerleModifiers.None);
+      AttributesAndModifiers(mods, attr);
+    }
+    
     get_modifiers () : NemerleModifiers
     {
       def loop (acc)
@@ -2537,7 +2585,7 @@ namespace Nemerle.Compiler
      *  Parse plain functional header (with optional '[..]' generic parameters
      *                                 and '(..)' fun parameters)
      */
-    parse_fun_header (mutable name : Splicable, allow_patterns = false) : PFunHeader
+    parse_fun_header (mutable name : Splicable, allow_patterns = false, allow_resolved = false) : PFunHeader
     {
       when (name == null)
         name = get_splicable_id ();
@@ -2555,7 +2603,7 @@ namespace Nemerle.Compiler
           | _ => Location.Default
         };
 
-      def (parms, parmsloc) = parse_parameters (allow_patterns = allow_patterns);
+      def (parms, parmsloc) = parse_parameters (allow_patterns = allow_patterns, allow_resolved = allow_resolved);
       def ret_type = parse_return_type(true, postHeaderLoc);
       //def typarms  = parse_where_constraints (tyvars);
       def g = parmsloc;
@@ -2582,6 +2630,10 @@ namespace Nemerle.Compiler
 
       mutable pattern = null;
 
+      // Check for "resolved" keyword and skip it
+      when(peek_token() is Token.Keyword("resolved"))
+        shift();
+      
       def id =
         match (peek_token ())
         {
@@ -2621,10 +2673,12 @@ namespace Nemerle.Compiler
                 patternHack = pattern)
     }
     /// parameters of (a:foo,b,c) or [a,b:foo,c] kind
-    parse_parameters (allow_patterns = false, allow_omit = false) : list [PParameter] * Location
+    /// Now also includes (a:foo, b, c)(resolved d: int) kind
+    parse_parameters (allow_patterns = false, allow_omit = false, allow_resolved = true) : list [PParameter] * Location
     {
+      mutable has_resolved = false;
       def group = get_token ();
-
+      
       def parametrs =
         match (group)
         {
@@ -2639,7 +2693,17 @@ namespace Nemerle.Compiler
                 [PParameter (e.Location, Splicable.Name(MkNameGenerated("")), PExpr.Void (e.Location.AsGenerated()),
                            AttributesAndModifiers(NemerleModifiers.None, [e]))]
 
-              | _ => pop_stream (); TokenMap (group, fun () { parse_parameter (allow_patterns) });
+              | _ => 
+                def isResolved = flag_keyword("resolved");
+                pop_stream ();
+                def parameters = TokenMap (group, fun () { parse_parameter (allow_patterns) });
+                if (isResolved) {
+                  has_resolved = true;
+                  parameters.Map(p => {
+                    p.AddCustomAttribute(<[Fireball.Internal.ResolvedAttribute]>); 
+                    p
+                  })
+                } else parameters
             }
           | _ =>
             if (allow_omit)
@@ -2648,8 +2712,38 @@ namespace Nemerle.Compiler
               Error (group, "expecting function parameters");
             []
         };
+        
+      def resolveParameters = match(peek_token()) {
+        | Token.RoundGroup(child, _, _) =>
+          def group = get_token();
+          if (allow_resolved) {
+            def child_group = child :> Token.LooseGroup;
+            push_stream(child_group.Child);
+            def isResolved = flag_keyword("resolved");
+            if (isResolved && !has_resolved) {
+              pop_stream();
+              TokenMap(group, () => parse_parameter(allow_patterns))
+                .Map(p => {
+                  p.AddCustomAttribute(<[Fireball.Internal.ResolvedAttribute]>); 
+                  p
+              })
+            } else if (isResolved && has_resolved) {
+              Error(child, "multiple resolvable parameter lists are not allowed.");
+              pop_stream();
+              []
+            } else {
+              Error(child, "expecting keyword 'resolved' in optional resolvable parameters list");
+              pop_stream();
+              []
+            }
+          } else {
+            Error(group, "resolvable parameters not allowed here");
+            []
+          }
+        | _ => []
+      }
 
-      (parametrs, group.Location)
+      (resolveParameters + parametrs, group.Location)
     }
     
     parse_return_type(allow_inference : bool, postHeaderLoc : Location) : PExpr
@@ -3369,7 +3463,7 @@ namespace Nemerle.Compiler
 
             | Token.Keyword ("fun") =>
               def typarms   = ParseGenericParameters();
-              def (parms, parmsloc) = parse_parameters (allow_patterns = true, allow_omit = true);
+              def (parms, parmsloc) = parse_parameters (allow_patterns = true, allow_omit = true, allow_resolved = false);
               def g = parmsloc;
               def prmsOpenLoc  = Location(g, g.Line,    g.Column,        g.Line,    g.Column + 1);
               def prmsCloseLoc = Location(g, g.EndLine, g.EndColumn - 1, g.EndLine, g.EndColumn);
@@ -3606,7 +3700,7 @@ namespace Nemerle.Compiler
 
               def parse_funs (acc, idopt)
               {
-                def h    = parse_fun_header (idopt, allow_patterns = true);
+                def h    = parse_fun_header (idopt, allow_patterns = true, allow_resolved = false);
                 def body = parse_block (h.Parameters);
                 def fd   = Function_decl (loc + h.Location + body.Location, h, body);
 

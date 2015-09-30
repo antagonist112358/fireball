@@ -76,6 +76,9 @@ public partial class TypeBuilder : TypeInfo
   //list of instance field initializers
   public mutable init_list : list[PT.PExpr] = [];
 
+  // Used to track resolvable parameters
+  private resolution_container : ResolutionRegistryContainer = ResolutionRegistryContainer();
+  
   [Accessor]
   mutable tenv : TypeVarEnv;
 
@@ -3121,6 +3124,8 @@ public partial class TypeBuilder : TypeInfo
     )
   }
 
+  
+  
   mutable _conditions : list[string] = [];
 
   public override IsConditional : bool { get { !_conditions.IsEmpty } }

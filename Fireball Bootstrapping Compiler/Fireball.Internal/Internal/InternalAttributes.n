@@ -1,0 +1,21 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of InternalAttributes.
+  /// </summary>
+  public class FireballInternalAttribute : FireballAttribute
+  {
+    private isHidden : bool = false;
+    internal this (isHidden : bool = false) { this.isHidden = isHidden; }
+    internal IsHidden : bool { get { isHidden } }
+  }
+}

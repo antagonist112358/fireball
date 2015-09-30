@@ -16,6 +16,7 @@ namespace Nemerle.Compiler
   class ScopedEnv : GlobalEnv
   {
     private global_scope: GlobalEnv;
+    
       
     public this(globalScope: GlobalEnv) {
       base(globalScope, []);

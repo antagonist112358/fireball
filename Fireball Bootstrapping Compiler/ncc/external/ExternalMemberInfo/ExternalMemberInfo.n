@@ -80,6 +80,11 @@ namespace Nemerle.Compiler
         def t = attribute.SystemType;
         GetHandle ().IsDefined (t, false)
       }
+      
+      public HasAttribute(attribSystemType : System.Type) : bool
+      {
+        System.Attribute.GetCustomAttribute(GetHandle(), attribSystemType, false) != null
+      }
 
       public Location : Location { get { library._location } }
 
