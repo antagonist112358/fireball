@@ -10,13 +10,15 @@ using System.Linq;
 namespace Nemerle.Compiler
 {
   /// <summary>
-  /// Description of ToOptionExtension.
+  /// Description of NListExtensions.
   /// </summary>
-  internal module ToOptionExtension
+  internal module EnumerableExtensions
   {
-    public ToOption[T](this obj: T) : option[T] where T : class {
-      | _ when obj != null => Some(obj)
-      | _ => None()
+    public HeadOption[T](this lst : IEnumerable[T]) : option[T] {
+      if (lst.Count() > 0)
+        Some(lst.First())
+      else
+        None()
     }
   }
 }

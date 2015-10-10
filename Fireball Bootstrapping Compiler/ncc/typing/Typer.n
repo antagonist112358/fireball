@@ -2745,6 +2745,7 @@ namespace Nemerle.Compiler
                                 typeLocation = p.Type.Location,
                                 kind         = ParmKind.Normal,
                                 modifiers    = p.modifiers,
+                                resolved     = p.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolvedAttribute", this.Env),
                                 patternHack  = p.ParsedPatternHack);
             match (p.DefaultValue)
             {

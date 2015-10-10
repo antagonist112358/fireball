@@ -104,6 +104,7 @@ namespace Nemerle.Compiler
             ty           = ty,
             typeLocation = lib._location,
             kind         = parmkind,
+            resolved     = HasAttribute(typeof(Fireball.Internal.ResolvedAttribute)),
             modifiers    = getCustomAttribute(p, lib) // FIXME?
           );
 

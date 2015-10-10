@@ -1,0 +1,272 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using HashSet = System.Collections.Generic.HashSet;
+using System.Linq;
+
+using PT = Nemerle.Compiler.Parsetree;
+using TT = Nemerle.Compiler.Typedtree;
+
+namespace Nemerle.Compiler
+{
+  public enum ResolutionLevel : short {
+    | Local = 1
+    | StaticLocal = 2
+    | Imported = 3
+    | CallSiteParam = 4
+  }
+  
+  [Record]
+  public variant ResolvableValue : IEquatable[ResolvableValue], IComparable[ResolvableValue] {
+    | Local
+    | StaticLocal
+    | Imported
+    | CallSiteParam
+      
+    internal source : IMember;
+    
+    internal Value : FixedType {
+      get { source.GetMemType() }
+    }
+    
+    internal DeclaredIn : TypeInfo {
+      get { source.DeclaringType }
+    }
+    
+    private EqualsInternal(other : ResolvableValue) : bool implements IEquatable[ResolvableValue].Equals {
+      this.GetHashCode() == other.GetHashCode()
+    }
+    
+    public CompareTo(other : ResolvableValue) : int { 
+      def (l, r) = (GetLevel(this), GetLevel(other));
+      if (l < r) -1
+      else if (l > r) 1
+      else 0
+    }
+    
+    override public ToString() : string {
+      $"resolve $(source.Name) : $Value (from $(DeclaredIn.FullName))"
+    }
+    
+    override public Equals(other : object) : bool {
+      if (other is ResolvableValue)
+        this.EqualsInternal(other :> ResolvableValue)
+      else false
+    }
+    
+    override public GetHashCode() : int {
+      match(this) {
+        | Local           => Value.GetHashCode() + 1
+        | StaticLocal     => 2 * Value.GetHashCode() + 2 
+        | Imported        => 3 * Value.GetHashCode() + 3
+        | CallSiteParam   => 4 * Value.GetHashCode() + 4        
+      }
+    }
+    
+    public static GetLevel(item : ResolvableValue) : int {
+      | Local => 1
+      | StaticLocal => 2
+      | Imported => 3
+      | CallSiteParam => 4
+    }
+  }
+  
+  type LookupTable = Hashtable[FixedType, HashSet[ResolvableValue]];
+  
+  public abstract class ResolutionContainerBase {
+    private mutable _lookupTable : LookupTable;
+    
+    protected this() { _lookupTable = Hashtable(); }
+    
+    protected this(existing : LookupTable) {
+      _lookupTable = Merge(Hashtable(), existing);
+    }
+    
+    internal protected Registry : LookupTable
+    {
+      get { _lookupTable; }
+      protected set { _lookupTable = value; }
+    }
+    
+    protected static GetError[T](item : ResolvableValue, field : T) : string where T : IMember
+    {
+      match(field) {
+        | _ is IField =>
+          $"ambigous resolvable values found for type $(item.Value): $field and $item"
+        | _ =>
+          def t = field : IMember;
+          $"cannot make $(t.Name) resolvable (needed a value, got $(t.MemberKind))"
+      }
+    }
+    
+    protected static MakeResolvableValue[T](level : ResolutionLevel, field : T) : ResolvableValue where T : IMember {
+      match(field)
+      {
+        | _ is IField =>
+          match(level) {
+            | Local => ResolvableValue.Local(field)
+            | StaticLocal => ResolvableValue.StaticLocal(field)
+            | Imported => ResolvableValue.Imported(field)
+            | CallSiteParam => ResolvableValue.CallSiteParam(field)
+          }
+        | _ => null
+      }
+    }
+    
+    protected static Merge(left : LookupTable, right: LookupTable) : LookupTable {
+      foreach((key, value) in right.KeyValuePairs) {
+        if (left.ContainsKey(key)) {
+          def set = left[key];
+          foreach(item in value)
+            when (!set.Contains(item))
+              _ = set.Add(item);
+        } else {
+          def set = HashSet(value);
+          left.Add(key, set);
+        }
+      }
+      left
+    }
+  }
+  
+  public class ResolutionRegistryContainer : ResolutionContainerBase {
+    
+    public this() { base(); }
+    
+    private this(source : ResolutionRegistryContainer) {
+      base(source.Registry);
+    }
+    
+    public TryRegister[T](level : ResolutionLevel, field : T) : bool * option[string] where T : TypeInfo {
+      def item = MakeResolvableValue(level, field);
+      def typeKey = field.GetMemType();
+      
+      if (item == null)
+        (false, Some(GetError(null, field)));
+      else {
+        match(Registry.Get(typeKey)) {
+          | Some(set) =>
+            if (set.Contains(item))
+              (false, Some(GetError(set.SingleOrDefault(i => i.Equals(item)), field)))
+            else {
+              _ = set.Add(item);
+              (true, None())
+            }
+          | _ =>
+            def set = HashSet([item]);
+            Registry.Add(typeKey, set);
+            (true, None())
+        }
+      }
+    }
+    
+    public Clone() : ResolutionRegistryContainer { ResolutionRegistryContainer(this) }
+  }
+  
+  /// <summary>
+  /// Provides dynamic compile-time resolution of 'resolve' values into resolved parameters.
+  /// </summary>
+  [ManagerAccess]
+  public class ResolutionResolverContainer : ResolutionContainerBase
+  {
+    private declaring_type : TypeBuilder;
+    
+    public this(scope: TypeBuilder, initialItems : ResolutionContainerBase) { 
+      declaring_type = scope;
+      base(initialItems.Registry) 
+    }
+    
+    public TryRegisterParam(param : TT.Parm) : bool * option[string] {
+      def parmType : TypeInfo = match(param.expr.ty) {
+        | FixedType.Class(tc, _) => tc
+        | FixedType.StaticTypeVarRef(stv) when stv.current_type != null => stv.current_type
+        | _ => throw InvalidOperationException($"parameter $param must be typed before it can be registered as resolvable.")
+      }
+      
+      def resolvable = parmType.GetFields(System.Reflection.BindingFlags.Static & System.Reflection.BindingFlags.Public)
+        .Where(field => field.IsResolvable && field.GetMemType().Equals(param.expr.ty)).HeadOption();
+        
+      match(resolvable) {
+        | Some(field) => TryRegister(ResolutionLevel.CallSiteParam, field)
+        | None => (false, None())
+      }
+    }
+    
+    public TryRegisterTypedParameter(tparm : TT.TParameter) : bool * option[string] {
+      def parmType = match(tparm.Type) {
+        | FixedType.Class(tc, _) => tc
+        | FixedType.StaticTypeVarRef(stv) when stv.current_type != null => stv.current_type
+        | _ => throw InvalidOperationException($"parameter $tparm must be typed before it can be registered as resolvable.")
+      }
+
+      def resolvable = parmType.GetFields(System.Reflection.BindingFlags.Static & System.Reflection.BindingFlags.Public)
+        .Where(field => field.IsResolvable && field.GetMemType().Equals(tparm.Type.FixedValue)).HeadOption();
+        
+      match(resolvable) {
+        | Some(field) => TryRegister(ResolutionLevel.CallSiteParam, field)
+        | None => (false, None())
+      }
+    }
+    
+    public HasResolveFor(meth: IMethod, param : TT.TParameter) : bool {
+      def declared_in = FindOwningClass(meth.DeclaringType);
+            
+      match(Registry.Get(param.Type.FixedValue)) {
+        | Some(set) => set.Any(rv => CanAccess(declared_in, rv.source))
+        | None => false
+      }
+    }
+    
+    public TryResolve(meth: IMethod, param : TT.TParameter) : option[FixedType] {
+      def declared_in = FindOwningClass(meth.DeclaringType);
+      match(Registry.Get(param.Type.FixedValue)) {
+        | Some(set) => set.Where(rv => CanAccess(declared_in, rv.source)).Map(rv => rv.Value).HeadOption()
+        | _ => None()
+      }
+    }
+    
+    public MergeContainerWith(container : ResolutionContainerBase) : void {
+      Registry = Merge(Registry, container.Registry)
+    }
+    
+    private TryRegister(level : ResolutionLevel, field : IField) : bool * option[string] {
+      def item = MakeResolvableValue(level, field);
+      def typeKey = field.GetMemType();
+          
+      if (item == null)
+        (false, Some(GetError(null, field)));
+      else {
+        match(Registry.Get(typeKey)) {
+          | Some(set) =>
+            if (set.Contains(item))
+              (false, Some(GetError(set.SingleOrDefault(i => i.Equals(item)), field)))
+            else {
+              _ = set.Add(item);
+              (true, None())
+            }
+          | _ =>
+            def set = HashSet([item]);
+            Registry.Add(typeKey, set);
+            (true, None())
+        }
+      }
+    }
+    
+    private static CanAccess(declared_in : TypeBuilder, memb : IMember) : bool {
+      if (memb is TypeInfo) {
+        def ti : TypeInfo = memb :> TypeInfo;
+        declared_in.CanAccess(ti)
+      } else false
+    }    
+    
+    private static FindOwningClass(typeinfo : TypeInfo) : TypeBuilder {
+      if (typeinfo is TypeBuilder)
+        typeinfo :> TypeBuilder
+      else
+        FindOwningClass(typeinfo.DeclaringType)
+    }
+  }
+}

@@ -101,6 +101,7 @@ public interface IMember
 
 public interface IField : IMember
 {
+  IsResolvable : bool { get; }
   IsMutable : bool { get; }
   IsVolatile : bool { get; }
   IsLiteral : bool { get; }
