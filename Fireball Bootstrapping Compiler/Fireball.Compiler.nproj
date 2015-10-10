@@ -76,9 +76,6 @@
     <Compile Include="ncc\extensions\EqualityComparer.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="ncc\extensions\FireballAttributes.n">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="ncc\passes.n">
       <SubType>Code</SubType>
     </Compile>

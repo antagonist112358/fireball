@@ -1271,6 +1271,15 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         | x =>
           unless (IsVarianceValid(x, -1))
             Message.Error(parm.TypeLocation, $"type of `$name' method's parameter `$(parm.name)' must behave contravariantly");
+          // Check for lower-type-bounds on type param
+          when(x is FixedType.StaticTypeVarRef) {
+            def stvr = x :> FixedType.StaticTypeVarRef;
+            when(stvr.tyvar.SuperTypeConstraint.HasValue) {
+              def sysType = stvr.tyvar.SuperTypeConstraint.Value;
+              def name = <[$(sysType : typed)]>;
+              parm.modifiers.AddCustomAttribute(<[Fireball.Internal.LowerBoundOf(typeof($name))]>);
+            }
+          }            
       }
 
     unless (fun_header.TypeParameters.IsEmpty)
