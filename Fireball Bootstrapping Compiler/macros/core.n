@@ -272,6 +272,12 @@ namespace Nemerle.Core
   {
     <[ for (mutable t = $times; t > 0; --t) $body ]>
   }
+  
+  macro NotImplementedMacro ()
+  syntax("???")
+  {
+      <[ throw System.NotImplementedException() ]>
+  }
 
   macro @for(init, cond, change, body)
   syntax ("for", "(", Optional(init), ";", Optional(cond), ";", Optional(change), ")", body)
@@ -323,6 +329,8 @@ namespace Nemerle.Core
     ]>
   }
 
+  
+  
   /** shortcut for [if (cond) () else body] */
   macro @unless (cond, body)
   syntax ("unless", "(", cond, ")", body)
