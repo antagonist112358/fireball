@@ -1,0 +1,76 @@
+﻿using System.Runtime.InteropServices;
+using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball
+{
+  // Error Helper
+  internal module ErrorHelper[T] {
+    public NotImplemented : T {
+        get { throw NotImplementedException() }
+    }
+  }
+    
+  // Represents Core Numeric Operations
+  public interface NumericOperations[T] {
+    // Negation
+    Negate(value: T) : T;
+    // Addition
+    Add(augend: T, addend: T) : T;
+    // Subtraction
+    Subtract(minuend: T, subtrahend: T) : T;
+    // Multiplication
+    Multiply(multiplicand: T, multiplier: T) : T;
+    //Division
+    Divide(dividend: T, divisor: T) : T;
+    // Comparisons
+    LessThan(lhs: T, rhs: T) : bool;
+    GreaterThan(lhs: T, rhs: T) : bool;
+  }
+  
+  /// <summary>
+  /// Description of Numeric.
+  /// </summary>
+  public interface Numeric[T] : IComparable, IEquatable[T], IComparable[T], IConvertible
+  {
+    // Integral Operations
+    public static @-(unary: T)       : T { GetNumericOperations().Negate(unary)      }
+    public static @+(lhs: T, rhs: T) : T { GetNumericOperations().Add(lhs, rhs)      }
+    public static @-(lhs: T, rhs: T) : T { GetNumericOperations().Subtract(lhs, rhs) }
+    public static @*(lhs: T, rhs: T) : T { GetNumericOperations().Multiply(lhs, rhs) }
+    public static @/(lhs: T, rhs: T) : T { GetNumericOperations().Divide(lhs, rhs)   }
+    
+    // Comparison Operations
+    public static @<(lhs: T, rhs: T) : bool { GetNumericOperations().LessThan(lhs, rhs) }
+    public static @>(lhs: T, rhs: T) : bool { GetNumericOperations().GreaterThan(lhs, rhs) }
+    
+    // Helpers
+    private static GetNumericOperations[U]() : NumericOperations[U] { ErrorHelper.NotImplemented }
+  }
+  
+  #region Compiler Test Harness
+  
+  internal class Vector2[T] where T : Numeric[T] {
+    private x_coord : T;
+    private y_coord: T;
+    
+    public this(x_coord: T, y_coord: T) { this.x_coord = x_coord; this.y_coord = y_coord; }
+    
+    public Magnitude : Double {
+      get {
+        def x_square = x_coord * x_coord; 
+        def y_square = y_coord * y_coord;
+        def sum = Convert.ToDouble(x_square + y_square);
+        Convert.ToDouble(Math.Sqrt( sum ))
+      }
+    }
+  }
+  
+  #endregion
+}
