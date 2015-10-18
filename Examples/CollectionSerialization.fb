@@ -40,7 +40,7 @@ namespace Fireball.Tests {
 		}
 		
 		// Make the BinaryFormatterCollectionSerializer resolvable
-		resolved BinarySerializer[T : IEnumerable[T]] = new BinaryFormatterCollectionSerializer
+		resolve BinarySerializer[T : IEnumerable[T]] = new BinaryFormatterCollectionSerializer
 		
 		#endregion
 		
@@ -73,7 +73,7 @@ namespace Fireball.Tests {
 		
 		resolved BinaryDeserializer[A : ISerializable] = new BinaryFormatterCollectionDeserializer
 		
-		def Deserialize[A: ISerializable, T : IEnumerable[A]](data : Array [ byte ])(resolve deserializer : BinaryDeserializer[A], builder : Builder[IEnumerable[A], T]) {				
+		def Deserialize[A: ISerializable, T : IEnumerable[A]](data : Array [ byte ])(resolved deserializer : BinaryDeserializer[A], builder : Builder[IEnumerable[A], T]) {				
 			builder.Build(deserializer.Deserialize(data).AsEnumerable)
 		}
 		

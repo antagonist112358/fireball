@@ -1,17 +1,31 @@
 namespace Fireball.Tests {
-  using System
-  public module SomeClass {
-	resolve val welcomeMsg = "Welcome to Fireball"
 	
-	public def WelcomeUser(user: String)(resolved msg : string) : String {
-	  String.Format("{0}, {1}", msg, user)
+	using System
+	
+	module Resolvables {
+		resolve val factor = 4
 	}
+	
+  public module SomeClass {
+		resolve val welcomeMsg = "Welcome to Fireball"
+	
+		public def WelcomeUser(user: String)(resolved msg : string) : String {
+			String.Format("{0}, {1}", msg, user)
+		}
   }
   
   public module Program {
-	def Main(args : Array[String]) : void {
-	  val user = "Kevin DiVincenzo"
-	  SomeClass.WelcomeUser(user)
-	}
+		def Main(args : Array[String]) : void {
+			val user = "Kevin DiVincenzo"
+			Console.WriteLine(SomeClass.WelcomeUser(user))
+			
+			using Fireball.Tests.Resolvables
+			Console.WriteLine("4 * 4 = {0}", Quadrate(4))
+		}
+		
+		def Quadrate(input : int)(resolved byFactor : int) : int {
+			input * byFactor
+		}
   }
+	
 }

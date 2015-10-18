@@ -2404,7 +2404,7 @@ namespace Nemerle.Compiler
             }
             match (key)
             {
-              | "resolve"  => add_and_loop(<[Fireball.Internal.Resolved]> :: attr, NemerleModifiers.None)
+              | "resolve"  => add_and_loop(<[Fireball.Internal.ResolveAttribute]> :: attr, NemerleModifiers.Static)
               | "public"    => add_and_loop(attr, NemerleModifiers.Public)
               | "private"   => add_and_loop(attr, NemerleModifiers.Private)
               | "static"    => add_and_loop(attr, NemerleModifiers.Static)

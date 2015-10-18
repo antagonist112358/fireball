@@ -1,0 +1,46 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Nemerle.Compiler.NamespaceTree;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of EnvResolvableResolver.
+  /// </summary>
+  
+  internal module EnvResolvableResolver
+  {
+    public GetResolvables(from: TypeBuilder, nses : list[NamespaceTree.Node]) : list[IField] {
+      def loop(nodes : list[NamespaceTree.Node], acc) : list[TypeInfo] {
+        match(nodes) {
+          | x :: xs =>
+            loop(xs, {
+              if (x.Children != null) {
+                x.Children.Values.Map( node => match(node.Value) {
+                  | TypeInfoCache.Cached(ty) => Some(ty)
+                  | TypeInfoCache.NotLoaded(extTy) =>
+                  extTy.ConstructTypeInfo(node, true);
+                  Some(extTy.tycon)
+                  | _ => None()
+                }).Filter(i => i.HasValue && (i.Value is LibraryReference.ExternalTypeInfo && !i.Value.IsValueType) && from.CanAccess(i.Value)).Map(j => j.Value) + acc
+              } else acc
+            })
+          | _ => acc
+        }
+      }
+      
+      def possible_modules = loop(nses, []);
+      
+      possible_modules.Map(mod => {
+        mod.GetFields(BindingFlags.Public & BindingFlags.Static).Filter(f => f.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))
+      }).Flatten();
+      
+    }
+  }
+}

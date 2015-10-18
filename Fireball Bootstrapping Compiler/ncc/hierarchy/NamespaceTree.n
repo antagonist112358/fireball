@@ -485,6 +485,10 @@ namespace Nemerle.Compiler
         }
       }
 
+      public HasChildren : bool {
+        get { children.Count > 0 }
+      }
+      
       public override ToString () : string
       {
         def s = Text.StringBuilder ("( ");
@@ -494,7 +498,7 @@ namespace Nemerle.Compiler
         _ = s.Append (")\n");
         s.ToString ();
       }
-
+      
       // Debuging support.
       #pragma warning disable 10003
 
@@ -802,5 +806,6 @@ namespace Nemerle.Compiler
         ty.CannotFinalize = false;
       }
     }
+    
   }
 } // ns

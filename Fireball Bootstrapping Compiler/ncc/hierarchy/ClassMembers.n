@@ -131,7 +131,11 @@ public abstract class MemberBuilder : MemberInfo, IMember, System.IEquatable[IMe
     unless (attributes %&& NemerleModifiers.AccessModifiers)
     {
       match(ast) {
-        | PT.ClassMember.Field => attributes |= NemerleModifiers.Private;
+        | PT.ClassMember.Field => 
+          if(ast.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute", Env))
+            attributes |= NemerleModifiers.Public;
+          else
+            attributes |= NemerleModifiers.Private;
         | _ => attributes |= NemerleModifiers.Public;
       }
       
@@ -660,7 +664,7 @@ public partial class FieldBuilder : MemberBuilder, IField
     assert(field_builder != null, Name);
     field_builder
   }
-
+  
   /**
    * Performs attributes checks for field definition.
    */
@@ -677,10 +681,11 @@ public partial class FieldBuilder : MemberBuilder, IField
     check_for_invalid_attr(NemerleModifiers.Struct, "struct");
     check_for_invalid_attr(NemerleModifiers.Macro, "macro");
     check_for_invalid_attr(NemerleModifiers.Partial, "partial");
+    
     // Mutable fields cannot be public
     when(this.IsMutable)
       check_for_invalid_attr(NemerleModifiers.Public, "public");
-
+      
     // check the access attributes for consistency
     match (TypeBuilder.CheckAccessAttributes (attributes))
     {
@@ -1265,7 +1270,7 @@ public partial class MethodBuilder : MemberBuilder, IMethod
 
     _isConditional = modifiers.FindAttribute(InternalType.Conditional_tc, par.GlobalEnv).IsSome;
   }
-
+  
   internal override OnAddMemberComplete(_isIgnored : bool) : void
   {
     unless (typarmsContainer.IsConstraintsSet)

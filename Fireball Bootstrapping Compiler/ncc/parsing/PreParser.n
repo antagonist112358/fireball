@@ -555,7 +555,7 @@ namespace Nemerle.Compiler
               lexer.Manager.OnAfterUsingDirectiveParse(loc + make_before_location (st.Location), id, idLocs,
                 "", Location.Default, currentNsEnv, Env);
 
-            | Token.Operator ("=") as eq =>
+          | Token.Operator ("=") as eq =>
               def (id2, idLocs2, idToks2) = get_qualified_tokens ();
 
               tokens_in_body = (eq :: tokens_in_body).Append(idToks2);

@@ -42,6 +42,7 @@ namespace Nemerle.Compiler
     public mutable infos : list [TypeBuilder] = [];
     mutable assembly_attributes : SCG.List [GlobalEnv * Parsetree.PExpr] = SCG.List();
     internal mutable run_phase : int;
+    private mutable imported_resolvables_finder : NamespaceResolvableFinder = NamespaceResolvableFinder(NamespaceResolvableFinder.EmptyFinder);
 
     // used to create fake source code for macro generated expressions
     mutable _codeWriter : LocatingTextWriter;
@@ -199,7 +200,7 @@ namespace Nemerle.Compiler
     
     public CreateTypeBuilder (par : TypeBuilder, td : Parsetree.TopDeclaration, 
                               ns_node : NamespaceTree.Node) : TypeBuilder
-    {                          
+    {                               
       def tb = TypeBuilder (this, par, td, ns_node);
       infos ::= tb;
       tb
@@ -212,6 +213,12 @@ namespace Nemerle.Compiler
     {
       foreach (tb in infos)
         tb.NamespaceNode.CleanUp ();
+    }
+    
+    internal Finder : NamespaceResolvableFinder
+    {
+      get { imported_resolvables_finder }
+      set { imported_resolvables_finder = value }
     }
     
     /**
@@ -276,7 +283,7 @@ namespace Nemerle.Compiler
     {
       Iter(infos.Reverse (), f);
     }
-
+        
     public IterConditionally (f : TypeBuilder -> void, cond : TypeBuilder -> bool) : void
     {
       Iter(infos.Reverse (), b => 
@@ -326,9 +333,12 @@ namespace Nemerle.Compiler
         Util.locate(x.Location, x.process_macro_attributes(MacroPhase.BeforeInheritance));
 
       run_phase = 1;
-      foreach (x in TopTypeBuilders())
+      foreach (x in TopTypeBuilders()) {
         Util.locate(x.Location, x.make_tyenvs());
-
+        when (x.GlobalEnv != null)
+          Finder = imported_resolvables_finder.ScanNamespaceNodes(x.GlobalEnv.OpenNamespaces);
+      }
+      
       run_phase = 2;
       // We can't call bind_types() recursively, because we yet not receive a list of super-types for top-level types.
       // Do it iterative...
@@ -364,9 +374,15 @@ namespace Nemerle.Compiler
 
       run_phase = 6;
       Iter(fun(x : TypeBuilder) { x.AddEnumMembers() });
-      Iter(fun(x : TypeBuilder) { x.add_members() });
+      // We have to bind trait types first
+      IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { y.IsTrait });
+      // Then do everything else
+      IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { !y.IsTrait && !y.IsCustomAttributeDefined("Fireball.Internal.TraitSubstructureAttribute") });
 
       Manager.OnBeforeWithTypedMembers();
+      
+      // Handle all imported resolvables
+      Finder = imported_resolvables_finder.ScanAllTypesToScan();
       
       run_phase = 7;
       ExpandMacros ();

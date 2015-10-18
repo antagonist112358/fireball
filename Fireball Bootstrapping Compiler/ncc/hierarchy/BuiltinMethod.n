@@ -255,8 +255,9 @@ namespace Nemerle.Compiler
       get { true }
     }
 
-    public IsPrivate : bool   {      get { false }    }
-    public IsAbstract : bool   {      get { false }    }
+    public IsPublic : bool    { get { true }  }
+    public IsPrivate : bool   { get { false } }
+    public IsAbstract : bool  { get { false } }
     public IsObsolete : bool
     {
       get { false }

@@ -55,6 +55,7 @@ namespace Nemerle.Compiler
       typer : Typer;
       messenger : Messenger;
       solver : Solver;
+      resolver : ResolutionResolverContainer;
 
       mutable result_type : TypeVar;
       mutable formals_types : list [TypeVar];
@@ -103,6 +104,27 @@ namespace Nemerle.Compiler
           }
         else
           imethod.GetHeader ();
+          
+      resolver = if (imethod == null) null else {
+        def parentTypeInfo = imethod.DeclaringType;
+        if (parentTypeInfo is TypeBuilder) {
+          def parentType = parentTypeInfo :> TypeBuilder;
+          def container = (parentType.ResolutionContainer :> ResolutionRegistryContainer).Clone();          
+          def finder = Manager.Hierarchy.Finder.ScanNamespaceNodes(typer.Env.OpenNamespaces).ScanAllTypesToScan();
+          
+          // Add all the resolvable items that the containing class can see
+          foreach(fld in finder.GetResolvableFieldsInScope(typer.Env)) {
+            when(parentType.CanAccess(fld.DeclaringType))
+              match(container.TryRegister(ResolutionLevel.Imported, fld)) {
+                | (false, error) when error != null && error.HasValue == true => Message.Error(error.Value)
+                | (false, _) => Util.ice("Registration error without an error message! This should not happen. Please report this error to the Fireball team.")
+                | (true, _) => ()
+              }
+          }
+          ResolutionResolverContainer(parentType, container);
+        } else null
+      }
+      
     }
 
 
@@ -433,8 +455,17 @@ namespace Nemerle.Compiler
           && header != null
           && header.Parameters.Length > call_parms.Length 
           && header.Parameters.Exists(_.HasDefaultValue);
+          
+        def has_resolved = 
+          header != null
+          && header.Parameters.Exists(_.CanBeResolved);
+          
         def need_complete_parameter_name = Manager.IsCompletionInProgress && call_parms.Exists(p => p.NameToComplete != null);
 
+        // Check for resolved parms
+        when(has_resolved && imethod != null && header.Parameters.Length > call_parms.Length)
+          call_parms = this.TryResolveParms(imethod, header.Parameters) + call_parms;
+        
         when (has_named || need_default || need_complete_parameter_name)
           if (header == null)
             ReportError(messenger, "named parameters given but formals' names cannot be inferred");
@@ -523,7 +554,67 @@ namespace Nemerle.Compiler
 
         perm
       }
-
+      
+      // Registers the given parameter types into resolution
+      //private RegisterGenericParmsForResolution(meth : IMethod) : void {
+      //  unless(meth.GetHeader().TypeParameters.IsEmpty()) {
+      //    foreach(parm in orig_parms) {
+      //      _ = resolver.TryRegisterParam(parm)
+      //    }
+      //  }
+      //}
+      
+      // Tries to remove parameters from the parms list when they can be resolved
+      private TryResolveParms(meth: IMethod, top_names : list[TParameter]) : list[Parm]
+      {                
+        def try_resolve_parm(parm : TParameter, res = resolver) : option[TExpr] {
+          match (res.TryResolve(meth, parm)) {
+            | Some(value) => 
+              def objRef = Parsetree.PExpr.Ref(Parsetree.Name.NameInCurrentColor(value.DeclaredIn.Name, meth.DeclaringType.GlobalEnv));
+              def membName = Parsetree.PExpr.Ref(Parsetree.Name.NameInCurrentColor(value.source.Name, meth.DeclaringType.GlobalEnv));
+              def texpr = typer.TypeExpr(Parsetree.PExpr.Member(objRef, membName));
+              Some(texpr);
+            | None => None()
+          }
+        }
+        
+        def resolve_param(tparm: TParameter) : option[Parm] {
+          // Try Local, StaticLocal, and imported first
+          match(try_resolve_parm(tparm)) {
+            | Some(texpr) => Some(Parm(texpr))
+            | _ =>
+              def resolver_clone = resolver.Clone();
+              // Try to register the type of the parameter itself
+              match(resolver_clone.TryRegisterTypedParameter(tparm))
+              {
+                | (false, error) => 
+                  when(error.HasValue)
+                    Message.Error(error.Value);
+                  None()
+                | (true, _) => match(try_resolve_parm(tparm, resolver_clone)) {
+                  | Some(texpr) => Some(Parm(texpr))
+                  | _ => None()
+                }
+              }
+          }
+        }
+        
+        def loop(parms : list[TParameter], acc) {
+          match(parms) {
+            | x :: xs =>
+              if (x.CanBeResolved)
+                match(resolve_param(x)) {
+                  | Some(parm) => loop(xs, parm :: acc)
+                  | None => loop(xs, acc)
+                }
+              else
+                loop(xs, acc)
+            | [] => acc
+          }
+        }
+        
+        loop(top_names, []).Rev()
+      }
 
       // TODO: merge this into the other overload 
       ReorderNamedParms (top_names : list [TParameter]) : void

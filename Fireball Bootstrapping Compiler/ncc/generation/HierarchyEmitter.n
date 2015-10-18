@@ -516,7 +516,8 @@ namespace Nemerle.Compiler
             | TypeDeclaration.VariantOption
             | TypeDeclaration.Class          => TypeAttributes.Class
             | TypeDeclaration.Alias // we pretend type alias is an interface
-            | TypeDeclaration.Interface      => TypeAttributes.Interface %| TypeAttributes.Abstract
+            | TypeDeclaration.Interface      
+            | TypeDeclaration.Trait          => TypeAttributes.Interface %| TypeAttributes.Abstract
             | TypeDeclaration.Enum           => TypeAttributes.Sealed %| TypeAttributes.Class
           };
 

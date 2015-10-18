@@ -42,6 +42,7 @@ namespace Nemerle.Compiler.Typedtree
     | Interface
     | Variant       { members : list [TypeInfo]; }
     | VariantOption
+    | Trait
     | Enum
 
     public override ToString() : string
@@ -51,9 +52,10 @@ namespace Nemerle.Compiler.Typedtree
         | Class         => "class or struct"
         | Alias(null)   => "NOT BINDED ALIAS"
         | Alias(ty)     => $"alias of '$ty'"
-        | Interface     => "interface"
+        | Interface     => "interface"        
         | Variant       => "variant"
         | VariantOption => "variant option"
+        | Trait         => "trait"
         | Enum          => "enum"
       }
     }

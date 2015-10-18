@@ -26,14 +26,26 @@ namespace Nemerle.Compiler
     | Imported
     | CallSiteParam
       
-    internal source : IMember;
+    internal source : IField;
     
-    internal Value : FixedType {
+    public Type : FixedType {
       get { source.GetMemType() }
     }
     
-    internal DeclaredIn : TypeInfo {
+    public FieldPath : String {
+      get { DeclaredIn.Name + "." + source.Name }
+    }
+    
+    public TypeName : String {
+      get { Type.TypeInfo.Name }
+    }
+    
+    public DeclaredIn : TypeInfo {
       get { source.DeclaringType }
+    }
+    
+    public DeclaredInType : FixedType.Class {
+      get { source.DeclaringType.GetFreshType() }
     }
     
     private EqualsInternal(other : ResolvableValue) : bool implements IEquatable[ResolvableValue].Equals {
@@ -48,7 +60,7 @@ namespace Nemerle.Compiler
     }
     
     override public ToString() : string {
-      $"resolve $(source.Name) : $Value (from $(DeclaredIn.FullName))"
+      $"resolve $(source.Name) : $TypeName (from $(DeclaredIn.FullName))"
     }
     
     override public Equals(other : object) : bool {
@@ -59,10 +71,10 @@ namespace Nemerle.Compiler
     
     override public GetHashCode() : int {
       match(this) {
-        | Local           => Value.GetHashCode() + 1
-        | StaticLocal     => 2 * Value.GetHashCode() + 2 
-        | Imported        => 3 * Value.GetHashCode() + 3
-        | CallSiteParam   => 4 * Value.GetHashCode() + 4        
+        | Local           =>     Type.GetHashCode() + 1
+        | StaticLocal     => 2 * Type.GetHashCode() + 2 
+        | Imported        => 3 * Type.GetHashCode() + 3
+        | CallSiteParam   => 4 * Type.GetHashCode() + 4        
       }
     }
     
@@ -95,24 +107,28 @@ namespace Nemerle.Compiler
     {
       match(field) {
         | _ is IField =>
-          $"ambigous resolvable values found for type $(item.Value): $field and $item"
+          $"ambigous resolvable values found for type $(item.TypeName): $field and $item"
         | _ =>
           def t = field : IMember;
           $"cannot make $(t.Name) resolvable (needed a value, got $(t.MemberKind))"
       }
     }
     
-    protected static MakeResolvableValue[T](level : ResolutionLevel, field : T) : ResolvableValue where T : IMember {
-      match(field)
-      {
-        | _ is IField =>
-          match(level) {
-            | Local => ResolvableValue.Local(field)
-            | StaticLocal => ResolvableValue.StaticLocal(field)
-            | Imported => ResolvableValue.Imported(field)
-            | CallSiteParam => ResolvableValue.CallSiteParam(field)
-          }
-        | _ => null
+    protected static MakeResolvableValue(level : ResolutionLevel, field : IField) : ResolvableValue {
+      match(level) {
+        | Local => ResolvableValue.Local(field)
+        | StaticLocal => ResolvableValue.StaticLocal(field)
+        | Imported => ResolvableValue.Imported(field)
+        | CallSiteParam => ResolvableValue.CallSiteParam(field)
+      }
+    }
+    
+    protected static MakeResolvableValue(template : ResolvableValue, field : IField) : ResolvableValue {
+      match(template) {
+        | Local => ResolvableValue.Local(field)
+        | StaticLocal => ResolvableValue.StaticLocal(field)
+        | Imported => ResolvableValue.Imported(field)
+        | CallSiteParam => ResolvableValue.CallSiteParam(field)        
       }
     }
     
@@ -133,14 +149,14 @@ namespace Nemerle.Compiler
   }
   
   public class ResolutionRegistryContainer : ResolutionContainerBase {
-    
+        
     public this() { base(); }
     
     private this(source : ResolutionRegistryContainer) {
       base(source.Registry);
     }
     
-    public TryRegister[T](level : ResolutionLevel, field : T) : bool * option[string] where T : TypeInfo {
+    public TryRegister(level : ResolutionLevel, field : IField) : bool * option[string] {
       def item = MakeResolvableValue(level, field);
       def typeKey = field.GetMemType();
       
@@ -157,12 +173,12 @@ namespace Nemerle.Compiler
             }
           | _ =>
             def set = HashSet([item]);
-            Registry.Add(typeKey, set);
+            Registry.Set(typeKey, set);
             (true, None())
         }
       }
     }
-    
+        
     public Clone() : ResolutionRegistryContainer { ResolutionRegistryContainer(this) }
   }
   
@@ -178,6 +194,8 @@ namespace Nemerle.Compiler
       declaring_type = scope;
       base(initialItems.Registry) 
     }
+    
+    public Clone() : ResolutionResolverContainer { ResolutionResolverContainer(declaring_type, this) }
     
     public TryRegisterParam(param : TT.Parm) : bool * option[string] {
       def parmType : TypeInfo = match(param.expr.ty) {
@@ -220,11 +238,29 @@ namespace Nemerle.Compiler
       }
     }
     
-    public TryResolve(meth: IMethod, param : TT.TParameter) : option[FixedType] {
+    public TryResolve(meth: IMethod, param : TT.TParameter) : option[ResolvableValue] {
       def declared_in = FindOwningClass(meth.DeclaringType);
-      match(Registry.Get(param.Type.FixedValue)) {
-        | Some(set) => set.Where(rv => CanAccess(declared_in, rv.source)).Map(rv => rv.Value).HeadOption()
-        | _ => None()
+      
+      match(param.Type) {
+        | FixedType.Class(ty, args) when !args.IsEmpty => 
+          def possibilitiesTree = Registry.Filter( (k, v) => ty.IsDerivedFrom(k.TypeInfo) && v.Any(rv => CanAccess(declared_in, rv.source))).Values;
+          def possibilities = possibilitiesTree.AsEnumerable().Flatten();
+          possibilities.FoldLeft(None(), (rv : ResolvableValue, opt) => {
+            if (opt.HasValue) opt
+            else {
+              def fresh = rv.DeclaredInType;
+              def field = fresh.TypeInfo.GetFields(BindingFlags.Public).Where(fld => fld.Name == rv.source.Name).First();
+              if (param.Type.TypeInfo.GetFreshType().TryUnify(field.GetMemType())) {
+                Some(MakeResolvableValue(rv, field))
+              } else
+                None()
+            }
+          })
+        | _ =>
+          match(Registry.Get(param.Type.FixedValue)) {
+            | Some(set) => set.Where(rv => CanAccess(declared_in, rv.source)).HeadOption()
+            | _ => None()
+          }
       }
     }
     
@@ -256,10 +292,7 @@ namespace Nemerle.Compiler
     }
     
     private static CanAccess(declared_in : TypeBuilder, memb : IMember) : bool {
-      if (memb is TypeInfo) {
-        def ti : TypeInfo = memb :> TypeInfo;
-        declared_in.CanAccess(ti)
-      } else false
+      declared_in.CanAccess(memb.DeclaringType)
     }    
     
     private static FindOwningClass(typeinfo : TypeInfo) : TypeBuilder {

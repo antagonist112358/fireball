@@ -77,7 +77,7 @@ public partial class TypeBuilder : TypeInfo
   public mutable init_list : list[PT.PExpr] = [];
 
   // Used to track resolvable parameters
-  private resolution_container : ResolutionRegistryContainer = ResolutionRegistryContainer();
+  private resolution_container : ResolutionRegistryContainer;
   
   [Accessor]
   mutable tenv : TypeVarEnv;
@@ -162,6 +162,8 @@ public partial class TypeBuilder : TypeInfo
     modifiers = td.modifiers;
     attributes = modifiers.mods;
 
+    resolution_container = if(par == null || par.resolution_container == null) ResolutionRegistryContainer() else par.resolution_container.Clone();
+    
     match (td)
     {
       // New types
@@ -235,6 +237,10 @@ public partial class TypeBuilder : TypeInfo
     def e = evt;
     when (e != null)
       e(this, args);
+  }
+  
+  internal ResolutionContainer : ResolutionContainerBase {
+    get { resolution_container }
   }
   
   internal CalcAccessibility() : void
@@ -491,6 +497,7 @@ public partial class TypeBuilder : TypeInfo
     }
   }
 
+  // TODO: KWD - Need to fix this to handle traits properly 
   public AddImplementedInterface(t : PT.PExpr) : void
   {
     when (t_implements != null)
@@ -1443,6 +1450,9 @@ public partial class TypeBuilder : TypeInfo
 
     when (!this.typarms.IsEmpty && HasSuperType(InternalType.Attribute_tc))
       Message.Error($"A generic type cannot derive from `$parent_type' because it is an attribute class");
+      
+    // Handle trait processing
+    DoTraitProcessessing();
   }
 
   add_subtyping_of(subinfo : Subinfo, tc : TypeInfo, args : list[TypeVar]) : Subinfo
@@ -1491,7 +1501,7 @@ public partial class TypeBuilder : TypeInfo
       else match (parent_type)
       {
         | null  => []
-        | t     => get_members (t)
+        | t                         => get_members (t)
       }
 
     def inherit_it (mem : IMember)
@@ -1502,6 +1512,12 @@ public partial class TypeBuilder : TypeInfo
     foreach (mem in members)
       when (inherit_it(mem))
         add_member_by_name(mem);
+        
+    // Process implemented traits
+    foreach(trait in t_implements.Filter(ftc => ftc.TypeInfo.IsTrait)) {
+      foreach(mem in trait.TypeInfo.GetTraitMixinMembers())
+        add_member_by_name(mem);
+    }
   }
 
   internal ExtendPartialClass(additional : PT.TopDeclaration) : void
@@ -1877,6 +1893,15 @@ public partial class TypeBuilder : TypeInfo
         | PT.ClassMember.TypeDeclaration => null
         | (PT.ClassMember.Field) as field =>
           def r = FieldBuilder(this, field);
+          // If the field is resolvable
+          when (field.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute", this.GlobalEnv)) {
+            def resLevel = if(field.Attributes %&& NemerleModifiers.Static) ResolutionLevel.StaticLocal else ResolutionLevel.Local;
+            match(resolution_container.TryRegister(resLevel, r)) {
+              | (true, _) => ()
+              | (false, Some(error)) => Message.Error(field.Location, error)
+              | _ => Util.ice("Received a failure registering a resolvable value without an error message. This should not happen. Please report this error.")
+            }
+          }
           AddMember(r);
           r : MemberBuilder
 
@@ -2044,6 +2069,9 @@ public partial class TypeBuilder : TypeInfo
   {
     add_derived_members();
 
+    // Handle trait substructure
+    DoBindTrait();
+    
     def decls = GetParsedMembers();
 
     foreach (m in decls)

@@ -80,6 +80,7 @@ public interface IMember
   CanAccess(memberTypeInfo : TypeInfo, currentTypeInfo : TypeInfo, isThisAccess : bool) : bool;
   IsObsolete : bool { get; }
   IsPrivate : bool { get; }
+  IsPublic : bool { get; }
 
   /* public properties */
   DeclaringType : TypeInfo { get; }
@@ -615,6 +616,11 @@ public abstract class TypeInfo : MemberInfo, IMember,
   {
     get;
   }
+  
+  /** Specifies if the given type is a trait */
+  public virtual IsTrait : bool {
+    get { false }
+  }
 
   internal virtual GetLibraryReference () : LibraryReference { null }
 
@@ -954,7 +960,8 @@ public abstract class TypeInfo : MemberInfo, IMember,
     match (LookupParentInstantiations(typeInfo))
     {
       | [x] => x
-      | _ => assert(false, "more than one Instantiation of parent type was foud");
+      | _ => 
+        assert(false, "more than one Instantiation of parent type was found");
     }
   }
 
@@ -1046,6 +1053,9 @@ public abstract class TypeInfo : MemberInfo, IMember,
   public          GetSuperTypes()                             : list[FixedType.Class] { _superTypes }
   public abstract GetDirectSuperTypes()                       : list[FixedType.Class];
 
+  // Handles getting all the mixed-in members of a trait
+  internal virtual GetTraitMixinMembers() : list[IMember] { [] }
+  
   /// If this is a constant variant option, this method returns static class member that shall be
   /// used instead of calling constructor. Otherwise [null] is returned.
   public abstract GetConstantObject() : IField;

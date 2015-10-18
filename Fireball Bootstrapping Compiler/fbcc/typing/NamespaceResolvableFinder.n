@@ -1,0 +1,167 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Nemerle.Compiler
+{
+  
+  internal type TypeListByNode = Hashtable[NamespaceTree.Node, list[TypeInfo]];
+  
+  /// <summary>
+  /// Description of NamespaceResolvableFinder.
+  /// </summary>
+  internal class NamespaceResolvableFinder
+  {
+    private static BinderFlags = (BindingFlags.Public | BindingFlags.Static);
+    
+    // All the scanned namespaces
+    private scanned_namespaces : list[NamespaceTree.Node] = [];
+    
+    // Each type can be either: Scanned or NeedsToScan
+    private typesToScanMap : TypeListByNode;
+    
+    // Once types are scanned, this list contains all the types which have resolvable values
+    private typesWithResolvableValuesMap : TypeListByNode;
+    
+    // The empty instance
+    public static EmptyFinder : NamespaceResolvableFinder = NamespaceResolvableFinder();
+    
+    private this() {
+      typesToScanMap = Hashtable();
+      typesWithResolvableValuesMap = Hashtable();
+    }
+    
+    private this(scanned : list[NamespaceTree.Node], toScan : TypeListByNode, typesWithResolv : TypeListByNode) {
+      scanned_namespaces = scanned;
+      typesToScanMap = toScan;
+      typesWithResolvableValuesMap = typesWithResolv;
+    }
+    
+    public this(source : NamespaceResolvableFinder) {
+      scanned_namespaces = source.scanned_namespaces;
+      typesToScanMap = source.typesToScanMap;
+      typesWithResolvableValuesMap = source.typesWithResolvableValuesMap;
+    }
+    
+    // Scans namespace nodes for candidate types which could contain resolvable values
+    public ScanNamespaceNodes(nodes : list[NamespaceTree.Node]) : NamespaceResolvableFinder {
+      
+      def scan_children(children, toScan, resolv) {
+        match (children) {
+          | node :: xs => 
+            def nodeValue = match(node.Value) {
+              | NamespaceTree.TypeInfoCache.Cached(ty) => Some(ty)
+              | NamespaceTree.TypeInfoCache.NotLoaded(extTy) =>
+                extTy.ConstructTypeInfo(node, true);
+                Some(extTy.tycon)
+              | _ => None()
+            }
+            match(nodeValue) {
+              | Some(tyInfo) when tyInfo.LookupMemberAvailable => 
+                if (TypeHasResolvables(tyInfo)) scan_children(xs, toScan, tyInfo :: resolv) 
+                else                            scan_children(xs, toScan, resolv)
+              | Some(tyInfo) when !tyInfo.LookupMemberAvailable => scan_children(xs, tyInfo :: toScan, resolv)
+              | _ => scan_children(xs, toScan, resolv)
+            }
+          | [] => (toScan, resolv)
+        }
+      }
+      
+      def scan_node(node, scanned_nses, toScan, resolv) {
+        if (scanned_nses.Contains(node))
+          (scanned_nses, toScan, resolv)
+        else {         
+          match (node.Children) {
+            | null => (node :: scanned_nses, toScan, resolv)
+            | children => 
+              def (ts, re) = scan_children(children.Values.NToList(), GetOrCreateList(toScan, node), GetOrCreateList(resolv, node));
+              (node :: scanned_nses, UpdateList(toScan, node, ts), UpdateList(resolv, node, re))
+          }
+        }
+      }
+
+      def (scanned, toScan, resolved) = nodes.FoldLeft( (scanned_namespaces, typesToScanMap, typesWithResolvableValuesMap), (curr_node, (s, t, r)) => scan_node(curr_node, s, t, r));
+      
+      NamespaceResolvableFinder(scanned, toScan, resolved);
+    }
+    
+    // Updates the finder by scanning all the types which needed to be scanned and now have typed memebers
+    public ScanAllTypesToScan() : NamespaceResolvableFinder {
+      
+      def loop(tyList, toScan : list[TypeInfo], resolv) {
+        match(tyList) {
+          | ty :: tail => 
+            if (ty.LookupMemberAvailable) { 
+              if (TypeHasResolvables(ty))  loop(tail, toScan, ty :: resolv)
+              else                         loop(tail, toScan, resolv)
+            } else loop(tail, ty :: toScan, resolv)
+          | _ => (toScan, resolv)
+        }
+      }
+      
+      // Short circuit for performance
+      if (this.typesToScanMap.Count() > 0) {
+      
+        def (toScan, resolv) = typesToScanMap.Fold( (Hashtable(), typesWithResolvableValuesMap), ( node, types, (needScan, resolvables) ) => {
+          def (a, b) = loop(types, [], GetOrCreateList(resolvables, node));
+        
+          def surviving : TypeListByNode = needScan.Update(node, () => a, _ => a);
+          when (a.IsEmpty) { surviving.Remove(node); }
+          def res = resolvables.Update(node, () => b, _ => b);
+        
+          (surviving, res)
+        });      
+      
+        NamespaceResolvableFinder(scanned_namespaces, toScan, resolv)
+        
+      } else this
+    }
+    
+    // Populates a ResolverRegistryContainer with all of the resolvables that this finder has found that are in scope for the container
+    public GetResolvableFieldsInScope(env : GlobalEnv) : list[IField] {
+      env.OpenNamespaces.FoldLeft([], (node, acc) => {
+        match(typesWithResolvableValuesMap.Get(node)) {
+          | Some(lst) => 
+            lst.Map(ty => ty.GetFields(BinderFlags)).Flatten().Filter(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute")) + acc
+          | _ => acc
+        }
+      })
+    }
+    
+    // Takes a given environment and registers all the known resolvables visible
+    //public RegisterAllVisibleImportedResolvables(from : TypeInfo, 
+    
+    private static TypeHasResolvables(tyInfo : TypeInfo) : bool {
+      tyInfo.GetFields(BinderFlags).Exists(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))
+    }
+    
+    private static GetOrCreateList(hashTable : TypeListByNode, node: NamespaceTree.Node) : list[TypeInfo] {
+      match(hashTable.ContainsKey(node)) {
+        | true => hashTable[node]
+        | false => 
+          def lst = [];
+          hashTable.Add(node, lst);
+          lst
+      }
+    }
+    
+    private static UpdateList(hashTable: TypeListByNode, node: NamespaceTree.Node, types : list[TypeInfo]) : TypeListByNode {
+      match(types) {
+        | [] => 
+          match (hashTable.Get(node)) {
+            | Some(elems) when elems.IsEmpty => hashTable.Remove(node)
+            | _ => ()
+          }
+          hashTable
+        | elems => hashTable.Update(node, () => elems, _ => elems)
+      }
+      
+    }
+        
+  }
+}

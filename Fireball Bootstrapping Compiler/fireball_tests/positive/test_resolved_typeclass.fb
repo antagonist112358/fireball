@@ -1,0 +1,49 @@
+namespace Fireball.Tests {
+	
+	using System
+	using SGC = System.Collections.Generic
+
+	// Like IEnumerable
+	trait Traversable[From, T] : SGC.IEnumerable[T] {
+		
+		def GetEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator { this.GetEnumerator() }
+		
+		def Map[Out, OutCollection : SGC.IEnumerable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[Out, OutCollection]) : OutCollection {
+			builder.Build(TransformCollection(this, transformer))
+		}
+		
+		private def TransformCollection[In, Out](input : SGC.IEnumerable[In], transformer : In -> Out) : SGC.IEnumerable[Out] {
+			foreach(item in input)
+				yield transformer(item)
+		}
+	}
+	
+	// CollectionBuilder
+	trait CollectionBuilder[T, TOut : SGC.IEnumerable[T]] {
+		def Build(elements : SGC.IEnumerable[T]) : TOut
+	}
+	
+	// Simple List
+	class SimpleList[T](elements: SGC.IEnumerable[T]) : Traversable[SimpleList[T], T] {		
+	
+		private class SimpleListCollectionBuilder[U] : CollectionBuilder[U, SimpleList[U]] {
+			def Build(elements : SGC.IEnumerable[U]) : SimpleList[U] { SimpleList(elements) }
+		}
+		
+		def GetEnumerator() : SGC.IEnumerator[T] { elements.GetEnumerator() }
+	
+		resolve val SimpleListBuilder : CollectionBuilder[T, SimpleList[T]] = SimpleListCollectionBuilder()
+	}
+		
+	// Program
+	module Program {
+	
+		def Main(args : Array[string]) : void {
+			val lst = SimpleList([ "Hello", "World" ])
+			val lstWithLength : SimpleList[string * int] = lst.Map(s => (s, s.Length))
+			foreach(tup in lstWithLength)
+				Console.WriteLine(tup)				
+		}
+	
+	}
+}

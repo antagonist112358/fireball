@@ -800,6 +800,7 @@ namespace Nemerle.Compiler
           def is_nested_type (nested_type) {
             | null => false
             | tc2 when  get_siblings(tc2).Contains(tc)  => true
+            | tc2 when tc2.IsTrait && maybe_me.IsAbstract => true
             | _ => is_nested_type (nested_type.DeclaringType)
           }
 

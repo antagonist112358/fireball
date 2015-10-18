@@ -44,6 +44,7 @@
   <Import Project="$(Nemerle)\Nemerle.MSBuild.targets" />
   <ItemGroup>
     <Folder Include="fbcc\extensions" />
+    <Folder Include="fbcc\hierarchy" />
     <Folder Include="fbcc\typing" />
     <Folder Include="fbcc\parsing" />
     <Folder Include="ncc" />
@@ -71,7 +72,19 @@
     <Compile Include="fbcc\extensions\ToOptionExtension.n">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="fbcc\hierarchy\TypeBuilder-Traits.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="fbcc\parsing\Keywords.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fbcc\typing\EnvResolvableResolver.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fbcc\typing\MemberRebinder.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fbcc\typing\NamespaceResolvableFinder.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="fbcc\typing\ResolutionContainer.n">

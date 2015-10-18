@@ -53,7 +53,7 @@ namespace Nemerle.Compiler
     public SyntaxKeywords : Map [string, GrammarElement];
 
     /// this is a set of keywords present in current global environment
-    public Keywords : Set [string];
+    public Keywords : Set [string];    
 
     internal UnaryOperators : Map [string, MainParser.OperatorInfo];
     internal Operators      : Map [string, MainParser.OperatorInfo];
@@ -73,17 +73,17 @@ namespace Nemerle.Compiler
 
     public this (prototype : GlobalEnv, additionalKeywords : list [string])
     {
-      Manager           = prototype.Manager;
-      Keywords          = prototype.Keywords.ReplaceList(additionalKeywords);
-      open_namespaces   = prototype.open_namespaces;
-      current_namespace = prototype.current_namespace;
-      namespace_aliases = prototype.namespace_aliases;
-      macro_ctx_cache   = prototype.macro_ctx_cache;
-      SyntaxKeywords    = prototype.SyntaxKeywords;
-      UnaryOperators    = prototype.UnaryOperators;
-      Operators         = prototype.Operators;
-      nameTree          = prototype.nameTree;
-      Defines           = prototype.Defines;
+      Manager              = prototype.Manager;
+      Keywords             = prototype.Keywords.ReplaceList(additionalKeywords);
+      open_namespaces      = prototype.open_namespaces;
+      current_namespace    = prototype.current_namespace;
+      namespace_aliases    = prototype.namespace_aliases;
+      macro_ctx_cache      = prototype.macro_ctx_cache;
+      SyntaxKeywords       = prototype.SyntaxKeywords;
+      UnaryOperators       = prototype.UnaryOperators;
+      Operators            = prototype.Operators;
+      nameTree             = prototype.nameTree;
+      Defines              = prototype.Defines;
     }
 
     this (nameTree : NamespaceTree)
@@ -793,7 +793,6 @@ namespace Nemerle.Compiler
         }
       }
     }
-
 
     // the format is Current.Namespace.&open.ns1#open.ns2&al1=alias.one#al2=alias.two&
     public GetMacroContext () : int

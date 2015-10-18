@@ -1,0 +1,175 @@
+﻿using Nemerle;
+using Nemerle.Assertions;
+using Nemerle.Collections;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Imperative;
+using Nemerle.Utility;
+
+using System;
+using System.Diagnostics;
+using System.Collections.Specialized;
+
+using PT = Nemerle.Compiler.Parsetree;
+using SCG = System.Collections.Generic;
+using SC = System.Collections;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of TypeBuilder_Traits.
+  /// </summary>
+  public partial class TypeBuilder : TypeInfo
+  {
+    private static MemberPublicBindingFlags = (BindingFlags.Public | BindingFlags.DeclaredOnly);
+    private static MemberNonPublicBindingFlags = (BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+    
+    private mutable is_trait = false;
+    
+    private mutable trait_substructure : option[TypeBuilder] = None();
+    
+    public override IsTrait : bool {
+      get { is_trait }
+    }
+    
+    // Checks to see if the current type is a Trait
+    private CheckIsTrait() : bool {
+
+      def check_members(members : list[PT.ClassMember]) : bool {        
+          | memb :: tail =>
+            match(memb) {
+              | Field => true;
+              | Function(_, _, func) when !(func is FunBody.Abstract) => true;
+              | Property(_, _, getter, setter, initializer) when getter.HasValue || setter.HasValue || initializer.HasValue => true;
+              | _ => check_members(tail)
+            }          
+          | [] => false;        
+      }
+      
+      IsInterface && check_members(GetParsedMembers().NToList());
+    }
+    
+    // Processes the current trait. Creates the trait container, and moves all implemented functions, properties, and any fields into the substructure within the container.
+    // Also takes all implemented public functions or properties and abstracts them in the existing interface.
+    private DoTraitProcessessing() : void {
+      def check_attributes(memb) : bool {
+        memb.Attributes == NemerleModifiers.None || memb.Attributes %&& NemerleModifiers.Public || memb.Attributes %&& NemerleModifiers.Internal
+      }
+      
+      def mark_abstract(members : list[PT.ClassMember], acc) : PT.TopDeclaration.Interface {
+        match(members) {
+          | memb :: tail => match(memb) {
+              | Function as func when check_attributes(func) => mark_abstract(tail, PT.ClassMember.Function(func.BodyLocation, func.name, func.modifiers, func.header, [], FunBody.Abstract()) :: acc)
+              | Property as prop when check_attributes(prop) => mark_abstract(tail, PT.ClassMember.Property(prop.BodyLocation, prop.name, prop.modifiers, prop.returnType, prop.parameters, None(), None(), None()) :: acc)
+              | _ => 
+                //Util.ice($"Tried to mark non-function, non-property class member $memb as Abstract while doing trait processing. This should not happen. Please report this error to the Fireball team.");
+                mark_abstract(tail, acc)
+            }
+          | _ => PT.TopDeclaration.Interface((this._ast :> PT.TopDeclaration.Interface).t_extends, acc)
+        }
+      }
+      
+      def get_members_to_move(members: list[PT.ClassMember], acc) : list[PT.ClassMember] {
+        match(members) {
+          | memb :: tail =>
+            match(memb) {
+              | Field => get_members_to_move(tail, memb :: acc);
+              | Function(_, _, func) when !(func is FunBody.Abstract) => get_members_to_move(tail, memb :: acc);
+              | Property(_, _, getter, setter, initializer) when getter.HasValue || setter.HasValue || initializer.HasValue => get_members_to_move(tail, memb :: acc);
+              | _ => get_members_to_move(tail, acc)
+            }          
+          | [] => acc;
+        }
+      }
+      
+      when(CheckIsTrait()) {
+        // This type is a trait
+        is_trait = true;
+        
+        // Get all the current members
+        def curr_members = GetParsedMembers();
+        
+        // Build the container
+        def containerBuilder = MakeTraitContainer();
+        
+        // Build the trait substructure
+        def traitSub = MakeTraitSubstructure(this.ParsedName, containerBuilder);
+        
+        // Assign the trait substructure
+        trait_substructure = Some(traitSub);
+        
+        // Get the members we will be moving and define them in the substructure
+        foreach(memb in get_members_to_move(curr_members, []))
+          traitSub.Define(memb);
+          
+        // Finally, define the AST for this interface
+        _ast = mark_abstract(curr_members, []);
+      }
+    }
+    
+    // Creates the nested trait substructure
+    private MakeTraitSubstructure(traitName : PT.Name, containerBuilder : TypeBuilder) : TypeBuilder {
+      def newName = traitName.NewName(traitName.Id + "Trait");
+      def tparms  = typarms.Map (fun (x) { PT.Splicable.Name(traitName.Location, traitName.NewName(x.Name)) });
+      
+      def traitSubstructureTypeDeclaration = 
+        if (tparms.IsEmpty()) 
+          <[ decl:
+          [Fireball.Internal.TraitSubstructure]  
+          internal abstract class $newName {
+            private this() { }
+          }
+          ]>
+        else
+          <[ decl: 
+          [Fireball.Internal.TraitSubstructure]
+          internal abstract class $newName [..$tparms] {
+            private this() { }
+          }
+          ]>;
+      containerBuilder.DefineNestedType(traitSubstructureTypeDeclaration)
+    }
+    
+    // Creates the container for the trait substructure within the interface
+    private MakeTraitContainer() : TypeBuilder {
+      def traitContainerTypeDeclaration = <[ decl:
+        protected module _FB_NestedTrait { }
+      ]>;          
+      DefineNestedType(traitContainerTypeDeclaration)
+    }
+    
+    // Handles adding implemented members from inherited traits
+    private AddMemberToTrait(member : IMember) : void {
+      if(!IsTrait)
+        Util.ice("Tried to add a trait member to a type which is not a trait. This should not happen. Please report this error to the Fireball team.");
+      else match(trait_substructure) {
+        | Some(traitSub) => traitSub.AddMember(member)
+        | None => Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");
+      }
+    }
+    
+    // Gets all the mixed-in members from a trait
+    internal override GetTraitMixinMembers() : list[IMember] {
+      if (!IsTrait) {
+        Util.ice("Tried to get mixed-in members from a type which is not a trait! This should not happen. Please report this error to the Fireball team.");
+      } else match(trait_substructure) {
+        // Don't mixin constructors!
+        | Some(traitSub) => 
+          NList.RevFilter(traitSub.member_list, memb => !memb.IsConstructor)
+        | None =>
+          Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");
+      }      
+    }           
+    
+    // Binds and adds members to the trait substructure
+    private DoBindTrait() : void {
+      when(IsTrait) {
+        match(trait_substructure) {
+          | Some(traitSub) => traitSub.add_members()
+          | None => Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");          
+        }
+      }
+    }
+    
+  }
+}
