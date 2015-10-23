@@ -234,5 +234,83 @@ namespace Nemerle.Compiler
         | _ => Typarms.Empty
       };
     }
+    
+    private parse_tuple_extraction_into_fields (
+                    _parentType   : string,
+                    members       : SCG.List[ClassMember],
+                    startLocation : Location,
+                    mods          : AttributesAndModifiers,
+                    ids           : list[Splicable],
+                    mut           : bool,
+                    ret_types     : list[PExpr]) : void
+    {
+      mutable customs : list[Token.SquareGroup] = [];
+      def loc = startLocation;
+      def parse_tuple_values(group) {
+        TokenMap(group, () => parse_expr(TokenStoppers.AllIncludingComma));        
+      }
+      def make_tuple_extractors(loc: Location, tupleExpr: PExpr.Ref, num) {
+        mutable outExprs = [];
+        for(mutable i = 0; i < num; i++) {
+          def name = PExpr.Literal(loc, Literal.Integer(i, Manager.InternalType.Int32));
+          outExprs = <[ $tupleExpr [ $name ] ]> :: outExprs;
+        }        
+        outExprs.Reverse();
+      }
+      def make_field(bodyLoc: Location, id: Splicable, mods, val: PExpr, ret_type: PExpr) : ClassMember.Field {
+        def floc = loc.Combine(bodyLoc);
+        def mods2 = mods.Clone();
+        Util.locate (bodyLoc,
+          mods2.AddCustomAttribute (<[
+            $(MkNameGenerated("Nemerle") : name).InternalMacros.StaticInitializer ($val)
+          ]>)
+        );
+        def result = ClassMember.Field(floc, id, mods2, ret_type, val);
+        InitBodyLocations(result, null, bodyLoc);
+        result
+      }
+      def fields = match(peek_token()) {
+        | Token.Operator ("=") =>
+          shift ();
+          match(peek_token()) {
+            // Tuple
+            | Token.Identifier as tupTok =>
+              shift();
+              def loc = tupTok.Location;
+              def tupleExpr = PExpr.Ref(tupTok.Location, MkNameGenerated(tupTok.name));
+              def values = make_tuple_extractors(loc, tupleExpr, ids.Length);
+              take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
+              values.ZipTriple(ids, ret_types).Map( (val, id, ret_type) => make_field(loc, id, mods, val, ret_type) )
+            // Tuplized values
+            | Token.RoundGroup(toks, _, _) as group =>
+              shift();
+              def values = parse_tuple_values(group);
+              if (values.Length != ids.Length) {
+                Error(toks, $"expecting $(ids.Length) values for each declared field. Got $(values.Length) values instead.");
+                []
+              } else {
+                take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
+                values.ZipTriple(ids, ret_types).Map( (val, id, ret_type) => make_field(loc, id, mods, val, ret_type) )
+              }
+            | t =>
+              Error(t, "expecting either tuple to extract field values from or a tuplized set of values.");
+              []
+          }
+          
+        | t => 
+          Error (t, "expecting '=' in tuple extracted fields declaration");
+          []
+      }
+      
+      when (mut) { mods.mods |= NemerleModifiers.Mutable }
+
+      when (fields != null && fields.Length > 0)
+      {
+        foreach(field in fields) {
+          field._env = env;
+          members.Add(field);
+        }
+      }      
+    }
   }
 }

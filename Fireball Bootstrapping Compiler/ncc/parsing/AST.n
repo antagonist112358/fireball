@@ -779,6 +779,7 @@ namespace Nemerle.Compiler {
         val : ulong; 
         is_negative : bool; 
         mutable treat_as : FixedType.Class;
+        public this(value : int, as_type: FixedType.Class) { val = value :> ulong; is_negative = value < 0; treat_as = as_type; }
       } 
 
     | Enum { val : Literal.Integer; ty : TypeInfo; field : IField; }

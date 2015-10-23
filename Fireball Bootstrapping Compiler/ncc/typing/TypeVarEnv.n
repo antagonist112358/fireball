@@ -89,9 +89,16 @@ namespace Nemerle.Compiler
       name        : Name,
       idl         : list[string],
       args        : list[TypeVar],
-      loc         : Location
+      loc         : Location,
+      ignore_args : bool = false
     ) : TypeVar
     {
+      mutable freshargs : list[TypeVar] = [];
+      
+      def make_typevar(ti, newargs) : TypeVar {
+        FixedType.Class(ti, newargs)
+      }
+      
       match (tyvars.Find (name)) 
       {
         | Some (tv) when idl is [_] =>
@@ -110,13 +117,13 @@ namespace Nemerle.Compiler
 
           def (nodeMembers, aliasesMembers) = env.LookupSymbolPriority(idl, currentType);
 
-          def makeTypeInfos(symbols : SCG.List[IMember]) : SCG.List[NC.TypeInfo]
+          def makeTypeInfos(symbols : SCG.IEnumerable[IMember], ignoreArgs = false) : SCG.List[NC.TypeInfo]
           {
             def typeinfos = SCG.List();
             foreach (ti is NC.TypeInfo in symbols)
             {
               if (currentType == null || ti.CanAccess(currentType))
-                if (args.Length == ti.SourceTyparmsCount)
+                if (ignoreArgs || args.Length == ti.SourceTyparmsCount)
                 {
                   when (ti.FullName == name.Id)
                     exact_hit = ti;
@@ -137,7 +144,23 @@ namespace Nemerle.Compiler
             typeinfos
           }
           
-          def nodeTypeinfos = makeTypeInfos(nodeMembers);
+          def nodeTypeinfos = {
+            def nodeInfos = makeTypeInfos(nodeMembers);
+            if (nodeInfos.Count > 0)
+              nodeInfos
+            else {
+              match(lookup_member_type(currentType, name.Id))
+              {
+                | [FixedType.Class(tyinfo, [])] => makeTypeInfos([tyinfo], ignore_args)
+                | [FixedType.Class(tyinfo, tyargs)] =>
+                  when(args.Length != tyargs.Length)
+                    freshargs = tyargs.Map( tyarg => bind_simple_named_type(env, currentType, Parsetree.Name((tyarg :> FixedType.StaticTypeVarRef).tyvar.Name), [(tyarg :> FixedType.StaticTypeVarRef).tyvar.Name], [], loc));
+                  makeTypeInfos([tyinfo], ignore_args)
+                | _ => SCG.List()
+              }
+            }
+          }
+          
           def aliasesTypeinfos  = makeTypeInfos(aliasesMembers);
 
           def filterTypes(types : SCG.List[NC.TypeInfo]) : SCG.List[NC.TypeInfo]
@@ -214,9 +237,30 @@ namespace Nemerle.Compiler
           match ((nodeTypeInfos.Count, aliasesTypeInfos.Count))
           {
             | (0, 0) =>
-              ReportLocatedError(loc, Manager.Solver.CurrentMessenger,
-                $<#$add_info `..$(idl; ".")'#>);
-              InternalType.Object
+              // If members are available check for a member by the same name
+              //if (currentType.LookupMemberAvailable) {
+              //  match(currentType.LookupMember(name.Id, false)) {
+              //    | [] => 
+              //      ReportLocatedError(loc, Manager.Solver.CurrentMessenger, $<#$add_info `..$(idl; ".")'#>);
+              //      InternalType.Object
+              //    | [one] => 
+              //      def type = match(one) {
+              //        | IMethod as meth => meth.ReturnType
+              //        | _ => one.GetMemType()
+              //      };
+                    
+              //      if (idl.IsEmpty()) type
+              //      else match(type.Fix()) {
+                      
+              //      }
+              //    | _ => 
+              //      ReportLocatedError(loc, Manager.Solver.CurrentMessenger, $"confused by multiple conflicting member definitions (conflicting name: $name)");
+              //      InternalType.Object
+              //  }
+              //} else {
+                ReportLocatedError(loc, Manager.Solver.CurrentMessenger, $<#$add_info `..$(idl; ".")'#>);
+                InternalType.Object
+              //}
             | (1, 0) with ti = nodeTypeInfos[0]
             | (0, 1) with ti = aliasesTypeInfos[0]
             | _ when exact_hit != null with ti = exact_hit
@@ -225,6 +269,8 @@ namespace Nemerle.Compiler
                 InternalType.Void
               else if (ti.TyparmsCount == args.Length)
                 FixedType.Class (ti, args)
+              else if (ti.TyparmsCount == freshargs.Length)
+                make_typevar(ti, freshargs)
               else
               {
                 def find_nesting (nesting : NC.TypeInfo)
@@ -255,9 +301,9 @@ namespace Nemerle.Compiler
                   InternalType.Object
                 
                   | FixedType.Class (_, args') =>
-                  def args = args' + args;
-                  Util.cassert (args.Length == ti.TyparmsCount);
-                  FixedType.Class (ti, args)
+                    def args = args' + args;
+                    Util.cassert (args.Length == ti.TyparmsCount);
+                    FixedType.Class (ti, args)
                 
                   | _ => Util.ice ()
                 }
@@ -284,6 +330,33 @@ namespace Nemerle.Compiler
               InternalType.Object
           }
       }
+    }    
+    
+    static lookup_member_type(builder: TypeBuilder, memberName: string) : list[FixedType.Class] {      
+      if (builder.LookupMemberAvailable) {
+        builder.LookupMember(memberName, false).Map(memb => get_member_type(memb)).Filter(typeVar => typeVar is FixedType.Class(_, _)).Map(typeVar2 => typeVar2 :> FixedType.Class)
+      } else []
+    }
+    
+    private fixup(env: GlobalEnv, currentType: TypeBuilder, tyvar : TypeVar, loc: Location) : TypeVar {
+      
+      def correct(tyarg) {
+        bind_simple_named_type(env, currentType, Parsetree.Name((tyarg :> FixedType.StaticTypeVarRef).tyvar.Name), [(tyarg :> FixedType.StaticTypeVarRef).tyvar.Name], [], loc)
+      }      
+      
+      match(tyvar) {      
+        | FixedType.Class(ti, args) when !args.IsEmpty => FixedType.Class(ti, args.Map(correct))
+        | FixedType.StaticTypeVarRef(staticTypeVar) => match(tyvars.Filter( (key, _) => key.Id == staticTypeVar.Name).ToList()) {
+            | [(_, newref)] => FixedType.StaticTypeVarRef(newref)
+            | _ => tyvar
+          }
+        | other => other
+      }
+    }
+    
+    static get_member_type(member : IMember) : TypeVar {
+      | IMethod as meth => meth.ReturnType
+      | _ => member.GetMemType()
     }
 
     poors_man_lookup_member (ti : NC.TypeInfo, name : string) : list [IMember]
@@ -334,6 +407,101 @@ namespace Nemerle.Compiler
         | t =>
           ReportLocatedError(loc, Manager.Solver.CurrentMessenger, $"won't lookup nested types in $t");
           InternalType.Object
+      }
+    }
+    
+    /** Handles typing call expressions
+    */
+    private TypeCallExpression(env: GlobalEnv, currentType: TypeBuilder, callExpr : PExpr.Call) : option[TypeVar]
+    {
+      // Check for properties
+      def check_property_or_field(tyInfo: TypeInfo, propName : string) : option[TypeVar] {
+        tyInfo.LookupMember(propName, false).Filter(memb => memb is IField || memb is IProperty).Map(memb2 => memb2.GetMemType()).HeadOption()
+      }
+      
+      // Check for methods
+      def check_method(tyInfo: TypeInfo, methodName: string) : option[TypeVar] {
+        tyInfo.LookupMember(methodName, false).Filter(memb => memb is IMethod).Map(memb2 => (memb2 :> IMethod).ReturnType).HeadOption()
+      }
+      
+      match(callExpr) {
+                
+        // Type or member access
+        | PExpr.Call(<[ $obj . [ ..$_ ] . $(mem : dyn) ]>, _)
+        | PExpr.Call(<[ $obj . $(mem : dyn) ]>, _) =>
+          match(Bind(env, currentType, obj, true, true)) {
+            // External type
+            | FixedType.Class(extTy is LibraryReference.ExternalTypeInfo, _) =>
+              check_property_or_field(extTy, mem).OrElse(check_method(extTy, mem))
+                
+            // Type in this assembly / context
+            | FixedType.Class(builder is TypeBuilder, _) =>
+              // Does the builder have typed members yet?
+              when (!builder.LookupMemberAvailable)
+                builder.add_members();
+                
+              check_property_or_field(builder, mem).OrElse(check_method(builder, mem))
+                
+            // Anything else
+            | tv => 
+              def tyInfo = tv.TypeInfo;
+              check_property_or_field(tyInfo, mem).OrElse(check_method(tyInfo, mem))
+          }
+        
+        // Constructor call
+        | <[ $obj . [ ..$args ] (..$_) ]>
+        | <[ $obj (..$_) ]> when Typer.CanBeTypeName(obj) with args = [] =>
+          match(obj) {
+            | PExpr.Ref(name) =>
+              Some(bind_simple_named_type (env, currentType, name, [name.Id], args.Map (arg => Bind(env, currentType, arg, true, true)), name.Location));
+            | _ => None()
+          }
+                    
+        // Anything else
+        | _ => None()
+              
+      }
+    }
+    
+    /** Searches recursively through type members for the complete expression */
+    private FindMemberTypeRecursive(from: TypeVar, ids : list[string]) : TypeVar    
+    {            
+      match(ids) {
+        | id :: tail =>
+          match(from) {
+            | FixedType.Class(extTy is LibraryReference.ExternalTypeInfo, _) => match(extTy.LookupMember(id, false)) {
+                | [] =>
+                  ReportError(Manager.Solver.CurrentMessenger, $"No member named $id found in type $extTy");
+                  InternalType.Void
+                | [one] => FindMemberTypeRecursive(get_member_type(one), tail)
+                | _ => 
+                  ReportError(Manager.Solver.CurrentMessenger, "Confused by multiple type definitions with the same name in $extTy (name: $id)");
+                  InternalType.Void
+              }
+            | FixedType.Class(builder is TypeBuilder, _) =>
+              when(!builder.LookupMemberAvailable) { builder.add_members(); }
+              match(builder.LookupMember(id, false)) {
+                | [] =>
+                  ReportError(Manager.Solver.CurrentMessenger, $"No member named $id found in type $builder");
+                  InternalType.Void
+                | [one] => FindMemberTypeRecursive(get_member_type(one), tail)
+                | _ => 
+                  ReportError(Manager.Solver.CurrentMessenger, "Confused by multiple type definitions with the same name in $extTy (name: $id)");
+                  InternalType.Void
+              }
+              
+            | _ => match(from.TypeInfo.LookupMember(id, false)) {
+                | [] =>
+                  ReportError(Manager.Solver.CurrentMessenger, $"No member named $id found in type $from");
+                  InternalType.Void
+                | [one] => FindMemberTypeRecursive(get_member_type(one), tail)
+                | _ => 
+                  ReportError(Manager.Solver.CurrentMessenger, "Confused by multiple type definitions with the same name in $extTy (name: $id)");
+                  InternalType.Void
+              }
+          }
+          
+        | _ => from
       }
     }
     
@@ -452,6 +620,14 @@ namespace Nemerle.Compiler
             
           | PExpr.Ellipsis => Util.ice ("Type arguments list survived to typying.")
           | PExpr.Literal(value) => value.GetInternalType(this.Manager.InternalType)
+          // Handle calls of the type obj . method or field / Property access
+          | PExpr.Call as callExpr => match(TypeCallExpression(env, currentType, callExpr)) {
+              | Some(typeVar) => typeVar
+              | None =>
+                ReportError (Manager.Solver.CurrentMessenger, $ "`$callExpr' is not a legal type expression");
+                InternalType.Void              
+            }
+                        
           | x =>
             ReportError (Manager.Solver.CurrentMessenger, $ "`$x' is not a legal type expression");
             InternalType.Void
@@ -469,11 +645,11 @@ namespace Nemerle.Compiler
               when (Manager.Solver.CurrentMessenger.NeedMessage)
                 Message.HintOnce ("if you had array type on mind, its syntax is `array [SomeType]'");
               f (t)
-
+                                                     
             | <[ $(PExpr.Ref(name) as t) ]> with args = []
             | <[ $(PExpr.Ref(name) as t) [ .. $args ] ]>
             | <[ $(PExpr.Ref(name) as t) . [ .. $args ] ]> =>
-              def type = bind_simple_named_type (env, currentType, name, [name.Id], args.Map (f), name.Location);
+              def type = bind_simple_named_type (env, currentType, name, [name.Id], args.Map (f), name.Location, true);
               SetTypedObjects(t, type);
               type
               
@@ -499,9 +675,17 @@ namespace Nemerle.Compiler
               match (Util.QidOfExpr (t))
               {
                 | Some ((idl, name)) =>
-                  def type = bind_simple_named_type(env, currentType, name, idl, args.Map(f), t.Location);
-                  SetTypedObjects(t, type);
-                  type
+                  def type = bind_simple_named_type(env, currentType, name, idl, args.Map(f), t.Location, true);
+                  // Check for a member with that type name
+                  if (currentType.LookupMemberAvailable && !currentType.LookupMember(name.Id, false).IsEmpty()) {
+                    def memberExprType = fixup(env, currentType, FindMemberTypeRecursive(type, idl.Tail), tyexpr.Location);
+                    when(!Manager.Solver.CurrentMessenger.LocalError)
+                      SetTypedObjects(t, memberExprType);
+                    memberExprType
+                  } else {
+                    SetTypedObjects(t, type);
+                    type
+                  }
 
                 | None =>
                   match (t)

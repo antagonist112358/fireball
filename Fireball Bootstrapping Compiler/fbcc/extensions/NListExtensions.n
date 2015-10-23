@@ -20,5 +20,27 @@ namespace Nemerle.Compiler
       else
         None()
     }
+    
+    public ZipTriple[A, B, C](this lst : list[A], bs: list[B], cs: list[C]): list[A * B * C] {
+      when(bs.Length != lst.Length || cs.Length != lst.Length)
+        throw ArgumentException($"All three lists must have the same number of elements (bs: $(bs.Length), cs: $(cs.Length))");      
+      
+      def loop(alist, blist, clist, acc) {
+        match(alist) {
+          | a :: atail => match(blist) {
+            | b :: btail => match(clist) {
+                  | c :: ctail => loop(atail, btail, ctail, (a, b, c) :: acc)
+                  | _ => acc
+                }
+              | _ => acc
+            }
+          | _ => acc
+        }
+      }
+            
+      loop(lst, bs, cs, []).Reverse();
+      
+    }
+
   }
 }

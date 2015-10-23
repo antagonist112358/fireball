@@ -52,7 +52,9 @@ namespace Nemerle.Compiler
     | ColonLess = 0x0080 // :>
     | Dollar    = 0x0020 // $
     | With      = 0x0040 // with
+    | Comma     = 0x0100 // ,
     | All = (Pipe | Equal | Braces | Arrow | With)
+    | AllIncludingComma = (All | Comma)
   }
 
   /** Parser class, which transforms preparsed token tree into Nemerle parse trees.
@@ -907,6 +909,7 @@ namespace Nemerle.Compiler
           else
             ClassMember.Field (id.Location, id, mods, typeExpr);
         member.AddCustomAttribute(<[System.Runtime.CompilerServices.CompilerGenerated]>);
+        member.IsDefaultCtorField = true;
         members.Add(member);
       }
       
@@ -1257,6 +1260,15 @@ namespace Nemerle.Compiler
 
           def tok1 = peek_token ();
 
+          def parse_tokenized_field_name() : option[Splicable * PExpr] {
+            match(get_token()) {
+              | Token.Identifier(i) as id => Some(MkSplicableName(i, id.Location), parse_return_type(true, id.Location) )
+              | t =>
+                Error(t, "expecting identifier in tuple extractor fields declaration");
+                None()
+            }
+          }
+          
           def parseNestedTypeDeclaration()
           {
             take_attributes_out (ref customs, System.AttributeTargets.Class, true, mods);
@@ -1368,7 +1380,14 @@ namespace Nemerle.Compiler
                     prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
                                                       parmsloc.EndLine, parmsloc.EndColumn);
                     def ret_type = parse_return_type(true, prmsCloseLoc.FromEnd());                  
-                    parse_field(parentType, members, start_tok.Location, mods, id, mut, ret_type) 
+                    parse_field(parentType, members, start_tok.Location, mods, id, mut, ret_type)
+                  | Token.RoundGroup(_, _, _) as rGroup =>
+                    // Parse the field names
+                    def (fieldNames, return_types) = TokenMap(rGroup, () => comma_separated_list(() => parse_tokenized_field_name()))
+                      .Flatten().Filter(maybe_tuple => maybe_tuple.HasValue).Map(tuple_option => tuple_option.Value).Split();
+                    // Shift through the group
+                    shift();
+                    parse_tuple_extraction_into_fields(parentType, members, start_tok.Location, mods, fieldNames, mut, return_types)
                   | x => Error(x, "expecting identifier after 'val' or 'var' keyword.");
                 }
               
@@ -2758,7 +2777,7 @@ namespace Nemerle.Compiler
             | Token.BracesGroup | Token.Keyword ("where")
             | Token.Semicolon | Token.Operator ("=") => PExpr.Error (colon.Location.FromEnd())
             | _ =>
-              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal /*| TokenStoppers.Where */)
+              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal | TokenStoppers.Comma /*| TokenStoppers.Where */)
           }
 
         | t =>

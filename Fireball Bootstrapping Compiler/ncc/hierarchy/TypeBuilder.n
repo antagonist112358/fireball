@@ -837,7 +837,8 @@ public partial class TypeBuilder : TypeInfo
     when (includeManuallyDefined && additional_decls != null)
       result.AddRange(additional_decls);
 
-    result.NToList()
+    def (first, second) = result.NToList().Partition(_.IsDefaultCtorField);
+    first + second
   }
 
   public override GetFields (bindingAttr : BindingFlags) : list[IField]
@@ -1571,6 +1572,14 @@ public partial class TypeBuilder : TypeInfo
     BindType(tenv, t)
   }
 
+  internal TryBindType(other_tenv : TypeVarEnv, t: PT.PExpr) : option[TypeVar] {
+    try {
+      Some(BindType(other_tenv, t))
+    } catch {
+      | _ is Exception => None()
+    }
+  }
+  
   public BindFixedType(t : PT.PExpr) : FixedType
   {
     BindFixedType(tenv, t)
@@ -2055,6 +2064,8 @@ public partial class TypeBuilder : TypeInfo
   }
 
 
+  private mutable added_members : bool = false;
+  
   /**
    * Collect type members (fields and methods, but not types, which
    * are already collected in [TypeBuilder.contained_types]) and store
@@ -2067,51 +2078,55 @@ public partial class TypeBuilder : TypeInfo
    */
   internal add_members() : void
   {
-    add_derived_members();
+    when(!added_members) {
+      add_derived_members();
 
-    // Handle trait substructure
-    DoBindTrait();
+      // Handle trait substructure
+      DoBindTrait();
     
-    def decls = GetParsedMembers();
+      def decls = GetParsedMembers();
 
-    foreach (m in decls)
-      BindAndAddMember(m);
-
-    when (additional_decls != null)
-      foreach (m in additional_decls)
+      foreach (m in decls)
         BindAndAddMember(m);
 
-      foreach (t in contained_types)
-        AddMember(t);
+      when (additional_decls != null)
+        foreach (m in additional_decls)
+          BindAndAddMember(m);
 
-    contained_types = contained_types.Rev();
+        foreach (t in contained_types)
+          AddMember(t);
 
-    member_list = member_list.Rev();
+      contained_types = contained_types.Rev();
 
-    /// define implicit instance constructor if none exists
-    unless (instance_ctor_occured)
-    {
-      // quasi-quotation use location from top of the LocationStack.
+      member_list = member_list.Rev();
+
+      /// define implicit instance constructor if none exists
+      unless (instance_ctor_occured)
+      {
+            // quasi-quotation use location from top of the LocationStack.
       // Probably it's location of the class. It will lead to that location will
       // overlap the locations of other methods.
 
-      def loc = LocationStack.Top().FromStartAsGenerated();
+        def loc = LocationStack.Top().FromStartAsGenerated();
 
-      def ctor =
-        // in abstract classes we have protected implicit ctor, otherwise public
+        def ctor =
+            // in abstract classes we have protected implicit ctor, otherwise public
         // http://www.jaggersoft.com/csharp_standard/17.10.4.htm
-        if (IsAbstract)
-          Util.locate(loc, <[ decl: protected this () { } ]>)
-        else
-          Util.locate(loc, <[ decl: public this () { } ]>);
+          if (IsAbstract)
+            Util.locate(loc, <[ decl: protected this () { } ]>)
+          else
+            Util.locate(loc, <[ decl: public this () { } ]>);
 
-      def meth = bind_and_add_member(ctor);
+        def meth = bind_and_add_member(ctor);
 
-      meth.SetInstanceUsed();
+        meth.SetInstanceUsed();
+      }
+
+      // we no longer need it, let GC kill it
+      additional_decls = null;
+      
+      added_members = true;
     }
-
-    // we no longer need it, let GC kill it
-    additional_decls = null;
   }
 
   // in case of variant options, which have only parameterless constructor

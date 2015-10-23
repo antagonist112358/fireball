@@ -529,7 +529,7 @@ public partial class FieldBuilder : MemberBuilder, IField
         try {
           ty = InitializerTyped.FixedType();
         } catch {
-          | _ => ty = par.BindType(fieldAst.Initializer).FixedValue;
+          | _ => ty = par.BindType(fieldAst.Initializer).Fix();
         }
           
       | _ =>

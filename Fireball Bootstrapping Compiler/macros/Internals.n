@@ -57,7 +57,8 @@ namespace Nemerle.InternalMacros
          | _ => 
            try {
              def expr = Nemerle.Macros.ImplicitCTX ().TypeExpr (val);
-             f.ty = PrettyPrint.MTypeToParseTree (expr.FixedType());
+             unless (expr is Typedtree.TExpr.Error)
+              f.ty = PrettyPrint.MTypeToParseTree (expr.FixedType());
            }
            catch {
              | _ => ()   

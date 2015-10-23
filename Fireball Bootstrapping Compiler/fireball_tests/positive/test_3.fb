@@ -1,28 +1,65 @@
 namespace Fireball.Tests {
 
 	using System
+	using SCG = System.Collections.Generic
 	
 	public abstract class Dummy { }
 	
-	public class Idiot(name: String) : Dummy { }
+	public class Idiot(name: String) : Dummy { 
+		public static def Create(idiotName: String) : Idiot { Idiot(idiotName) }
+	}
+	
+	public module Tester {
+		public module InnerTester {
+			public static def GetString() : string { "Test String" }
+		}
+	}
 	
 	// Field tests
 	public class AccessorTests(a: int = 5) {	
 		// Immutable fields are allowed to be public
-		public val test: String = "Breakin' hard"
+		public val test = "Breakin' hard"
 		
 		// Mutable fields are not allowed to be public.
-		protected var breaks : int = 7
+		protected var breaks = 7
 		
 		// vals without assignment are not allowed
-		val villageIdiot: Dummy = Idiot("Paul")
+		val villageIdiot = Idiot.Create("Paul")
 		
 		// vars without assignment are not allowed
-		var anotherIdiot: Dummy = Idiot("Rebecca")
+		var anotherIdiot = Idiot("Rebecca")
+		
+		public val test2 = Tester.InnerTester.GetString()
+		
+		//val emptyList = System.Collections.Generic.List()				
 		
 		// Test tuple assignment
 		var tupleVar = (5, "string")
-		val tupleVal = (10, "string")
+		val tupleVal = (10, "string")	
+		
+		val someVal = (5, "string")[0]
+		
+		// Test fields from tuple extractor
+		val (intVal, strVal) = tupleVal
+				
 	}
 		
+	// Test other classes in the same assembly
+	public class TestOther {
+		
+		public val accessor = AccessorTests(10)
+		
+		public val testString  = accessor.test2
+		
+	}
+							
+	// Test type variables
+	public class SetOf[T](elements : list[T]) {
+		public val Head = elements.Head
+		public val Tail = elements.Tail
+		public val TailLength = Tail.Length
+	}
+	
+	
+	
 }

@@ -18,5 +18,12 @@ namespace Nemerle.Compiler
       | _ when obj != null => Some(obj)
       | _ => None()
     }
+    
+    public OrElse[T](this current_option: option[T], other_option: option[T]) : option[T] {
+      match(current_option) {
+        | Some(val) => Some(val)
+        | None => other_option
+      }
+    }
   }
 }

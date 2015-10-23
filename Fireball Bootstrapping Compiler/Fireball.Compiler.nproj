@@ -81,9 +81,6 @@
     <Compile Include="fbcc\typing\EnvResolvableResolver.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="fbcc\typing\MemberRebinder.n">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="fbcc\typing\NamespaceResolvableFinder.n">
       <SubType>Code</SubType>
     </Compile>

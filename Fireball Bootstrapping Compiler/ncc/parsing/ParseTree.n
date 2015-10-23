@@ -514,6 +514,10 @@ namespace Nemerle.Compiler.Parsetree
 
     | EnumOption { value : option [PExpr]; }
 
+    // Used to determine the output priority
+    [RecordIgnore]
+    internal IsDefaultCtorField : bool { get; set; default { false } }
+    
     // It's prevent esers from fortuitous modification of Env property.
     public SetEnv(env : GlobalEnv) : void { _env = env; }
     [Accessor] internal mutable _env          : GlobalEnv;

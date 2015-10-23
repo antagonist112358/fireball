@@ -844,6 +844,14 @@ namespace Nemerle.Compiler
       dt.Resolve ();
       TExpr.Delayed (expected, dt)
     }
+    
+    public DelayedTypingAction(expr: PExpr, expected: TypeVar, action: bool -> option [TExpr]) : TExpr
+    {
+      def delayedAction = DelayedLambdaAction(action);
+      def kind = DelayedTyping.Kind.Macro(delayedAction);
+      def dt = DelayedTyping(expr, this, kind, expected);
+      TExpr.Delayed(expected, dt)
+    }
 
 
     /** Filter out wrong nodes, and if more then one left -- make the
@@ -3640,7 +3648,53 @@ namespace Nemerle.Compiler
       }
     }
 
+    // Attempts to extract the type information before function/variable/value typing has occured
+    public CheckForLocalField(expr : PExpr) : bool {
+      | <[ $subexpr . $_ ]> => CheckForLocalField(subexpr)
+      
+      | PExpr.Ref(name) =>
+        match(current_type.AstParts.Map(_.GetMembers()).Flatten().Filter(memb => memb is Parsetree.ClassMember.Field && memb.PName.Equals(name)).Map(fld => fld :> Parsetree.ClassMember.Field).HeadOption()) {
+          | Some => true
+          | _ => false
+        }
+        
+      | _ => false
+    }
+    
+    // Attempts to extract the type information before function/variable/value typing has occurred
+    //public TryInferType(expression : PExpr, in_type : option[FixedType]) : list[OverloadPossibility] {
+    //  def tyVarEnv = if (CurrentFunction != null) CurrentFunction.tenv else current_type.Tenv;
+      
+    //  def check_flags(func) : bool {
+    //    func.Attributes %&& NemerleModifiers.Static && (
+    //      func.Attributes %&& NemerleModifiers.Public ||
+    //      func.Attributes %&& NemerleModifiers.Internal
+    //    )
+    //  }            
+      
+    //  match(expression) {
+    //    // Some nested dot expression (type)
+    //    | <[ $obj . $(expr : expr) ]> when CanBeTypeName(obj) => 
+    //      match(TryBindType(tyVarEnv, obj)) {
+    //        | Some(typevar) => TryInferType(expr, typevar.Fix())
+    //        | None => []
+    //      }
+          
+        
+        
+    //  }
+    //}
 
+    //private TryBindType(tyVarEnv : TypeVarEnv, expr : PExpr) : option[TypeVar] {
+    //  try {
+    //    Some(current_type.BindType(tyVarEnv, expr))
+    //  } catch {
+    //    | _ => None()
+    //  } finally {
+    //    solver.PopState();
+    //  }
+    //}
+    
     public TypeNameFull(expr : PExpr, expected : TypeVar, for_completion = false) : list[OverloadPossibility]
     {
       mutable mem_name = null;
@@ -3666,7 +3720,7 @@ namespace Nemerle.Compiler
             else obj
           | _ => null
         };
-
+      
       // Message.Debug ($ "type name: $idl");
       def from_this =
         match (expr)
@@ -3686,6 +3740,19 @@ namespace Nemerle.Compiler
           | _ => []
         };
 
+      def from_ctor = match(expr)
+      {
+        | <[ $obj (..$_) ]> when CanBeTypeName(obj) =>
+          try {
+            solver.PushState();
+            def type = current_type.BindType(tyVarEnv, obj).Fix();
+            TypeToConstructor(null, type.TypeInfo);
+          } finally {
+            solver.PopState();
+          }
+        | _ => []
+      }
+        
       def globals =
         if (obj == null)
         {
@@ -3714,7 +3781,7 @@ namespace Nemerle.Compiler
         {
           | FixedType.Class(tc, _) =>
             NList.FoldLeft(tc.LookupMember(mem_name, for_completion), [], (x, acc) => (null, x) :: acc);
-
+            
           | _ =>
             ReportError (messenger, $ "$obj is not a class type");
             []
@@ -3738,18 +3805,19 @@ namespace Nemerle.Compiler
         | _ => []
       }
       
-      match (from_this + from_global)
+      match (from_this + from_global + from_ctor)
       {
         | [] =>
           if (globals.IsEmpty)
           {
             def overloads = tryInterpretAsEnumField(expr);
-            when (overloads.IsEmpty)
+            when (overloads.IsEmpty && !CheckForLocalField(expr)) {
               if (messenger.InErrorMode && solver.IsTopLevel)
                 when (UnboundName(expr))
                   ReportError(messenger, $"the meaning of `$expr' does not allow this operation");
               else
                 ReportError(messenger, "you should not see that, please report as a bug");
+            }
             overloads
           }
           else
@@ -3771,9 +3839,10 @@ namespace Nemerle.Compiler
 
     public TypeName (expr : PExpr, expected : TypeVar) : TExpr
     {
+      
       match (TypeNameFull (expr, expected))
       {
-        | [] => TExpr.Error ()
+        | [] => TExpr.Error()
         | overloads =>
           def result = MakeOverloadedNode(expr, overloads, expected);
           result
@@ -4024,6 +4093,18 @@ namespace Nemerle.Compiler
       }
 
       mutable parameters = parms.Map(compile_parm);
+
+      //def type_later(should_scream) {
+      //  match(TypeExpr(callExpr)) {
+      //    | TExpr.Error => 
+      //      if (!should_scream) None()
+      //      else {
+      //        ReportError(messenger, $"could not infer type of expression $callExpr during delayed typing.");
+      //        None()
+      //      }
+      //    | texpr => Some(texpr)
+      //  }
+      //}
       
       def fnc =
         match (pfnc, parameters)
@@ -4126,8 +4207,8 @@ namespace Nemerle.Compiler
             def ex = TypeExpr (pfnc, FreshTypeVar());
             match (ex.Type.Hint)
             {
-              | Some (FixedType.Class (tc, _)) when tc.IsDelegate => TypeExpr (<[ $(ex : typed).Invoke ]>)
-              | _ => ex
+              | Some (FixedType.Class (tc, _)) when tc.IsDelegate => TypeExpr (<[ $(ex : typed).Invoke ]>)              
+              | _ =>  ex
             }
         };
 
