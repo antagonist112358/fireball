@@ -201,6 +201,13 @@ namespace Nemerle.Compiler
       this.local_context = LocalContext.Empty; // sometimes it is needed
       assert(solver.IsTopLevel);
     }
+    
+    public this(env :GlobalEnv, tb: TypeBuilder, mb: MethodBuilder) {
+      this(env.Manager, tb, mb);
+      this.env = env;
+      this.local_context = LocalContext.Empty; // sometimes it is needed
+      assert(solver.IsTopLevel);      
+    }
 
     /** Prepared for walking through a local function body typing it. */
     public this (parent : Typer, fn : TFunHeader)

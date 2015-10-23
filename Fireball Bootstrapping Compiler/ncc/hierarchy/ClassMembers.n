@@ -40,6 +40,14 @@ using PT  = Nemerle.Compiler.Parsetree;
 
 namespace Nemerle.Compiler {
 
+internal module InitializerHelper {
+  
+  public static EmptyMemberBuilder(par : TypeBuilder) : MethodBuilder {
+    def function = <[ decl: public EmptyHeader () : void { } ]>;
+    MethodBuilder(par, function)
+  }
+}
+  
 public variant RefTo
 {
   | None
@@ -523,13 +531,19 @@ public partial class FieldBuilder : MemberBuilder, IField
     
     isResolvable = this.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute");
     
+    def type_initialization_expression(expr : Parsetree.PExpr) {
+      Typer(fieldAst.Env, par, InitializerHelper.EmptyMemberBuilder(par)).TypeExpr(expr).Type
+    }
+    
     // check if field's type is valid
     match (fieldAst.ty) {
       | <[ _ ]> => //Message.Error ("type inference for fields is available only when assigning literal value to them")
         try {
           ty = InitializerTyped.FixedType();
         } catch {
-          | _ => ty = par.BindType(fieldAst.Initializer).Fix();
+          | _ => //ty = par.BindType(fieldAst.Initializer).Fix();
+            def exprType = type_initialization_expression(fieldAst.Initializer);
+            ty = exprType.Fix()
         }
           
       | _ =>

@@ -42,24 +42,13 @@ namespace Fireball.Tests {
 		// Test fields from tuple extractor
 		val (intVal, strVal) = tupleVal
 				
-	}
-		
-	// Test other classes in the same assembly
-	public class TestOther {
-		
-		public val accessor = AccessorTests(10)
-		
-		public val testString  = accessor.test2
-		
-	}
-							
-	// Test type variables
-	public class SetOf[T](elements : list[T]) {
-		public val Head = elements.Head
-		public val Tail = elements.Tail
-		public val TailLength = Tail.Length
-	}
+	}	
 	
+	// Test other classes in the same assembly
+	public class TestOther {		
+		public val accessor = AccessorTests(10)		
+		public val testString  = accessor.test2		
+	}
 	
 	
 }

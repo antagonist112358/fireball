@@ -496,7 +496,11 @@ public partial class TypeBuilder : TypeInfo
         base.TyparmsCount
     }
   }
-
+  
+  internal TyparmVars : list[PT.Splicable] {
+    get { _ast.typarms.tyvars }
+  }
+  
   // TODO: KWD - Need to fix this to handle traits properly 
   public AddImplementedInterface(t : PT.PExpr) : void
   {
