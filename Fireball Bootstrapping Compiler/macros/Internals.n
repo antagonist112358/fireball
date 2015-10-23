@@ -36,7 +36,77 @@ namespace Nemerle.InternalMacros
   {
     <[ {.. $(body.Reverse ()) } ]>
   }
+  
+  internal module ConstructorInjectorHelper 
+  {
+    public DoMacro(t: TypeBuilder, val : PT.PExpr) : void
+    {      
+      def init = val;
+      def is_static = t.Attributes %&& NemerleModifiers.Static;
+      
+      def static_attr =
+        if (is_static) BindingFlags.Static
+        else BindingFlags.Instance;
+      
+      def mems = t.GetConstructors (static_attr %| BindingFlags.Public %|
+                                    BindingFlags.NonPublic %|
+                                    BindingFlags.DeclaredOnly);
+      
+      def inject (ctor: IMethod)
+      {
+        def ctor = ctor :> MethodBuilder;
+        def bd = ctor.Body;
+        def nbody = Util.locate(ctor.Body.Location, 
+          match (bd) {
+            | <[ {.. $(elems) } ]> =>
+              // initializer macro is a syntactic placeholder for our initialization
+              // assignments - it will later reverse their order
+              def fetch_inits (seq) {
+                | <[ Nemerle.InternalMacros.initializer (..$inits) ]> :: rest =>
+                  (init :: inits, rest)
+                | _ => ([init], seq)
+              }
+              
+              match (elems) {
+                | (<[ base (..$_) ]> as b ) :: rest =>
+                  def (inits, body) = fetch_inits (rest);
+                  def i = <[ Nemerle.InternalMacros.initializer (..$inits) ]>;
+                  <[ {.. $(b :: i :: body) } ]>
+
+                // if other ctor was called, then we do not emit initializers
+                | <[ this (..$_) ]> :: _ => bd
+                | _ =>
+                  def (inits, body) = fetch_inits (elems);
+                  def i = <[ Nemerle.InternalMacros.initializer (..$inits) ]>;
+                  <[ {.. $(i :: body) } ]>
+              }
+            // this is our first initializer
+            | _ => <[ Nemerle.InternalMacros.initializer ($init); $bd ]>
+          });
+
+        ctor.Body = nbody
+      }
+      
+      match (mems) {
+        | [] => 
+          def loc = t.Location;
+          def loc1 = Location(loc.FileIndex, loc.Line, loc.Column);
+          Util.locate(loc1, 
+            when (is_static) 
+              t.Define (<[ decl: static this () { Nemerle.InternalMacros.initializer ($init); } ]>)
+            );
+
+        // inject intializers into static ctor
+        | _ => mems.Iter (inject)
+      }      
+    }
+  }
  
+  // This macro takes class level declarations and injects them into the classes constructor
+  [Nemerle.MacroUsage (Nemerle.MacroPhase.WithTypedMembers, Nemerle.MacroTargets.Class)]
+  macro InjectConstructor (t: TypeBuilder, val) {
+    ConstructorInjectorHelper.DoMacro(t, val)
+  }
   
   // this macro is a hack for lack of type inference at class level
   [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeTypedMembers,
@@ -54,7 +124,7 @@ namespace Nemerle.InternalMacros
          | <[ $_ : $ty ]> | <[ $_ :> $ty ]> =>
            f.ty = ty
            
-         | _ => 
+         | _ => () /*
            try {
              def expr = Nemerle.Macros.ImplicitCTX ().TypeExpr (val);
              unless (expr is Typedtree.TExpr.Error)
@@ -63,6 +133,7 @@ namespace Nemerle.InternalMacros
            catch {
              | _ => ()   
            }
+           */
        }
       | _ => ()
     }

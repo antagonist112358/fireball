@@ -3,13 +3,14 @@ namespace Fireball.Tests {
 	using System
 	using System.Linq
 	using SCG = System.Collections.Generic
+	using Nemerle
 	using Nemerle.Collections
 
 	// Test type variables
 	public class SetOf[T](elements : list[T]) {
 		public val Head = elements.Head
 		public val Tail = elements.Tail
-		public val TailLength = Tail.Length
+		public val TailLength = Tail.Length		
 	}	
 	
 	public class TestsInitializationExpressions[T](sequence: SCG.IEnumerable[T]) {
@@ -22,5 +23,39 @@ namespace Fireball.Tests {
 			})
 		}
 	
+		when(sequence.Count() > 0)
+			Console.WriteLine("Collection has elements")
+			
+		val start = 0
+		
+		val head = if(!sequenceEmpty) Some(sequence.First()) else None()				
+						
+	}
+	
+	public class FileOpener(files : SCG.IEnumerable[string], fileMode: System.IO.FileMode) {
+		val hasInputFiles = (files.Count() > 0)
+		
+		using System.IO
+		
+		var openFileHandles = [] : list[FileStream]
+		
+		when (hasInputFiles) {
+			val mode = fileMode
+			foreach(file in files) {			
+				when(File.Exists(file)) {
+					openFileHandles = FileStream(file, mode) :: openFileHandles
+				}
+			}
+			openFileHandles = openFileHandles.Reverse()
+		}
+		
+		def HasFiles : bool { get { openFileHandles.Length > 0 } }
+		
+		def OpenFiles : SCG.IEnumerable[FileStream] {
+			get {
+				foreach(openFile in openFileHandles)
+					yield openFile
+			}
+		}
 	}
 }

@@ -154,7 +154,13 @@ namespace Nemerle.Compiler
                 | [FixedType.Class(tyinfo, [])] => makeTypeInfos([tyinfo], ignore_args)
                 | [FixedType.Class(tyinfo, tyargs)] =>
                   when(args.Length != tyargs.Length)
-                    freshargs = tyargs.Map( tyarg => bind_simple_named_type(env, currentType, Parsetree.Name((tyarg :> FixedType.StaticTypeVarRef).tyvar.Name), [(tyarg :> FixedType.StaticTypeVarRef).tyvar.Name], [], loc));
+                    freshargs = tyargs.Map( tyarg => {
+                      match(tyarg) {
+                        | FixedType.StaticTypeVarRef =>
+                          bind_simple_named_type(env, currentType, Parsetree.Name((tyarg :> FixedType.StaticTypeVarRef).tyvar.Name), [(tyarg :> FixedType.StaticTypeVarRef).tyvar.Name], [], loc)
+                        | other => other
+                      }                      
+                    });
                   makeTypeInfos([tyinfo], ignore_args)
                 | _ => SCG.List()
               }

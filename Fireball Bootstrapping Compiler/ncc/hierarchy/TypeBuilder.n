@@ -2788,7 +2788,7 @@ public partial class TypeBuilder : TypeInfo
         });
 
     mods.macro_attrs = macro_attrs;
-
+        
     foreach ((_, expr) in macro_attrs)
     {
       def expansion = TypesManager.AttributeMacroExpansion (target, stage, expr, self_parm, this, meth);

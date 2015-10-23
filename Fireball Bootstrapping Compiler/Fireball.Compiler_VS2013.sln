@@ -1,6 +1,8 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{EDCC3B85-0BAD-11DB-BC1A-00112FDE8B61}") = "Fireball.Compiler", "Fireball.Compiler.nproj", "{0C558E36-7DF9-4A68-9015-B316DD59C0CB}"
 EndProject
 Project("{EDCC3B85-0BAD-11DB-BC1A-00112FDE8B61}") = "fbcc", "fbcc.nproj", "{0C558E38-7DF9-4A68-9015-B316DD59C0CB}"

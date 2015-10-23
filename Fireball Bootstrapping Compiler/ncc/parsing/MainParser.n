@@ -417,6 +417,29 @@ namespace Nemerle.Compiler
       res
     }
     
+    static IsTopLevelToken(tok : Token) : bool {
+        | Token.Keyword(k) =>
+          match (k)
+          {
+            // Adding record type
+            | "public" | "private" | "static" | "internal"
+            | "abstract" | "sealed" | "partial" | "class" | "module" | "variant" | "record"
+            | "enum" | "trait" | "struct" | "delegate" | "macro"  => true
+            | _                                                   => false
+          }
+
+        | Token.Identifier("type") when tok.Next is Token.Identifier => true
+        
+        // This is workaround for complete using directive. Without it compiler
+        // parse "u" (which user type for complete "using") as expression and
+        // wrap it in auto-module.
+        | Token.Identifier (_)
+        | Token.IdentifierToComplete (_)                              => IsTopLevelToken (tok.Next)
+        | Token.SquareGroup
+        | Token.Namespace | Token.Import | null                       => true
+        | _                                                           => false      
+    }
+    
     static IsTopLevel (tok : Token.LooseGroup) : bool
     {
       def testToken(_tok)
@@ -452,6 +475,10 @@ namespace Nemerle.Compiler
       stream = newstream;
     }
 
+    rewrite_stream(stream_token : Token) : void {
+      stream = stream_token;
+    }
+    
     pop_stream () : void {
       stream = streams_stack.Pop ();
       when (streams_stack.IsEmpty)
@@ -658,7 +685,7 @@ namespace Nemerle.Compiler
       loop([f()])
     }    
 
-    ParseClassMembers[T](first : Token, parentType : string) : SCG.List[ClassMember]
+    ParseClassMembers[T](first : Token, parentType : string, macro_collector : SCG.List[PExpr] = null) : SCG.List[ClassMember]
     {
       push_stream(first);
 
@@ -666,7 +693,7 @@ namespace Nemerle.Compiler
       def current_env = env;
 
       while (stream != null)
-        ParseClassMember(parentType, members);
+        ParseClassMember(parentType, members, macro_collector);
       
       pop_stream("type member");
 
@@ -1099,8 +1126,12 @@ namespace Nemerle.Compiler
                   pop_stream ();
                   when (key == "variant")
                     in_variant = true;
-                  members = ParseClassMembers(children, key);
+                  def macro_collector = SCG.List();
+                  members = ParseClassMembers(children, key, macro_collector);
                   _ = members.RemoveAll(_ is ClassMember.TypeDeclaration (TopDeclaration.Delegate(null)));
+                  
+                  foreach(macro_attr in macro_collector) { mods.AddCustomAttribute(macro_attr); }
+                  
                   in_variant = false
               }
 
@@ -1230,13 +1261,13 @@ namespace Nemerle.Compiler
       res
     }
 
-    ParseClassMember (parentType : string, members : SCG.List[ClassMember]) : void
+    ParseClassMember (parentType : string, members : SCG.List[ClassMember], macro_collector : SCG.List[PExpr] = null) : void
     { 
       def start_tok = get_token ();
       
       match (start_tok)
       {
-        | Token.LooseGroup (toks) =>
+        | Token.LooseGroup (toks) as group =>
           push_stream (toks);
 
           mutable customs = get_customs ();
@@ -1472,7 +1503,20 @@ namespace Nemerle.Compiler
                                       loc = loc, body = FunBody.Parsed(<[]>), implemented = []);
                 members.Add(dummy_method);
 
-              | _ => parseNestedTypeDeclaration()
+              | _ =>
+                if (macro_collector == null || IsTopLevelToken(tok)) parseNestedTypeDeclaration()
+                else {
+                  // Remove the toks from the loose group
+                  pop_stream();
+                  rewrite_stream(group);
+                  push_stream(group.Child);
+                  def ctor_expr = parse_expr(TokenStoppers.None);
+                  def ctor_macro = <[ Nemerle.InternalMacros.InjectConstructor( $ctor_expr ) ]>;
+                  macro_collector.Add(ctor_macro);
+                  pop_stream("ctor injected expression");
+                  shift();
+                  push_stream(null); // For class member
+                }              
             }
           
           }
