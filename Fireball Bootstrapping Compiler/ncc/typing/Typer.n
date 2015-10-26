@@ -1751,6 +1751,8 @@ namespace Nemerle.Compiler
         | PExpr.ParmOut =>
           ReportFatal (messenger,
                        "ref and out parameters are only allowed in function calls")
+        | PExpr.MatchCases(_) =>
+          ReportFatal (messenger, "match cases only used in PartialFunction construction")
 
         | PExpr.DefMutable(x, null) =>
           def res = DoType(PExpr.DefMutable(x, <[ $(TExpr.DefaultValue(FreshTypeVar()) : typed) ]>), expected, is_toplevel_in_seq);
@@ -4483,19 +4485,19 @@ namespace Nemerle.Compiler
       mutable disable_warnings = false;
       def cases = SCG.List();
 
-      foreach (case in mtch.cases)
+      foreach (mcase in mtch.cases)
       {
-        when (case.disable_warnings)
+        when (mcase.disable_warnings)
           disable_warnings = true;
 
         PushLocals();
         //log (TYPING, $"{  typing patterns: $(case.patterns), t=$matched_value_type");
-        def patterns = TypePatterns(matched_value_type, case.patterns);
+        def patterns = TypePatterns(matched_value_type, mcase.patterns);
         //log (TYPING, $"done typing patterns: $(case.patterns), t=$matched_value_type  }");
         messenger.CleanLocalError();
         def expected2 = FreshTypeVar();
         expected2.ImplicitCastHint = expected.ImplicitCastHint;
-        def caseBody = TypeExpr(case.body, expected2);
+        def caseBody = TypeExpr(mcase.body, expected2);
         messenger.CleanLocalError();
         PopLocals();
 

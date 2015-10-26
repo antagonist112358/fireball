@@ -74,6 +74,11 @@
       <Project>{0c558e36-7df9-4a68-9015-b316dd59c0cb}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="Fireball.Internal\Fireball.nproj">
+      <Name>Fireball</Name>
+      <Project>{1c7e9f0f-bfe7-4ba4-b00f-535464a3307f}</Project>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <Target Name="AfterBuild">
     <GetAssemblyIdentity AssemblyFiles="$(OutputPath)\$(AssemblyName).dll">

@@ -1,0 +1,95 @@
+using Fireball;
+using Nemerle.Compiler;
+using Nemerle.Compiler.Parsetree;
+
+namespace Nemerle.Core
+{
+  /// <summary>
+  /// Description of PartialFunctionBuilder.
+  /// </summary>
+  internal module PartialFunctionBuilder
+  {    
+    public BuildWithName(name: Name, in_match: PExpr.Match, typer: Typer) : ClassMember.TypeDeclaration {
+      def @match = FixupCases(in_match);
+      def isDefined = MakeIsDefined(name.Location, @match.cases);
+      def ret_texpr = typer.TypeExpr(<[ fun (x) { match(x) { ..$(@match.cases) } } ]>);
+      def ret_ty_name = (ret_texpr.ty.Fix() :> FixedType.Fun).to.Fix().TypeName;
+      def ret_ty = <[$(Name(ret_ty_name) : name)]>;
+      
+      <[ decl:
+        private class $name [A] : PartialFunction[A, $ret_ty ] {
+          public override Apply(x: A) : $ret_ty {
+            match(x) { ..$(@match.cases) }
+          }
+          
+          public override IsDefinedAt(x: A) : bool { $isDefined }
+        }
+      ]>
+    }
+    
+    private FixupCases(@match: PExpr.Match) : PExpr.Match {
+      def expr = @match.expr ?? <[ x ]>;
+      def set_true(@case) { 
+        @case.disable_warnings = true;
+        @case
+      }
+      PExpr.Match(expr, @match.cases.Map(set_true(_)))
+    }
+    
+    private MakePartialFunctionType(ty: TypeVar, ret_ty : TypeVar) : FixedType.Class {
+      FixedType.Class(ret_ty.Manager.InternalType.PartialFunction_tc, [ty, ret_ty ])
+    }
+    
+    private MakeIsDefined(loc: Location, cases : list[MatchCase]) : PExpr {
+      def disable(@case) { @case.disable_warnings = true; @case }
+      def defined = cases.Map(case => match(case) {
+        | <[ case: $check => $_ ]> when check is PExpr.Wildcard =>
+          Message.Error("Partial Function case should not have any wildcard cases.");
+          None()
+        | <[ case: $check => $_ ]> => Some(disable(MatchCase([check], <[ true ]>)))
+        | _ => 
+          Message.Error($"invalid match case $case");
+          None()
+      }).Filter(_.HasValue).Map(case_option => case_option.Value) + [
+        MatchCase([PExpr.Wildcard(loc)], <[ false ]>)
+      ];
+      
+      <[ match(x) { ..$defined } ]>
+    }
+    
+  }
+  
+  /// <summary>
+  /// Creates a partial function.
+  /// </summary>
+  macro PartialFunctionMacro(match_expr) 
+  syntax("PartialFunc", match_expr)
+  {
+    def @match = match(match_expr) {
+      | PExpr.Match as matched => Some(matched)
+      | _ => 
+        Message.Error($"in partial function declaraction: expecting match cases, got $match_expr");
+        None()
+    }
+    
+    if (!(@match.HasValue))
+      PExpr.Wildcard(match_expr.Location);
+    else {
+      def typer = Macros.ImplicitCTX();
+      def builder = typer.CurrentTypeBuilder;
+      def name = Macros.NewSymbol("PartialFunction");
+      def loc = match_expr.Location;
+      
+      match (builder.GetRegisteredName(this)) {
+        | Some(regname) => <[ $(PExpr.Ref(loc, regname)) () ]>
+        | _ =>
+          def tydecl = PartialFunctionBuilder.BuildWithName(name, @match.Value, typer);
+          _ = builder.RegisteredDefine(this, name, tydecl);
+          def tb = builder.DefineNestedType(tydecl, true);
+          tb.Compile();
+          <[ $(PExpr.Ref(loc, name)) () ]>
+      }
+      
+    }
+  }
+}

@@ -105,6 +105,23 @@ namespace Nemerle.Compiler
 
     #endregion
 
+    public TypeName : string {
+      get match(this) {
+        | Class(tc, _) => this.ToString()
+        | StaticTypeVarRef (staticTypeVar) => staticTypeVar.Name
+        | Fun(from, to) => $"$(from.Fix().TypeName) -> $(to.Fix().TypeName)"
+        | Tuple(args) => 
+          def names : list[string] = args.Map(a => a.Fix().TypeName);
+          def emit = System.String.Join("*", names);
+          $"( $emit )"
+        | Array(arrty, _) => arrty.Fix().TypeName
+        | Ref(tv)
+        | Out(tv) => tv.Fix().TypeName
+        | Void => "void"
+        | Intersection(types) => "Intersection"
+      }
+    }
+    
     //public type TyVarRef = StaticTypeVarRef;
 
     /** Check for type equality, taking intersection types

@@ -1,0 +1,30 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball
+{
+  
+  /// <summary>
+  /// Description of PartialFunction.
+  /// </summary>
+  public abstract class PartialFunction[A, B]
+  {
+    public abstract IsDefinedAt(x: A) : bool;
+    
+    public abstract Apply(x: A) : B;
+    
+    public ApplyOrElse(x: A, @else: B) : B {
+      if (IsDefinedAt(x)) Apply(x) else @else
+    }
+    
+    public static @:> [X, Y] (@partial: PartialFunction[X, Y]) : X -> Y {
+      @partial.Apply;
+    }
+  }
+}

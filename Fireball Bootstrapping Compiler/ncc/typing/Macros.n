@@ -710,6 +710,19 @@ public partial module Macros
                                  $(Lift (cases, QuotedMatchCase))) ]>
         }
 
+      | PExpr.MatchCases(cases) =>
+        match (cases) {
+          | [cas] when cas.patterns is [] =>
+            match (cas.body) {
+              | PExpr.Ellipsis (e) =>
+                <[ PExpr.MatchCases ($(quoted_expr (e))) ]>
+              | _ =>
+                Util.ice ("parser generated strange match_cases")
+            }
+          | _ => <[ PExpr.MatchCases ($(Lift (cases, QuotedMatchCase))) ]>
+        }
+        
+        
       | <[ throw $exc ]> => 
         <[ PExpr.Throw ($(quoted_expr (exc))) ]>
 
@@ -1113,6 +1126,20 @@ public partial module Macros
               def cases = NList.Map (cases, go_case);
               <[ match ($(traverse (mexpr))) {.. $cases } ]>
 
+            | PExpr.MatchCases(cases) =>
+              def go_case (c : MatchCase) {
+                def go_guard (g : PExpr) {
+                  | <[ $pat when $e ]> => <[ $(traversep (pat)) when $(traverse (e)) ]>
+                  | _ => traversep (g)
+                };
+                def <[ case: | ..$guards => $exp ]> = c;
+                def guards = NList.Map (guards, go_guard);
+                <[ case: | ..$guards => $(traverse (exp)) ]>
+              };
+
+              def cases = NList.Map (cases, go_case);
+              PExpr.MatchCases(cases)
+              
             | <[ throw $exc ]> => <[ throw $(traverse (exc)) ]>
 
             | PExpr.TryFinally (body, handler) =>

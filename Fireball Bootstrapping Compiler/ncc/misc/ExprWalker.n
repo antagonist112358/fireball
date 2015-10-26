@@ -460,6 +460,7 @@ namespace Nemerle.Compiler
         | ToComplete                                    // { body : Name; }
         | TypedPattern                                  // { body : Typedtree.Pattern; }
         | TypedType                                     // { body : TypeVar; }
+        | MatchCases
         | Void                       => ()
         | Typed           (body)     => Go(body);       // { body : Typedtree.TExpr; }
         | As              (e, sp)                       // { pat : PExpr; name : Splicable; }

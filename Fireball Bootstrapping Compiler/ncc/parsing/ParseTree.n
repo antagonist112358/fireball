@@ -955,7 +955,7 @@ namespace Nemerle.Compiler.Parsetree
                         this(loc : Location, expr : PExpr, cases : list [MatchCase]) { this(loc, expr, cases, Location.Default); }
                         this(expr : PExpr, cases : list [MatchCase]) { this(expr, cases, Location.Default); }
                       }
-
+    | MatchCases      { cases : list[MatchCase] }
     | Ref             {
                         mutable name : Name;
 
@@ -1509,7 +1509,7 @@ namespace Nemerle.Compiler.Parsetree
       _patternsLocation = patternsLocation;
       _arrowLocation    = arrowLocation;
     }
-
+    
     public patterns : list [PExpr];
     public body : PExpr;
     public mutable disable_warnings : bool;

@@ -470,6 +470,8 @@ namespace Nemerle.Compiler {
     public mutable IgnoreFieldAttribute_tc              : TypeInfo;
     public mutable IgnoreConstructorAttribute_tc        : TypeInfo;
     public mutable IdentityFunction_tc                  : TypeInfo;
+    
+    public mutable PartialFunction_tc                   : TypeInfo;
 
     mutable function_types                              : array [FunctionType];
     mutable tuple_types                                 : array [TupleType];
@@ -723,6 +725,8 @@ namespace Nemerle.Compiler {
         InternalType.IgnoreConstructorAttribute_tc = lookup ("Nemerle.Internal.IgnoreConstructorAttribute");
 
         InternalType.IdentityFunction_tc = lookup("Nemerle.Utility.Identity");
+        
+        InternalType.PartialFunction_tc = lookup("Fireball.PartialFunction", 2);
       }
     }
 

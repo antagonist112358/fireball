@@ -79,8 +79,11 @@
     </Compile>
     <Compile Include="Internal\TraitSubstructureAttribute.n">
       <SubType>Code</SubType>
-    </Compile>		
+    </Compile>
     <Compile Include="Numeric.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PartialFunction.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.n" />

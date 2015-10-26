@@ -73,6 +73,25 @@ public partial class TypeBuilder : TypeInfo
   mutable underlying_enum_type  : FixedType.Class;
   public UnimplementedMembers   : list[FixedType.Class * IMember] { get; private set; }
 
+  [Accessor(MacroBuilderRegistry)]
+  private builder_registry      : Hashtable[IMacro, PT.Name * PT.ClassMember.TypeDeclaration] = Hashtable();
+  
+  public RegisteredDefine(source: IMacro, name: PT.Name, tyDecl: PT.ClassMember.TypeDeclaration) : bool {
+    match(builder_registry.Get(source)) {
+      | Some =>  false
+      | None =>
+        builder_registry.Add(source, (name, tyDecl));
+        true
+    }
+  }
+  
+  public GetRegisteredName(source: IMacro) : option[PT.Name] {
+    match(builder_registry.Get(source)) {
+      | Some((name, _)) => Some(name)
+      | _ => None()
+    }
+  }
+  
   //list of instance field initializers
   public mutable init_list : list[PT.PExpr] = [];
 
@@ -3178,5 +3197,6 @@ public partial class TypeBuilder : TypeInfo
   public override IsConditional : bool { get { !_conditions.IsEmpty } }
 
   public override GetConditions() : list[string] { _conditions }
+
 }
 } // ns
