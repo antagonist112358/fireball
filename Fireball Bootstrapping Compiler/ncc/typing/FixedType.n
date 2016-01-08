@@ -107,7 +107,7 @@ namespace Nemerle.Compiler
 
     public TypeName : string {
       get match(this) {
-        | Class(tc, _) => this.ToString()
+        | Class(_, _) => this.ToString()
         | StaticTypeVarRef (staticTypeVar) => staticTypeVar.Name
         | Fun(from, to) => $"$(from.Fix().TypeName) -> $(to.Fix().TypeName)"
         | Tuple(args) => 
@@ -118,7 +118,7 @@ namespace Nemerle.Compiler
         | Ref(tv)
         | Out(tv) => tv.Fix().TypeName
         | Void => "void"
-        | Intersection(types) => "Intersection"
+        | Intersection(_) => "Intersection"
       }
     }
     
@@ -620,7 +620,7 @@ namespace Nemerle.Compiler
             System.Reflection.GenericParameterAttributes.ReferenceTypeConstraint ||
             found: {
               foreach (ctr in s.Constraints) {
-                | Class (ti, _) when ti.IsInterface => {}
+                | Class (ti, _) when ti.IsTrait => {}
                 | _ when (ctr.CanBeNull) => found (true);
                 | _ => {}
               }
@@ -649,11 +649,11 @@ namespace Nemerle.Compiler
 
     public override IsPointer : bool { get { TypeInfo?.IsPointer } }
 
-    public IsInterface : bool
+    public IsTrait : bool
     {
       get {
         match (this) {
-          | Class (tc, _) => tc.IsInterface
+          | Class (tc, _) => tc.IsTrait
           // XXX hmm..
           // | Intersection (lst) =>
           //   NList.ForAll (lst, fun (x : FixedType) { x.IsInterface })

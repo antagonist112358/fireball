@@ -731,7 +731,7 @@ namespace Nemerle.Compiler
             when (declaration.IsPartial) {
                 output.Write ("partial ");
             }
-            output.Write ("interface ");
+            output.Write ("trait ");
           } else {
             when ((attributes & TypeAttributes.Sealed) != 0)
                 output.Write ("sealed ");

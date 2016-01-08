@@ -43,7 +43,8 @@ namespace Nemerle.Compiler
   [ManagerAccess]
   public class StaticTypeVar : System.IEquatable[StaticTypeVar]
   {
-              mutable gtype : System.Type; 
+    mutable gtype                     : System.Type;
+    mutable builder                   : SRE.GenericTypeParameterBuilder;
     internal          id              : int;
                       name            : string;
     mutable           special         : GenericParameterAttributes;
@@ -51,6 +52,7 @@ namespace Nemerle.Compiler
     mutable           supertype       : option[FixedType] = None();
     internal  mutable current_type    : NC.TypeInfo = null;
     internal  mutable current_method  : IMethod = null;
+    internal  mutable attributes      : AttributesAndModifiers = AttributesAndModifiers.Empty;
 
     public override   ToString()      : string
     {
@@ -201,7 +203,7 @@ namespace Nemerle.Compiler
         lst.ForAll (
           fun(x)
           {
-            | x is FixedType.Class when !x.tycon.IsInterface => 
+            | x is FixedType.Class when !x.tycon.IsTrait => 
                 if(c == null)
                 {
                   c = x;
@@ -209,7 +211,7 @@ namespace Nemerle.Compiler
                 }
                 else
                 {
-                  Message.Error($"generic parameter cannot be constrained by multiple non-interfaces : $(c), $(x)");
+                  Message.Error($"generic parameter cannot be constrained by multiple non-trait types : $(c), $(x)");
                   false
                 }
             | _ => true
@@ -295,8 +297,26 @@ namespace Nemerle.Compiler
       Util.cassert(x != null);
       x.SetGenericParameterAttributes(special);
       gtype = x;
+      builder = x;
     }
 
+    internal SaveCustomTypeParameterAttributes(typeBuilder: TypeBuilder) : void
+    {
+        attributes.SaveCustomAttributes(typeBuilder,
+          fun(target, attr, shouldEmit)
+          {
+            if (target %&& System.AttributeTargets.GenericParameter)
+            {              
+              when(shouldEmit) {
+                builder.SetCustomAttribute (attr);
+              }
+              null
+            }
+            else
+              "generic parameter " + name
+          })
+    }
+    
     internal UpdateConstraints() : void
     {
       def gbuil = gtype :> SRE.GenericTypeParameterBuilder;
@@ -304,7 +324,7 @@ namespace Nemerle.Compiler
       def ifaces =
         match (constraints) 
         {
-          | (FixedType.Class as x) :: _ when x.tycon.IsInterface => constraints
+          | (FixedType.Class as x) :: _ when x.tycon.IsTrait => constraints
           | x :: xs => gbuil.SetBaseTypeConstraint (x.GetSystemType ()); xs
           | [] => []
         };
@@ -351,8 +371,8 @@ namespace Nemerle.Compiler
       {
         !match(t)
         {
-          | FixedType.StaticTypeVarRef(s) => s.Constraints.ForAll(ctr => ctr.IsInterface || !c(ctr));
-          | _                             => t.IsInterface || !c(t);
+          | FixedType.StaticTypeVarRef(s) => s.Constraints.ForAll(ctr => ctr.IsTrait || !c(ctr));
+          | _                             => t.IsTrait || !c(t);
         }
       }
 

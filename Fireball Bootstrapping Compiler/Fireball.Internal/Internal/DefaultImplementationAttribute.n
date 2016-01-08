@@ -1,0 +1,28 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of DefaultImplementationAttribute.
+  /// </summary>
+  [System.AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
+  public sealed class DefaultImplementationAttribute : FireballInternalAttribute
+  {
+    private _implName : string = "";
+    
+    public this(implementationName: string) {
+      _implName = implementationName;
+    }
+    
+    public ImplementationName : string {
+      get { _implName; }
+    }
+  }
+}

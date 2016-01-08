@@ -21,153 +21,258 @@ namespace Nemerle.Compiler
   /// </summary>
   public partial class TypeBuilder : TypeInfo
   {
-    private static MemberPublicBindingFlags = (BindingFlags.Public | BindingFlags.DeclaredOnly);
-    private static MemberNonPublicBindingFlags = (BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+    private static MemberPublicBindingFlags = (BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Static);
+    private static InterfaceMethodBindingFlags = (BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Instance);
     
-    private mutable is_trait = false;
-    
-    private mutable trait_substructure : option[TypeBuilder] = None();
-    
-    public override IsTrait : bool {
-      get { is_trait }
+    internal DoRewriteTraitBody() : void
+    {
+      match (tydecl)
+      {
+        | TypeDeclaration.Trait => rewrite_trait_body()
+        | _ => ()
+      }
     }
     
-    // Checks to see if the current type is a Trait
-    private CheckIsTrait() : bool {
-
-      def check_members(members : list[PT.ClassMember]) : bool {        
-          | memb :: tail =>
-            match(memb) {
-              | Field => true;
-              | Function(_, _, func) when !(func is FunBody.Abstract) => true;
-              | Property(_, _, getter, setter, initializer) when getter.HasValue || setter.HasValue || initializer.HasValue => true;
-              | _ => check_members(tail)
-            }          
-          | [] => false;        
+    private rewrite_trait_body() : void 
+    {
+      def collect_members_with_implementation() : list[PT.ClassMember.Function]
+      {
+        GetParsedMembers().FoldLeft([], (memb, acc) => match(memb) {
+          | PT.ClassMember.Function(_, _, body) as fnc when !(body is FunBody.Abstract) => fnc :: acc
+          | _ => acc
+        }).Rev();
       }
       
-      IsInterface && check_members(GetParsedMembers().NToList());
-    }
-    
-    // Processes the current trait. Creates the trait container, and moves all implemented functions, properties, and any fields into the substructure within the container.
-    // Also takes all implemented public functions or properties and abstracts them in the existing interface.
-    private DoTraitProcessessing() : void {
-      def check_attributes(memb) : bool {
-        memb.Attributes == NemerleModifiers.None || memb.Attributes %&& NemerleModifiers.Public || memb.Attributes %&& NemerleModifiers.Internal
+      def collect_members_without_implementation() : list[PT.ClassMember]
+      {
+        GetParsedMembers().FoldLeft([], (memb, acc) => match(memb) {
+          | PT.ClassMember.Function(_, _, body) when !(body is FunBody.Abstract) => acc
+          | other => other :: acc
+        }).Rev()
       }
       
-      def mark_abstract(members : list[PT.ClassMember], acc) : PT.TopDeclaration.Interface {
-        match(members) {
-          | memb :: tail => match(memb) {
-              | Function as func when check_attributes(func) => mark_abstract(tail, PT.ClassMember.Function(func.BodyLocation, func.name, func.modifiers, func.header, [], FunBody.Abstract()) :: acc)
-              | Property as prop when check_attributes(prop) => mark_abstract(tail, PT.ClassMember.Property(prop.BodyLocation, prop.name, prop.modifiers, prop.returnType, prop.parameters, None(), None(), None()) :: acc)
-              | _ => 
-                //Util.ice($"Tried to mark non-function, non-property class member $memb as Abstract while doing trait processing. This should not happen. Please report this error to the Fireball team.");
-                mark_abstract(tail, acc)
+      def rewrite_implementation_body(body : FunBody) : FunBody.Parsed
+      {
+        def refName = PT.PExpr.Ref(PT.Name("self"));
+        
+        def replace_this(_, is_post, e) {
+          if(is_post) {
+            match(e) {
+              | PT.PExpr.This => refName
+              | other => other
             }
-          | _ => PT.TopDeclaration.Interface((this._ast :> PT.TopDeclaration.Interface).t_extends, acc)
-        }
+          } else e
+        };
+        
+        match(body)
+        {
+          | Parsed(expr : Parsetree.PExpr) =>
+            FunBody.Parsed(Util.locate (expr.Location, {
+              Macros.TraverseExpr (None (), expr, false, replace_this)
+            }))
+          | _ => Util.ice("Tried to rewrite trait method implementation, but got a non-parsed function body. This should not happen. Please report this error to the Fireball team.");
+        }        
       }
       
-      def get_members_to_move(members: list[PT.ClassMember], acc) : list[PT.ClassMember] {
-        match(members) {
-          | memb :: tail =>
-            match(memb) {
-              | Field => get_members_to_move(tail, memb :: acc);
-              | Function(_, _, func) when !(func is FunBody.Abstract) => get_members_to_move(tail, memb :: acc);
-              | Property(_, _, getter, setter, initializer) when getter.HasValue || setter.HasValue || initializer.HasValue => get_members_to_move(tail, memb :: acc);
-              | _ => get_members_to_move(tail, acc)
-            }          
-          | [] => acc;
-        }
+      def create_static_implementation_function(fnc : PT.ClassMember.Function, implName: PT.Splicable, write_attr: bool = true, overwritten: bool = false) : PT.ClassMember.Function
+      {
+        def default_mods = (NemerleModifiers.Static | NemerleModifiers.Public);
+        mutable attribute_mods = ({
+          if (fnc.modifiers.mods %&& NemerleModifiers.Protected) [ <[ "protected" ]> ]
+          else if (fnc.modifiers.mods %&& NemerleModifiers.Private) [ <[ "private" ]> ]
+          else []
+        }).ToArray();
+        
+        def mods = fnc.modifiers.Clone();
+        mods.Modifiers = if (overwritten) (default_mods | NemerleModifiers.New) else default_mods;
+        
+        when(write_attr)
+          mods.custom_attrs ::= <[ Fireball.Internal.TraitMethod( ..$attribute_mods ) ]>;
+        
+        def h = fnc.header;
+        def typeName = <[$(this.GetMemType() : typed) ]>;
+        def newParam = PT.PParameter(PT.Splicable.Name(PT.Name("self")), AttributesAndModifiers.Empty, typeName);
+        // Rewrite the body
+        def body = rewrite_implementation_body(fnc.body);
+        
+        def header = match(h.TypeParameters) {
+          | a when a.Equals(PT.Typarms.Empty) => PT.PFunHeader(h.Location, implName, h.ReturnType, newParam :: h.Parameters);
+          | typarms => PT.PFunHeader(h.Location, typarms, implName, h.ReturnType, newParam :: h.Parameters);
+        };
+        
+        PT.ClassMember.Function(fnc.Location, implName, mods, header, [], body);
+      }
+
+      def is_public(fnc: PT.ClassMember.Function) : bool {
+        fnc.modifiers.mods %&& NemerleModifiers.Public || fnc.modifiers.mods == NemerleModifiers.None
       }
       
-      when(CheckIsTrait()) {
-        // This type is a trait
-        is_trait = true;
+      def rewrite_implementation_function(fnc: PT.ClassMember.Function, implName : PT.Splicable) : PT.ClassMember.Function
+      {        
+        def closure_str = implName.GetIdentifier();
+        def add_attr_to_mods(mods) {
+          mods.custom_attrs ::= <[ Fireball.Internal.DefaultImplementation( $(String.Format("{0}", closure_str)) ) ]>;
+          mods
+        }
+        PT.ClassMember.Function(fnc.Location, PT.Splicable.Name(PT.Name(fnc.Name)), add_attr_to_mods(AttributesAndModifiers.Empty), fnc.header, [], FunBody.Abstract())
+      }
+      
+      when(IsTrait)
+      {
+        def implementedMembers = collect_members_with_implementation();
         
-        // Get all the current members
-        def curr_members = GetParsedMembers();
+        when (!implementedMembers.IsEmpty) {
+          mutable newMembers = collect_members_without_implementation();
         
-        // Build the container
-        def containerBuilder = MakeTraitContainer();
+          foreach(memb in implementedMembers)
+          {
+            if (is_public(memb)) {
+              def newName = PT.Splicable.Name(PT.Name($"_FB_$(memb.Name)_Impl"));
+              newMembers += [create_static_implementation_function(memb, newName, false), rewrite_implementation_function(memb, newName) ];
+            } else {
+              def newName = PT.Splicable.Name(PT.Name(memb.Name, memb.Location));
+              newMembers ::= create_static_implementation_function(memb, newName, true);              
+            }
+          }
         
-        // Build the trait substructure
-        def traitSub = MakeTraitSubstructure(this.ParsedName, containerBuilder);
-        
-        // Assign the trait substructure
-        trait_substructure = Some(traitSub);
-        
-        // Get the members we will be moving and define them in the substructure
-        foreach(memb in get_members_to_move(curr_members, []))
-          traitSub.Define(memb);
+          // Add the trait attribute
+          this._ast.modifiers.custom_attrs ::= <[ Fireball.Internal.FireballTrait() ]>;
           
-        // Finally, define the AST for this interface
-        _ast = mark_abstract(curr_members, []);
-      }
-    }
-    
-    // Creates the nested trait substructure
-    private MakeTraitSubstructure(traitName : PT.Name, containerBuilder : TypeBuilder) : TypeBuilder {
-      def newName = traitName.NewName(traitName.Id + "Trait");
-      def tparms  = typarms.Map (fun (x) { PT.Splicable.Name(traitName.Location, traitName.NewName(x.Name)) });
-      
-      def traitSubstructureTypeDeclaration = 
-        if (tparms.IsEmpty()) 
-          <[ decl:
-          [Fireball.Internal.TraitSubstructure]  
-          internal abstract class $newName {
-            private this() { }
-          }
-          ]>
-        else
-          <[ decl: 
-          [Fireball.Internal.TraitSubstructure]
-          internal abstract class $newName [..$tparms] {
-            private this() { }
-          }
-          ]>;
-      containerBuilder.DefineNestedType(traitSubstructureTypeDeclaration)
-    }
-    
-    // Creates the container for the trait substructure within the interface
-    private MakeTraitContainer() : TypeBuilder {
-      def traitContainerTypeDeclaration = <[ decl:
-        protected module _FB_NestedTrait { }
-      ]>;          
-      DefineNestedType(traitContainerTypeDeclaration)
-    }
-    
-    // Handles adding implemented members from inherited traits
-    private AddMemberToTrait(member : IMember) : void {
-      if(!IsTrait)
-        Util.ice("Tried to add a trait member to a type which is not a trait. This should not happen. Please report this error to the Fireball team.");
-      else match(trait_substructure) {
-        | Some(traitSub) => traitSub.AddMember(member)
-        | None => Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");
-      }
-    }
-    
-    // Gets all the mixed-in members from a trait
-    internal override GetTraitMixinMembers() : list[IMember] {
-      if (!IsTrait) {
-        Util.ice("Tried to get mixed-in members from a type which is not a trait! This should not happen. Please report this error to the Fireball team.");
-      } else match(trait_substructure) {
-        // Don't mixin constructors!
-        | Some(traitSub) => 
-          NList.RevFilter(traitSub.member_list, memb => !memb.IsConstructor)
-        | None =>
-          Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");
-      }      
-    }           
-    
-    // Binds and adds members to the trait substructure
-    private DoBindTrait() : void {
-      when(IsTrait) {
-        match(trait_substructure) {
-          | Some(traitSub) => traitSub.add_members()
-          | None => Util.ice("Type is a trait but has no trait substructure defined! This should not happen. Please report this error to the Fireball team.");          
+          // Rewrite the trait's Ast
+          this._ast = PT.TopDeclaration.Trait(this._ast :> PT.TopDeclaration.Trait, newMembers);
         }
+      }
+      
+    }
+    
+    private add_included_trait_methods() : void
+    {
+      
+      def make_mods(accessWords: list[string], mods) : NemerleModifiers
+      {
+        match(accessWords) {
+          | word :: tail => 
+            if (word.ToUpper() == "PROTECTED")
+              make_mods(tail, mods | NemerleModifiers.Protected)
+            else if (word.ToUpper() == "PRIVATE")
+              make_mods(tail, mods | NemerleModifiers.Private)
+            else
+              make_mods(tail, mods);            
+          | _ => mods
+        }
+      }
+      
+      def make_call_params_from_typed(header: TFunHeader) : list[PT.PExpr]
+      {
+        header.Parameters.Map(tp => <[ $(tp.AsParsed().name.GetName() : name) ]>)
+      }
+
+      def make_function_args(typed_params: list[TParameter]) : list[PT.PParameter]
+      {
+        typed_params.Tail.Map(tp => tp.AsParsed())
+      }
+      
+      def make_trait_impl(trait_name: PT.Name, func_name: PT.Splicable, fnc: IMethod, trait_attr: Fireball.Internal.TraitMethodAttribute) : PT.ClassMember.Function
+      {
+        def mods = make_mods(trait_attr.AccessModifiers.NToList(), NemerleModifiers.None);
+        //def header = PT.PFunHeader(fnc.Location, fnc.header.TypeParameters, PT.Name(fnc.Name).MakeSplicable(), fnc.header.ReturnType, fnc.header.Parameters.Tail);
+        //def body = FunBody.Parsed(<[ $(trait_name : name) . $(PT.Name(fnc.Name).MakeSplicable()) (this, ..$(header.Parameters) ) ]>);
+        def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
+        def func_args = make_function_args(fnc.Header.Parameters);
+        
+        <[decl:
+          ..$(AttributesAndModifiers(mods, [])) $func_name (..$func_args ) : $(fnc.Header.ReturnType : typed) {
+            $(trait_name : name) . $func_name (..$callparms )
+          }
+        ]>
+      }
+      
+      def make_default_impl(in_type: TypeInfo, trait_name: PT.Name, func_name: PT.Splicable, default_impl: Fireball.Internal.DefaultImplementationAttribute) 
+      {
+        match(in_type.GetMembers(MemberPublicBindingFlags).Filter(memb => memb.Name == default_impl.ImplementationName).Map(_ :> IMethod).HeadOption())
+        {
+          | Some(fnc) =>
+            def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
+            def func_args = make_function_args(fnc.Header.Parameters);
+
+            Some(<[ decl:
+              public virtual $func_name ( ..$func_args) : $(fnc.Header.ReturnType : typed) {
+                $(trait_name : name) . $func_name ( ..$callparms )
+              }
+            ]>)
+          | None => 
+            Message.Error($"could not find default implementation method for $(trait_name).$(func_name) called $(default_impl.ImplementationName).");
+            None()
+        }
+      }
+      
+      unless(IsEnum || IsDelegate || IsTrait || IsStruct || IsAlias || IsModule)
+      {
+        foreach(ifaceTy in InterfacesToImplement().Map(_.TypeInfo))
+        {
+          when(ifaceTy.IsCustomAttributeDefined("Fireball.Internal.FireballTraitAttribute"))
+          {
+            def trait_name = LazyValue(() => PT.Name(ifaceTy.FullName));            
+            // Go through all the instance members (which might have default implementations)
+            foreach(ifaceMeth in ifaceTy.GetMembers(InterfaceMethodBindingFlags).Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.DefaultImplementationAttribute")).Map(_ :> IMethod))
+            {
+              def default_attr = get_default_impl_attribute(ifaceMeth);
+              def ifaceMethName = PT.Name(ifaceMeth.Name).MakeSplicable();
+              match(make_default_impl(ifaceTy, trait_name, ifaceMethName, default_attr))
+              {
+                | Some(decl) => this.Define(decl)
+                | None => ()
+              }
+            }
+            // Go through all the static trait members and look for [TraitMethod] attribute
+            foreach(traitMeth in ifaceTy.GetMembers(MemberPublicBindingFlags).Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.TraitMethodAttribute")).Map(_ :> IMethod))
+            {
+              def trait_attr = get_trait_method_attribute(traitMeth);
+              def traitMethName = PT.Name(traitMeth.Name).MakeSplicable();
+              def decl = make_trait_impl(trait_name, traitMethName, traitMeth, trait_attr);
+              this.Define(decl);
+            }
+          }
+        }
+      }
+    }
+   
+    private get_default_impl_attribute(from: IMethod) : Fireball.Internal.DefaultImplementationAttribute
+    {
+      match(from.GetModifiers().FindAttribute(Manager.InternalType.DefaultImplementationAttribute_tc, GlobalEnv))
+      {
+        | Some(expr) => match(expr)
+          {
+            | <[ $_ ($(str : string))]> => Fireball.Internal.DefaultImplementationAttribute(str)
+            | _ => Util.ice("found proper default implementation attribute but then failed to read it.");      
+          }
+        | _ => Util.ice("found proper default implementation attribute but then failed to read it.");
+      }
+    }
+    
+    private get_trait_method_attribute(from: IMethod) : Fireball.Internal.TraitMethodAttribute
+    {
+      def parse_exprs(exprs, acc) : array[string] {
+        match(exprs) {
+          | PT.PExpr.Literal(Literal.String(val)) :: tail => parse_exprs(tail, val :: acc)
+          | _ => acc.Rev().ToArray();
+        }
+      }
+      
+      match(from.GetModifiers().FindAttribute(Manager.InternalType.TraitMethodAttribute_tc, GlobalEnv))
+      {
+        | Some(expr) => match(expr)
+          {
+            | <[ $_ ([ ..$(wordsList) ])  ]> => match(wordsList)
+              {
+                | PT.PExpr.Literal(Literal.String(_)) :: _  => 
+                  def args = parse_exprs(wordsList, []);
+                  Fireball.Internal.TraitMethodAttribute(args)
+                | _ => Util.ice("found proper default implementation attribute but then failed to read it.");      
+              }                            
+            | _ => Util.ice("found proper default implementation attribute but then failed to read it.");      
+          }
+        | _ => Util.ice("found proper default implementation attribute but then failed to read it.");
       }
     }
     

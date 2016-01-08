@@ -851,7 +851,7 @@ namespace Nemerle.Compiler
                   {
                     | _ when isEnum
                     // allow interfaces, non-sealed classes and type parameters
-                    | FixedType.Class(ti, _) when ti.IsInterface || (!ti.IsValueType && !ti.IsSealed)
+                    | FixedType.Class(ti, _) when ti.IsTrait || (!ti.IsValueType && !ti.IsSealed)
                     | FixedType.StaticTypeVarRef => false
                     | _ => true
                   }

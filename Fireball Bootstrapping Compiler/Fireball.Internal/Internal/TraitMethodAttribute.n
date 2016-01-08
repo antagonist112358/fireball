@@ -1,0 +1,27 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of TraitMethodAttribute.
+  /// </summary>
+  [System.AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
+  public sealed class TraitMethodAttribute : FireballInternalAttribute
+  {
+    private _accessWords : List[string];
+    
+    public this(params accessWords : array[string])
+    {
+      _accessWords = accessWords.ToList();
+    }
+    
+    public AccessModifiers : IEnumerable[string] { get { _accessWords } }
+  }
+}

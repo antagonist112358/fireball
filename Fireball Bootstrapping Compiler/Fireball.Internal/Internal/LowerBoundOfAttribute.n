@@ -1,0 +1,30 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of LowerBoundOfAttribute.
+  /// </summary>
+  [AttributeUsage(AttributeTargets.GenericParameter, AllowMultiple = false, Inherited = true)]
+  public sealed class LowerBoundOfAttribute : FireballAttribute
+  {
+    private _lowerBoundedType : string;
+    
+    public this(lowerBoundsType : string)
+    {
+      _lowerBoundedType = lowerBoundsType;
+    }
+    
+    public LowerBoundsType : string
+    {
+      get { _lowerBoundedType; }
+    }
+  }
+}

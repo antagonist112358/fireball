@@ -218,7 +218,7 @@ public partial class TypeBuilder : TypeInfo
     this.tydecl =
       match (_ast)
       {
-        | Interface     => TypeDeclaration.Interface()
+        | Trait     => TypeDeclaration.Trait()
         | Alias         => TypeDeclaration.Alias(null)
         | VariantOption => _declaringType.tydecl = _declaringType.CreateVariant();
                            TypeDeclaration.VariantOption()
@@ -324,7 +324,7 @@ public partial class TypeBuilder : TypeInfo
     m_has_been_used = IsExternallyAccessible;
 
     instance_ctor_occured = (attributes %&& (NemerleModifiers.Struct %| NemerleModifiers.Static))
-                            || IsModule || instance_ctor_occured || IsInterface || is_enum;
+                            || IsModule || instance_ctor_occured || IsTrait || is_enum;
   }
 
   CreateVariant() : TypeDeclaration.Variant
@@ -340,12 +340,12 @@ public partial class TypeBuilder : TypeInfo
     TyManager.AddMacroExpansion(expansion);
   }
 
-  public override IsInterface : bool
+  public override IsTrait : bool
   {
     get { if (TyManager.run_phase <= 2)
-            _ast is PT.TopDeclaration.Interface
+            _ast is PT.TopDeclaration.Trait
           else
-            tydecl is TypeDeclaration.Interface
+            tydecl is TypeDeclaration.Trait
         }
   }
 
@@ -529,7 +529,7 @@ public partial class TypeBuilder : TypeInfo
     match (_ast)
     {
       | PT.TopDeclaration.Class         as td => td.t_extends += [t]
-      | PT.TopDeclaration.Interface     as td => td.t_extends += [t]
+      | PT.TopDeclaration.Trait        as td => td.t_extends += [t]
       | PT.TopDeclaration.Variant       as td => td.t_extends += [t]
       | _ => Message.Error(t.Location, $"cannot add interface to $(_ast.GetType().Name.ToLower()) ($(_ast.Name)).");
     }
@@ -659,7 +659,7 @@ public partial class TypeBuilder : TypeInfo
       add_constant_variant_ctors();
       when (Attributes %&& NemerleModifiers.SpecialName)
         mark_members_with_special_name();
-      unless (IsInterface)
+      unless (IsTrait)
         resolve_method_implements();
       check_ctor_constraints();
     }
@@ -849,7 +849,7 @@ public partial class TypeBuilder : TypeInfo
     get_members (0 :> BindingFlags, fun (_ : IMember) { true })
   }
 
-  public GetParsedMembers(includeManuallyDefined : bool = false) : list[PT.ClassMember]
+  public GetParsedMembers(includeAdditionalDecls : bool = false) : list[PT.ClassMember]
   {
     def result = SCG.List();
 
@@ -857,7 +857,7 @@ public partial class TypeBuilder : TypeInfo
       foreach (p in AstParts)
         result.AddRange(p.GetMembers());
 
-    when (includeManuallyDefined && additional_decls != null)
+    when (includeAdditionalDecls && additional_decls != null)
       result.AddRange(additional_decls);
 
     def (first, second) = result.NToList().Partition(_.IsDefaultCtorField);
@@ -1017,7 +1017,7 @@ public partial class TypeBuilder : TypeInfo
             {
               | PT.TopDeclaration.Class    (typarms = t) => t
               | PT.TopDeclaration.Variant  (typarms = t) => t
-              | PT.TopDeclaration.Interface(typarms = t) => t
+              | PT.TopDeclaration.Trait   (typarms = t) => t
               | PT.TopDeclaration.VariantOption          => _ast.typarms
               | _ => Util.ice ("non class / variant")
             };
@@ -1208,7 +1208,7 @@ public partial class TypeBuilder : TypeInfo
               | _ => Util.ice("The 'tydecl' field of alias must have TypeDeclaration.Alias(null) type.")
             }
 
-          | PT.TopDeclaration.Interface     => TypeDeclaration.Interface ()
+          | PT.TopDeclaration.Trait     => TypeDeclaration.Trait ()
           | PT.TopDeclaration.Enum          => TypeDeclaration.Enum ()
           | PT.TopDeclaration.Variant       =>
             TypeDeclaration.Variant(variant_options.Map(fun (x : TypeBuilder) : TypeInfo { x }))
@@ -1258,7 +1258,7 @@ public partial class TypeBuilder : TypeInfo
           this.parent_type =  FixedType.Class(_declaringType, typarms.Map(FixedType.StaticTypeVarRef(_)));
 
         | PT.TopDeclaration.Class (t_extends = hd :: tl)
-        | PT.TopDeclaration.Interface (t_extends = hd :: tl)
+        | PT.TopDeclaration.Trait (t_extends = hd :: tl)
         | PT.TopDeclaration.Variant (t_extends = hd :: tl)
         // New Types
         | PT.TopDeclaration.Record (t_extends = hd :: tl)
@@ -1268,7 +1268,7 @@ public partial class TypeBuilder : TypeInfo
 
           if (hd1 == null)
             this.parent_type = null
-          else if (hd1.tycon.IsInterface)
+          else if (hd1.tycon.IsTrait)
           {
             itfs.Add(hd1);
             this.parent_type = null
@@ -1294,12 +1294,12 @@ public partial class TypeBuilder : TypeInfo
       {
         match (part)
         {
-          | PT.TopDeclaration.Interface (t_extends = hd :: tail)
+          | PT.TopDeclaration.Trait     (t_extends = hd :: tail)
           | PT.TopDeclaration.Class     (t_extends = hd :: tail)
           | PT.TopDeclaration.Variant   (t_extends = hd :: tail) =>
             def hd2 = bind_to_class (hd);
             def added_ifaces =
-              if (hd2.tycon.IsInterface)
+              if (hd2.tycon.IsTrait)
                 [hd2]
               else
               {
@@ -1334,7 +1334,7 @@ public partial class TypeBuilder : TypeInfo
 
       // detect non-interfaces
       foreach (t in t_implements)
-        unless (t.tycon.IsInterface)
+        unless (t.tycon.IsTrait)
           Message.Error ($"base class `$t' must be specified as first");
 
       when (is_enum)
@@ -1354,7 +1354,7 @@ public partial class TypeBuilder : TypeInfo
       match (parent_type)
       {
         | null =>
-          unless (IsInterface || IsAlias)
+          unless (IsTrait || IsAlias)
           {
             parent_type =
               // make the structure inherit from System.ValueType
@@ -1365,9 +1365,9 @@ public partial class TypeBuilder : TypeInfo
           }
 
         | tclass =>
-          if (IsInterface)
+          if (IsTrait)
           {
-            Message.Error (loc, "interfaces are not allowed to inherit from other types");
+            Message.Error (loc, "traits are not allowed to inherit from other types");
             parent_type = null;
           }
           else when (parent_type.tycon.GetTydecl () is TypeDeclaration.Variant
@@ -1408,7 +1408,7 @@ public partial class TypeBuilder : TypeInfo
       this.iterate_first = iterate_first.Fold (first, fun (_, ti, acc) { ti :: acc });
 
       // check variance limitation to interface/delegate type
-      if (IsInterface || IsDelegate)
+      if (IsTrait || IsDelegate)
         unless (typarms.IsEmpty)
           foreach (ty in GetDirectSuperTypes ())
             unless (MethodBuilder.IsVarianceValid(ty, 1))
@@ -1416,8 +1416,7 @@ public partial class TypeBuilder : TypeInfo
       else
         foreach (t when t.IsCovariant || t.IsContravariant in typarms)
         {
-          Message.Error (".NET runtime allows specifying co/contravariant generic parameters only on interfaces and delegates");
-          Message.Hint ("vote here to change this miserable state: http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=94145");
+          Message.Error ("covariant/contravariant generic parameters only allowed on traits and delegates");
         }
     }
     finally { _nestingLevel--; }
@@ -1475,8 +1474,6 @@ public partial class TypeBuilder : TypeInfo
     when (!this.typarms.IsEmpty && HasSuperType(InternalType.Attribute_tc))
       Message.Error($"A generic type cannot derive from `$parent_type' because it is an attribute class");
       
-    // Handle trait processing
-    DoTraitProcessessing();
   }
 
   add_subtyping_of(subinfo : Subinfo, tc : TypeInfo, args : list[TypeVar]) : Subinfo
@@ -1520,7 +1517,7 @@ public partial class TypeBuilder : TypeInfo
       t.tycon.GetMembers ()
     }
     def members =
-      if (IsInterface)
+      if (IsTrait)
         NList.Concat (NList.RevMap (GetDirectSuperTypes (), get_members))
       else match (parent_type)
       {
@@ -1554,7 +1551,7 @@ public partial class TypeBuilder : TypeInfo
 
     match (additional)
     {
-      | PT.TopDeclaration.Interface
+      | PT.TopDeclaration.Trait
       | PT.TopDeclaration.Class
       | PT.TopDeclaration.Variant
       | PT.TopDeclaration.VariantOption =>
@@ -1730,7 +1727,7 @@ public partial class TypeBuilder : TypeInfo
                   Message.Error($"attempt to change the access modifiers of $meth during override of $x");
               }
               // don't allow to hide abstract methods in classes
-              else if (m.Attributes %&& NemerleModifiers.Abstract && !IsInterface)
+              else if (m.Attributes %&& NemerleModifiers.Abstract && !IsTrait)
                 Message.Error($"$meth hides abstract $x inherited from base class. To make the current member override that implementation, add the `override' keyword.");
 
               // new method has 'new' modifier, so it's ok to hide old one
@@ -1886,7 +1883,7 @@ public partial class TypeBuilder : TypeInfo
       when (IsModule)
         class_member.Attributes |= NemerleModifiers.Static;
 
-      when (IsInterface)
+      when (IsTrait)
       {
         // Static methods are allowed.
         // Public access modifier is not added automatically.
@@ -2041,6 +2038,19 @@ public partial class TypeBuilder : TypeInfo
       | _ => ()
     }
   }
+  
+  internal AddTraitDefaultMethods() : void
+  {
+    assert(member_list == []);
+    member_map = Hashtable();
+
+    // handle enum members separately
+    match (_ast)
+    {
+      | PT.TopDeclaration.Trait => add_included_trait_methods()
+      | _ => ()
+    }    
+  }
 
   add_enum_members (decls : list[PT.ClassMember]) : void
   {
@@ -2103,9 +2113,6 @@ public partial class TypeBuilder : TypeInfo
   {
     when(!added_members) {
       add_derived_members();
-
-      // Handle trait substructure
-      DoBindTrait();
     
       def decls = GetParsedMembers();
 
@@ -2740,7 +2747,7 @@ public partial class TypeBuilder : TypeInfo
     //  Debug.WriteLine($"$name = ..$lst");
     //}
 
-    def interfacesOnly = _.IsInterface;
+    def interfacesOnly = _.IsTrait;
 
     def implementedByThis = GetSuperTypes().FilterLazy(interfacesOnly)
                                            .MapLazy(ty => ty.DeepFix() :> FixedType.Class).NToArray();
@@ -2771,7 +2778,7 @@ public partial class TypeBuilder : TypeInfo
   //    def lst = seq.NToList();
   //    Debug.WriteLine($"$name = ..$lst");
   //  }
-  //  def interfacesOnly = _.IsInterface;
+  //  def interfacesOnly = _.IsTrait;
   //  def implementedInterfaces   = GetSuperTypes().FilterLazy(interfacesOnly);
   //  print(implementedInterfaces, "implementedInterfaces");
   //  def interfacesToImplement   = GetDirectSuperTypes().FilterLazy(interfacesOnly);
@@ -2925,11 +2932,11 @@ public partial class TypeBuilder : TypeInfo
     // types we are deriving from should be at least as accessible as we
     foreach (deriv_t : FixedType.Class in GetDirectSuperTypes ())
     {
-      def is_iface = deriv_t.tycon.IsInterface;
+      def is_iface = deriv_t.tycon.IsTrait;
 
       // access check with exception of interfaces derived / implemented by class
       // which case is not mentioned by http://www.jaggersoft.com/csharp_standard/10.5.4.htm
-      when (this.IsInterface || !is_iface)
+      when (this.IsTrait || !is_iface)
         deriv_t.CheckAccessibility (this, accessibility);
 
       check_bound_type (deriv_t);
@@ -3052,7 +3059,7 @@ public partial class TypeBuilder : TypeInfo
   {
     def title ()
     {
-      if (IsInterface) "interface" else if (IsStruct) "struct" else "type";
+      if (IsTrait) "interface" else if (IsStruct) "struct" else "type";
     }
 
     // make sure only a valid subset of NemerleModifiers has been used
@@ -3068,7 +3075,7 @@ public partial class TypeBuilder : TypeInfo
     check_for_invalid_attr (NemerleModifiers.Volatile, "volatile");
 
     // some extra checks for structs and interfaces
-    when (this.IsInterface || this.IsStruct)
+    when (this.IsTrait || this.IsStruct)
     {
       check_for_invalid_attr (NemerleModifiers.Abstract, "abstract");
       check_for_invalid_attr (NemerleModifiers.Sealed, "sealed");
@@ -3076,7 +3083,7 @@ public partial class TypeBuilder : TypeInfo
     }
 
     // some extra checks for interfaces
-    when (this.IsInterface)
+    when (this.IsTrait)
     {
       check_for_invalid_attr (NemerleModifiers.Struct, "struct")
     }
@@ -3145,7 +3152,7 @@ public partial class TypeBuilder : TypeInfo
       t.t_implements.Exists(x => object.Equals(x.tycon, this))
     }
 
-    when (IsInterface)
+    when (IsTrait)
       foreach (t when t.t_implements != null && isImplementInterface (t) in typeBuilders)
         unless (subTypes.ContainsKey (t))
         {

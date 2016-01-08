@@ -273,9 +273,6 @@ namespace Nemerle.Late
         | null => null
         | _ when special(expr) => expr
         | _ when latebound(expr, out expr', deep) => expr'
-        | PExpr.MatchCases(_) =>
-          Message.Error("match cases found inside of late binding.");
-          null
         | PExpr.Wildcard \
         | PExpr.Void => expr
         | PExpr.As(pat, name) => PExpr.As(loc, recurse(pat), name)

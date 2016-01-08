@@ -117,7 +117,7 @@ namespace Nemerle.Compiler
           tydecl = TypeDeclaration.Alias(TyCodec.DecodeType (lib, tenv, aliasedType))
         }
         else if (system_type.IsInterface)
-          tydecl = TypeDeclaration.Interface()
+          tydecl = TypeDeclaration.Trait()
         else if (system_type.IsEnum)
           tydecl = TypeDeclaration.Enum()
         else

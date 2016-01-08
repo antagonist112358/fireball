@@ -359,7 +359,7 @@ namespace Nemerle.Compiler
         {
         | Class    (lst, m)                              // { mutable t_extends : list [PExpr]; decls : list [ClassMember]; }
         | Record   (lst, m)
-        | Interface(lst, m)                              // { mutable t_extends : list [PExpr]; methods : list [ClassMember]; }
+        | Trait    (lst, m)                              // { mutable t_extends : list [PExpr]; methods : list [ClassMember]; }
         | Variant  (lst, m)                              // { mutable t_extends : list [PExpr]; mutable decls : list [ClassMember]; }
         | Enum     (lst, m)    => Go(lst); Go(m);        // { t_extends : list [PExpr]; decls : list[ClassMember]; }
         | Alias    (ty)        => Go(ty);                // { ty : PExpr; }
@@ -460,7 +460,6 @@ namespace Nemerle.Compiler
         | ToComplete                                    // { body : Name; }
         | TypedPattern                                  // { body : Typedtree.Pattern; }
         | TypedType                                     // { body : TypeVar; }
-        | MatchCases
         | Void                       => ()
         | Typed           (body)     => Go(body);       // { body : Typedtree.TExpr; }
         | As              (e, sp)                       // { pat : PExpr; name : Splicable; }

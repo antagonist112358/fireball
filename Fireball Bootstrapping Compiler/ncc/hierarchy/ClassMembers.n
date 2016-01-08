@@ -684,7 +684,7 @@ public partial class FieldBuilder : MemberBuilder, IField
    */
   public override CheckAttributes () : void
   {
-    when (declaring_type.IsInterface)
+    when (declaring_type.IsTrait)
       Message.FatalError2(loc, "fields cannot be defined inside interface");
 
     check_for_invalid_attr(NemerleModifiers.Extern, "extern");
@@ -767,7 +767,7 @@ public partial class PropertyBuilder : MemberBuilder, IProperty
 
     parms = propertyAst.parameters.Map(parm => par.BindFixedType(parm.Type));
 
-    if (par.IsInterface)
+    if (par.IsTrait)
     {
       when (propertyAst.initializer.IsSome)
         Message.Error("initializer cannot be used in interfaces");
@@ -1299,16 +1299,7 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         | FixedType.Void => () //VladD2: a message about this bug reporting at FixupCurrentFunction()
         | x =>
           unless (IsVarianceValid(x, -1))
-            Message.Error(parm.TypeLocation, $"type of `$name' method's parameter `$(parm.name)' must behave contravariantly");
-          // Check for lower-type-bounds on type param
-          when(x is FixedType.StaticTypeVarRef) {
-            def stvr = x :> FixedType.StaticTypeVarRef;
-            when(stvr.tyvar.SuperTypeConstraint.HasValue) {
-              def sysType = stvr.tyvar.SuperTypeConstraint.Value;
-              def name = <[$(sysType : typed)]>;
-              parm.modifiers.AddCustomAttribute(<[Fireball.Internal.LowerBoundOf(typeof($name))]>);
-            }
-          }            
+            Message.Error(parm.TypeLocation, $"type of `$name' method's parameter `$(parm.name)' must behave contravariantly");         
       }
 
     unless (fun_header.TypeParameters.IsEmpty)
@@ -1322,8 +1313,16 @@ public partial class MethodBuilder : MemberBuilder, IMethod
           // I'm not sure why this is forbidden, but PEVerify indeed complains :)
           unless (IsVarianceValid(t, -1))
             Message.Error($"constraints of generic parameters of method `$name' must behave contravariantly");
-          t.CheckAccessibility(this, accessibility);
+          t.CheckAccessibility(this, accessibility);          
         }
+        
+        // Check for lower-type-bounds on type param
+        when(tp.SuperTypeConstraint.HasValue) {
+            def sysType = tp.SuperTypeConstraint.Value;
+            def typeName = sysType.TypeName;
+            tp.attributes.AddCustomAttribute(<[Fireball.Internal.LowerBoundOf($typeName)]>);
+        }            
+        
       }
       TypeBuilder.check_bound_type(ty);
     }
@@ -1446,7 +1445,7 @@ public partial class MethodBuilder : MemberBuilder, IMethod
    */
   public override CheckAttributes () : void
   {
-    when (declaring_type.IsInterface)
+    when (declaring_type.IsTrait)
     {
       // Allow static methods in interface
       unless (HasAbstractBody || (Attributes %&& NemerleModifiers.Static))
@@ -1580,7 +1579,7 @@ public partial class EventBuilder : MemberBuilder, IEvent
     {
       def update_mfunction (meth : PT.ClassMember.Function, which_accessor : string)
       {
-        if (declaring_type.IsInterface)
+        if (declaring_type.IsTrait)
           meth.body = FunBody.Abstract ()
         else {
           def lock_expr =
@@ -1601,7 +1600,7 @@ public partial class EventBuilder : MemberBuilder, IEvent
         }
       }
 
-      unless (declaring_type.IsInterface)
+      unless (declaring_type.IsTrait)
       {
         when (IsStatic)
           eventAst.field.modifiers.mods |= NemerleModifiers.Static;

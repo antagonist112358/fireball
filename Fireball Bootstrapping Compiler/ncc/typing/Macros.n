@@ -515,11 +515,11 @@ public partial module Macros
       | TopDeclaration.Alias ( ty = t) =>
         <[ TopDeclaration.Alias (name = $qn, modifiers = $qattr, typarms = $qtparms, ty = $(quoted_expr (t))) ]>
         
-      | TopDeclaration.Interface (t_extends = extend, methods = members) =>
+      | TopDeclaration.Trait (t_extends = extend, methods = members) =>
         def qexten = lift_with_ellipsis (extend);
         def qmems = lift_members (members);
                           
-        <[ TopDeclaration.Interface (name = $qn, modifiers = $qattr, t_extends = $qexten,
+        <[ TopDeclaration.Trait (name = $qn, modifiers = $qattr, t_extends = $qexten,
                                      typarms = $qtparms, methods = $qmems) ]>
                      
       | TopDeclaration.Variant (t_extends = extend, decls = members) =>
@@ -709,20 +709,7 @@ public partial module Macros
           | _ => <[ PExpr.Match ($(quoted_expr (expr)),
                                  $(Lift (cases, QuotedMatchCase))) ]>
         }
-
-      | PExpr.MatchCases(cases) =>
-        match (cases) {
-          | [cas] when cas.patterns is [] =>
-            match (cas.body) {
-              | PExpr.Ellipsis (e) =>
-                <[ PExpr.MatchCases ($(quoted_expr (e))) ]>
-              | _ =>
-                Util.ice ("parser generated strange match_cases")
-            }
-          | _ => <[ PExpr.MatchCases ($(Lift (cases, QuotedMatchCase))) ]>
-        }
-        
-        
+                
       | <[ throw $exc ]> => 
         <[ PExpr.Throw ($(quoted_expr (exc))) ]>
 
@@ -1069,7 +1056,7 @@ public partial module Macros
           | Class(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Class(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
           | Delegate(name = n, modifiers = m, typarms = tp, header = h) => Delegate(trav_splicable(n), m, tp, trav_fun_head(h))
           | Enum(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Enum(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
-          | Interface(name = n, modifiers = m, typarms = tp, t_extends = ext, methods = d) => Interface(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
+          | Trait(name = n, modifiers = m, typarms = tp, t_extends = ext, methods = d) => Trait(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
           | Macro(name = n, modifiers = m, typarms = tp, header = h, synt = s, expr = ex) => Macro(trav_splicable(n), m, tp, trav_fun_head(h), s.Map(traverse), traverse(ex))
           | Variant(name = n, modifiers = m, typarms = tp, t_extends = ext, decls = d) => Variant(trav_splicable(n), m, tp, ext.Map(traverse), d.Map(trav_classmember))
           | VariantOption(name = n, modifiers = m, typarms = tp, decls = d) => VariantOption(trav_splicable(n), m, tp, d.Map(trav_classmember))
@@ -1126,20 +1113,6 @@ public partial module Macros
               def cases = NList.Map (cases, go_case);
               <[ match ($(traverse (mexpr))) {.. $cases } ]>
 
-            | PExpr.MatchCases(cases) =>
-              def go_case (c : MatchCase) {
-                def go_guard (g : PExpr) {
-                  | <[ $pat when $e ]> => <[ $(traversep (pat)) when $(traverse (e)) ]>
-                  | _ => traversep (g)
-                };
-                def <[ case: | ..$guards => $exp ]> = c;
-                def guards = NList.Map (guards, go_guard);
-                <[ case: | ..$guards => $(traverse (exp)) ]>
-              };
-
-              def cases = NList.Map (cases, go_case);
-              PExpr.MatchCases(cases)
-              
             | <[ throw $exc ]> => <[ throw $(traverse (exc)) ]>
 
             | PExpr.TryFinally (body, handler) =>

@@ -68,16 +68,25 @@
     <Compile Include="FireballAttribute.n">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Internal\CLSCompliantInterface.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Internal\DefaultImplementationAttribute.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Internal\FireballTraitAttribute.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Internal\InternalAttributes.n">
+    <Compile Include="Internal\FireballInternalAttribute.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Internal\LowerBoundOfAttribute.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Internal\ResolvableAttribute.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Internal\TraitSubstructureAttribute.n">
+    <Compile Include="Internal\TraitMethodAttribute.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Numeric.n">

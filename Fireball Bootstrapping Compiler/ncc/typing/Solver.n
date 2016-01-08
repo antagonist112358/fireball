@@ -238,9 +238,9 @@ namespace Nemerle.Compiler
           intersect_classes(t2, t1)
         else match (tc1.GetTydecl(), tc2.GetTydecl())
         {
-          | (TypeDeclaration.Interface, TypeDeclaration.Interface)
-          | (TypeDeclaration.Class, TypeDeclaration.Interface)
-          | (TypeDeclaration.Interface, TypeDeclaration.Class) => [t1, t2]
+          | (TypeDeclaration.Trait, TypeDeclaration.Trait)
+          | (TypeDeclaration.Class, TypeDeclaration.Trait)
+          | (TypeDeclaration.Trait, TypeDeclaration.Class) => [t1, t2]
           | _ =>
             SaveError(messenger, $"types $t1 and $t2 are not compatible [during intersection]");
             [t1]
@@ -493,7 +493,7 @@ namespace Nemerle.Compiler
 
 
         // if there are interfaces and class in the bag choose the class
-        def aint_interface(t) { !t.IsInterface }
+        def aint_interface(t) { !t.IsTrait }
 
         def maximal3 =
           if (maximal2.Exists(aint_interface))

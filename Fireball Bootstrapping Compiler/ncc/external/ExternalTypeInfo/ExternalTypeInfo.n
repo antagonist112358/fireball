@@ -441,7 +441,7 @@ namespace Nemerle.Compiler
       /// Checks if underlying .NET type is value type
       public override IsValueType : bool { get { system_type.IsValueType } }
 
-      public override IsInterface : bool { get { system_type.IsInterface } }
+      public override IsTrait : bool { get { system_type.IsInterface } }
 
       public override Name : string
       {
@@ -537,7 +537,7 @@ namespace Nemerle.Compiler
 
       public override GetTydecl () : TypeDeclaration
       {
-        if (system_type.IsInterface) TypeDeclaration.Interface()
+        if (system_type.IsInterface) TypeDeclaration.Trait()
         else if (system_type.IsEnum) TypeDeclaration.Enum()
         else                         TypeDeclaration.Class ()
       }
@@ -701,7 +701,7 @@ namespace Nemerle.Compiler
         }
 
         def res =
-          if (IsInterface)
+          if (IsTrait)
           {
             def superTypes = GetDirectSuperTypes();
 

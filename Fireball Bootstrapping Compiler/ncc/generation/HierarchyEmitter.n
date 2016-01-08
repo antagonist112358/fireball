@@ -515,8 +515,7 @@ namespace Nemerle.Compiler
             | TypeDeclaration.Variant
             | TypeDeclaration.VariantOption
             | TypeDeclaration.Class          => TypeAttributes.Class
-            | TypeDeclaration.Alias // we pretend type alias is an interface
-            | TypeDeclaration.Interface      
+            | TypeDeclaration.Alias // we pretend type alias is an interface      
             | TypeDeclaration.Trait          => TypeAttributes.Interface %| TypeAttributes.Abstract
             | TypeDeclaration.Enum           => TypeAttributes.Sealed %| TypeAttributes.Class
           };
@@ -1016,7 +1015,10 @@ namespace Nemerle.Compiler
           def names = fun_header.TypeParameters.MapToArray(_.Name);
 
           def generic_parms = GetMethodInfo().DefineGenericParameters (names);
-          fun_header.TypeParameters.IterI(0, (idx, x) => x.SetGenericBuilder(generic_parms[idx]));
+          fun_header.TypeParameters.IterI(0, (idx, x) => {
+              x.SetGenericBuilder(generic_parms[idx]);
+              x.SaveCustomTypeParameterAttributes(declaring_type);              
+          });
           foreach (gp in fun_header.TypeParameters)
             gp.UpdateConstraints ();
         }

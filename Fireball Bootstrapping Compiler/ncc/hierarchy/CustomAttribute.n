@@ -372,7 +372,7 @@ namespace Nemerle.Compiler
         }
       }
 
-      when(mb.DeclaringType.IsInterface)
+      when(mb.DeclaringType.IsTrait)
       {
         Message.Error(getErrorLocation(),
                       "Conditional attribute is not valid on interface members");

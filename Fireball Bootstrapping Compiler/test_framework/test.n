@@ -388,7 +388,7 @@
               
             unless (HandleMsg (output))
             {
-              HandleErrorMsg ("Unexpected Nemerle compiler's message :\n" + output);
+              HandleErrorMsg ("\nUnexpected Nemerle compiler's message :\n" + output);
               is_ok = false;
             }
           }
@@ -583,6 +583,24 @@
       Console.ResetColor();
     }
     
+    private WriteColoredWord (message : string, color : ConsoleColor) : void
+    {
+      Console.ForegroundColor = color;
+      
+      def message = match (color)
+      {
+        | _ when !unix_colors => message
+        | ConsoleColor.Green => sprintf ("\e[01;32m%s\e[0m", message)
+        | ConsoleColor.Yellow => sprintf ("\e[01;33m%s\e[0m", message)
+        | ConsoleColor.Red => sprintf ("\e[01;31m%s\e[0m", message)
+        | ConsoleColor.Cyan => sprintf ("\e[01;36m%s\e[0m", message)
+        | _ => message
+      }
+      
+      Console.Write(message);
+      Console.ResetColor();
+    }    
+    
     private HandleErrorMsg (str : string) : void
     {
       if (is_teamcity_build)
@@ -669,7 +687,7 @@
       def maxLen = 60;
       def sufix = string('.', Math.Max(3, maxLen - filename.Length));
       def simple_name = Path.GetFileNameWithoutExtension($"$filename$sufix");
-      def msg    = $"Testing $simple_name";
+      //def msg    = $"Testing $simple_name";
 
       def tc_test_name = if (is_teamcity_build) Regex.Replace(filename, @"^.*ncc[\\/]testsuite", "") else null;
 
@@ -678,9 +696,10 @@
         WriteLine($"##teamcity[testStarted name='$tc_test_name' captureStandardOutput='true']");
         tc_error_log.Length = 0;
       }
-      else
-        Write(msg);
-      
+      else {
+        WriteColoredWord ("Testing: ", ConsoleColor.Blue);
+        Write(simple_name);
+      }
       if (no_test)
         printf ("skipped\n")
       else
@@ -716,7 +735,7 @@
                       printFinalMessage();
                     else
                     {
-                      HandleErrorMsg ("Runtime test failed");
+                      HandleErrorMsg ("Runtime test failed\n");
                       ++err_overall_count
                     }
                   else
@@ -726,10 +745,10 @@
                   }
                 }
                 catch
-                { | _ is Win32Exception => HandleErrorMsg ("Error occured while running testcase") }
+                { | _ is Win32Exception => HandleErrorMsg ("Error occured while running testcase\n") }
               else
               {
-                HandleErrorMsg ("Verification failed");
+                HandleErrorMsg ("Verification failed\n");
                 ++err_overall_count;
               }
             }
@@ -738,12 +757,12 @@
           }
           else
           {
-            HandleErrorMsg ("Nemerle compile test failed");
+            HandleErrorMsg ("Nemerle compile test failed\n");
             ++err_overall_count;
           }
         }
         catch
-        { |  _ is Win32Exception => HandleErrorMsg ("Error occured while running Nemerle compiler") }
+        { |  _ is Win32Exception => HandleErrorMsg ("Error occured while running Nemerle compiler\n") }
 
         when (is_teamcity_build)
         {
@@ -779,8 +798,8 @@
         0
       }
       else
-      {
-        WriteColoredMessage($"$err_overall_count of tests failed", ConsoleColor.Red);
+      {        
+        WriteColoredMessage($"$err_overall_count of $(_statistics.Count()) tests failed", ConsoleColor.Red);
         WriteLine ("See test_error.log file for details");
         1
       }

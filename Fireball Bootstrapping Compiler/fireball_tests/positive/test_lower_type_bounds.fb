@@ -12,7 +12,7 @@ namespace Fireball.Tests
 	class SubChild1 : Child1 { }
 	
 	// Test lower-type bounds
-	public trait ListNode[+T] : IEnumerable[T]
+	trait ListNode[+T] : IEnumerable[T]
 	{
 		def Head : T { get }
 		def Tail : ListNode[T] { get }

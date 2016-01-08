@@ -1,0 +1,19 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of CLSCompliantInterface.
+  /// </summary>
+  [System.AttributeUsage(AttributeTargets.Interface, Inherited = false, AllowMultiple = false)]
+  public sealed class CLSCompliantInterface : FireballInternalAttribute
+  {
+  }
+}

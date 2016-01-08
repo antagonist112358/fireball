@@ -721,6 +721,10 @@ namespace Nemerle.Compiler {
       this.macro_attrs = [];
     }
 
+    public static Empty : AttributesAndModifiers {
+      get { AttributesAndModifiers() }
+    }
+    
     public this() { this(NemerleModifiers.None, []) }
 
     /// For Clone()

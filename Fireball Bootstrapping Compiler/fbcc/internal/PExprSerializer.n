@@ -1,0 +1,440 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Compiler.Parsetree;
+
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
+
+using BinaryStream = System.IO.BinaryReader;
+
+namespace Nemerle.Compiler
+{
+  internal type ByteArray = array[byte];  
+  
+  internal sealed class ParseTreeExpressionSerializationException : Exception
+  {
+    public this(message: string) { base(message) }  
+  }
+  
+  /*
+    Brief summary on encoding:
+    
+    Encoding is as follows:
+      For Strings: UTF-16
+      For Expressions:
+        exprCode payload
+    
+    where exprCode is a single byte code representing the expression type
+    and payload is the representation of the expression values. Expressions
+    with multiple values are delimited by a comma (',').
+    Example:
+    PExpr.Member( PExpr.Ref( Name(loc, nameStr) ), Splicable.Name(loc, Id) ) becomes
+    {code for Member} ( 
+      {code for Ref} ( 
+        {code for Name} ( 
+          {integer}, {UTF-16 String}
+        )
+      ),
+      {code for SplicableName} (
+        {integer}, {UTF-16 String}
+      )
+    )
+    Note: The paranthesis are only for readability.
+    
+    The following Expression types cannot be encoded currently:
+      * PExpr.MacroCall
+      * PExpr.Typed
+      * PExpr.TypedPattern
+      * PExpr.TypedType
+      
+    Specifics for encoding each type which is not an expression follows:
+      * String: {UTF-16}
+      * List Of: {Code} {Int32}, ...,elements,...
+      * FixedType.Class: {PExprCode.FixedTypeClass} String
+      * Literal (except Integer & Enum): {Code} ?(,{encoded literal })
+      * Literal Integer: {Code}, String, {byte}, {8 bytes}
+      * Literal Enum: {Code}, Int32, String, String
+      * Name: {Code}, String, Int32, String
+      
+      
+  */
+  internal module PExprSerializer
+  {
+
+    /// <summary>
+    /// Byte code for the expression type.
+    /// </summary>    
+    internal enum PExprCode : byte
+    {
+      | Wildcard = 0
+      | Void = 1
+      | As = 2
+      | Is = 3
+      | Where = 4
+      | Match = 5
+      | Ref = 6
+      | Member = 7
+      | Call = 8
+      | GenericSpecifier = 9
+      | ListLiteral = 10
+      | Assign = 11
+      | DefMutable = 12
+      | Define = 13
+      | DefFunctions = 14
+      | Lambda = 15
+      | Throw = 16
+      | Try = 17
+      | TryFinally = 18
+      | Literal = 19
+      | This = 20
+      | Base = 21
+      | Typeof = 22
+      | TypeConversion = 23
+      | TypeEnforcement = 24
+      | Sequence = 25
+      | Tuple = 26
+      | Array = 27
+      | EmptyArray = 28
+      | Indexer = 29
+      | ParmByRef = 30
+      | ParmOut = 31
+      | Error = 32
+      | MacroCall = 33
+      | Quoted = 34
+      | Spliced = 35
+      | ToComplete = 36
+      | Ellipsis = 37
+      | Typed = 38
+      | TypedPattern = 39
+      | TypedType = 40      
+      // Types
+      | MatchCase = 80
+      | Constraint = 81
+      | Typarms = 82
+      | Name = 100
+      | FixedTypeClass = 101
+      // ListOf
+      | ListOf = 255
+    }
+    
+    internal enum NameCode : byte
+    {
+      // Names
+      | Name = 0
+      | SplicableName = 1
+      | SplicableExpression = 2
+      | SplicableHalfId = 3      
+    }
+    
+    internal enum LiteralCode : byte
+    {
+      | Void = 0
+      | Null = 1
+      | String = 2
+      | Float = 3
+      | Double = 4
+      | Decimal = 5
+      | Char = 6
+      | Bool = 7
+      | Int = 8
+      | Enum = 255
+    }   
+
+    #region Interal Serialization Expressions
+    
+    [Record] private variant ByteStream
+    {
+      | Array { bytes: ByteArray;
+          public this(pcode: PExprCode)   { bytes = array[pcode :> byte]; }
+          public this(ncode: NameCode)    { bytes = array[ncode :> byte]; }
+          public this(lcode: LiteralCode) { bytes = array[lcode :> byte]; }
+        }
+      | Deferred { subStreams: list[ByteStream] }
+      
+      public Process() : ByteArray
+      {
+        match(this)
+        {
+          | Array(bytes) => bytes
+          | Deferred(streams) =>
+            def (totalSize, arrays) = TraverseStreams(streams, 0, []);
+            def outputArray = array(totalSize) : ByteArray;
+            mutable index = 0;
+            foreach(arr in arrays)
+            {
+              Buffer.BlockCopy(arr, 0, outputArray, index, arr.Length);
+              index += arr.Length;
+            }
+            outputArray
+        }
+      }
+      
+      public static @: (bytes: ByteArray) : ByteStream
+      {
+        ByteStream.Array(bytes);
+      }
+            
+      public static BuildFrom(params substreams: array[ByteStream]) : ByteStream
+      {
+        ByteStream.Deferred(substreams.NToList())
+      }
+      
+      public static BuildFrom(pcode: PExprCode, params substreams: array[ByteStream]) : ByteStream
+      {
+        ByteStream.Deferred(ByteStream.Array(pcode) :: substreams.NToList())
+      }
+      
+      public static BuildFrom(ncode: NameCode, params substreams: array[ByteStream]) : ByteStream
+      {
+        ByteStream.Deferred(ByteStream.Array(ncode) :: substreams.NToList())
+      }
+
+      public static BuildFrom(lcode: LiteralCode, params substreams: array[ByteStream]) : ByteStream
+      {
+        ByteStream.Deferred(ByteStream.Array(lcode) :: substreams.NToList())
+      }      
+      
+      private static TraverseStreams(streams: list[ByteStream], totalSize: int = 0, acc: list[ByteArray]) : int * list[ByteArray]
+      {
+        match(streams)
+        {
+          | curr :: tail =>
+            match(curr) {
+             | Array(bytes) => TraverseStreams(tail, totalSize + bytes.Length, bytes :: acc)
+             | Deferred(moreStreams) => 
+                def (moreSize, moreAcc) = TraverseStreams(moreStreams, totalSize, []);
+                TraverseStreams(tail, totalSize + moreSize, moreAcc.Rev() + acc)
+            }
+          | [] => (totalSize, acc.Rev())
+        }
+      }
+    }
+    
+    #endregion
+    
+    #region Expression Encoding & Decoding
+    
+    public EncodePExpr(expr: PExpr) : ByteArray
+    {
+      EncPExpr(expr).Process()
+    }
+    
+    private EncPExpr(expr: PExpr) : ByteStream
+    {
+      | Wildcard =>                         ByteStream.Array(PExprCode.Wildcard)
+      | Void =>                             ByteStream.Array(PExprCode.Array)
+      | As(pat, name) =>                    ByteStream.BuildFrom(PExprCode.As,    EncPExpr(pat),  EncodeSplicable(name))
+      | Is(pat, ty) =>                      ByteStream.BuildFrom(PExprCode.Is,    EncPExpr(pat),  EncPExpr(ty))
+      | Where(name, fields) =>              ByteStream.BuildFrom(PExprCode.Where, EncPExpr(name), EncPExpr(fields))
+      | Match(expr, cases, _) =>      
+        def substreams = [ EncPExpr(expr) ] + cases.Map(EncodeMatchCase(_));
+        ByteStream.BuildFrom(PExprCode.Match, substreams.ToArray())
+      | Ref(name) =>                        ByteStream.BuildFrom(PExprCode.Ref, EncodeName(name))
+      | Member(obj, member) =>              ByteStream.BuildFrom(PExprCode.Member, EncPExpr(obj), EncodeSplicable(member))
+      | Call(func, parms) =>                ByteStream.BuildFrom(PExprCode.Call, EncPExpr(func), EncodeListOfPExprs(parms))
+      | GenericSpecifier(func, parms) =>    ByteStream.BuildFrom(PExprCode.GenericSpecifier, EncPExpr(func), EncodeListOfPExprs(parms))
+      | ListLiteral(elems) =>               ByteStream.BuildFrom(PExprCode.ListLiteral, EncodeListOfPExprs(elems))
+      | Assign(target, source) =>           ByteStream.BuildFrom(PExprCode.Assign, EncPExpr(target), EncPExpr(source))
+      | DefMutable(name, val) =>            ByteStream.BuildFrom(PExprCode.Assign, EncPExpr(name), EncPExpr(val))
+      | Define(pattern, val) =>             ByteStream.BuildFrom(PExprCode.Assign, EncPExpr(pattern), EncPExpr(val))
+      
+      
+    }
+    
+    private DecodePExpr(stream: BinaryStream) : PExpr
+    {
+      throw NotImplementedException()
+    }
+    
+    private EncodeMatchCase(cases: MatchCase) : ByteStream
+    {
+      ByteStream.BuildFrom(PExprCode.MatchCase, EncodeListOfPExprs(cases.patterns), EncPExpr(cases.body))
+    }
+    
+    private EncodeListOfPExprs(exprs : list[PExpr]) : ByteStream
+    {
+      EncodeListOf(exprs, EncPExpr)
+    }
+    
+    private EncodeListOf[T](items: list[T], serFunc: T -> ByteStream) : ByteStream
+    {
+      def substreams = [ ByteStream.Array(BitConverter.GetBytes(items.Length)) ] + items.Map(serFunc);
+      ByteStream.BuildFrom(PExprCode.ListOf, substreams.ToArray());
+    }
+    
+    #endregion
+    
+    #region Functions Encoding & Decoding
+    
+    private EncodeConstraint(const: Constraint) : ByteStream
+    {
+      ByteStream.BuildFrom(PExprCode.Constraint, EncodeSplicable(const.tyvar), EncPExpr(const.ty), BitConverter.GetBytes(const.IsSpecial), BitConverter.GetBytes(const.IsLowerBound))
+    }
+    
+    private EncodeTyparms(typarms: Typarms) : ByteStream
+    {
+      ByteStream.BuildFrom(PExprCode.Typarms, EncodeListOf(typarms.tyvars, EncodeSplicable), EncodeListOf(typarms.constraints, EncodeConstraint))
+    }
+    
+    #endregion
+    
+    #region Name and Splicable Encoding & Decoding
+    
+    private EncodeName(name: Name) : ByteStream
+    {
+      ByteStream.BuildFrom(NameCode.Name, ByteStream.Array(GetStringBytes(name.idl)), ByteStream.Array(BitConverter.GetBytes(name.color)), ByteStream.Array(GetStringBytes(name.ParsedId)))
+    }
+    
+    private EncodeSplicable(splicable: Splicable) : ByteStream
+    {
+      | Splicable.Name(body) =>       ByteStream.BuildFrom(NameCode.SplicableName, EncodeName(body))
+      | Splicable.Expression(expr) => ByteStream.BuildFrom(NameCode.SplicableExpression, EncodePExpr(expr))
+      | Splicable.HalfId(prefix) =>   ByteStream.BuildFrom(NameCode.SplicableHalfId, EncodeName(prefix))
+    }
+    
+    private DecodeName(stream: BinaryStream) : Name
+    {
+      assert(stream.ReadByte() :> NameCode == NameCode.Name);
+      Name(stream.ReadString(), Location.Default, stream.ReadInt32(), Manager.CoreEnv, stream.ReadString())
+    }
+    
+    private DecodeSplicable(stream: BinaryStream) : Splicable
+    {
+      def nameCode = stream.ReadByte() :> NameCode;
+      match(nameCode)
+      {
+        | NameCode.SplicableName => Splicable.Name(DecodeName(stream))
+        | NameCode.SplicableExpression => Splicable.Expression(DecodePExpr(stream))
+        | NameCode.SplicableHalfId => Splicable.HalfId(DecodeName(stream))
+        | NameCode.Name => Splicable.Name(DecodeName(stream))
+      }
+    }
+    
+    #endregion
+    
+    #region Literal Encoding & Decoding
+    
+    private EncodeLiteral(literal: Literal) : ByteStream
+    {
+      | Void => ByteStream.Array(LiteralCode.Void)
+      | Null => ByteStream.Array(LiteralCode.Null)
+      | Literal.String(val) => Concat(LiteralCode.String :> byte, Encoding.Unicode.GetBytes(val))
+      | Literal.Float(val) => Concat(LiteralCode.Float :> byte, BitConverter.GetBytes(val))
+      | Literal.Double(val) => Concat(LiteralCode.Double :> byte, BitConverter.GetBytes(val))
+      | Literal.Decimal(val) => Concat(LiteralCode.Decimal :> byte, GetDecimalBytes(val))
+      | Literal.Char(val) => Concat(LiteralCode.Char :> byte, Encoding.Unicode.GetBytes(array[val]))
+      | Literal.Bool(val) => Concat(LiteralCode.Bool :> byte, BitConverter.GetBytes(val))
+      
+      | Literal.Integer(val, is_neg, treat_as) =>
+        def nameBytes = Encoding.Unicode.GetBytes(treat_as.TypeInfo.FullName);
+        ByteStream.BuildFrom(LiteralCode.Int, nameBytes, BitConverter.GetBytes(is_neg), BitConverter.GetBytes(val))
+        
+      | Literal.Enum(val, ty, field) =>
+        def nameBytes = Encoding.Unicode.GetBytes(ty.FullName);
+        def fieldName = Encoding.Unicode.GetBytes(field.Name);
+        ByteStream.BuildFrom(LiteralCode.Enum, BitConverter.GetBytes(Option.UnSome(val.AsInt)), nameBytes, fieldName)
+    }
+    
+    private DecodeLiteral(stream: BinaryStream) : Literal
+    {
+      // Read the literal code
+      def literalCode = stream.ReadByte() :> LiteralCode;
+      match(literalCode) {
+        | Void => Literal.Void()
+        | Null => Literal.Null()
+        | LiteralCode.String => Literal.String(stream.ReadString())
+        | LiteralCode.Float => Literal.Float(stream.ReadSingle())
+        | LiteralCode.Double => Literal.Double(stream.ReadDouble())
+        | LiteralCode.Decimal => Literal.Decimal(stream.ReadDecimal())
+        | LiteralCode.Char => Literal.Char(stream.ReadChar())
+        | LiteralCode.Bool => Literal.Bool(Convert.ToBoolean(stream.ReadByte()))
+        | LiteralCode.Int =>
+          def nameStr = stream.ReadString();
+          def is_neg = Convert.ToBoolean(stream.ReadByte());
+          def val = stream.ReadUInt64();
+          match(Manager.CoreEnv.LookupType([nameStr]))
+          {
+            | Some(ty) => 
+              def tyClass = ty.GetFreshType();
+              Literal.Integer(val, is_neg, tyClass)
+            | None => throw ParseTreeExpressionSerializationException($"Deserialization: Could not resolve integer type: $nameStr")
+          }
+        
+        | LiteralCode.Enum =>
+          def val = stream.ReadInt32();
+          def nameStr = stream.ReadString();
+          def fieldName = stream.ReadString();
+          match(Manager.CoreEnv.LookupType([nameStr]))
+          {
+            | Some(ty) => match(ty.GetMembers((BindingFlags.Instance | BindingFlags.Public)).Filter(fld => fld.Name == fieldName).HeadOption())
+              {
+                | Some(field is IField) => 
+                  def valInt = Literal.Integer(val, Manager.InternalType.Int32);
+                  Literal.Enum(valInt, ty, field)
+                | _ => throw ParseTreeExpressionSerializationException($"Deserialization: Could not resolve value named: $fieldName in variant(enum): $nameStr")
+              }
+              
+            | None => throw ParseTreeExpressionSerializationException($"Deserialization: Could not resolve variant(enum) type: $nameStr")
+          }
+      }
+    }
+    
+    #endregion
+
+    #region Helper functions
+    
+    private Manager : ManagerClass { get { ManagerClass.Instance } }
+    
+    private Concat(first: ByteArray, second: ByteArray) : ByteArray
+    {
+      def outBuffer = array(first.Length + second.Length) : array[byte];
+      Buffer.BlockCopy(first, 0, outBuffer, 0, first.Length);
+      Buffer.BlockCopy(second, 0, outBuffer, first.Length, second.Length);
+      outBuffer
+    }
+
+    private Concat(firstByte: byte, arr: ByteArray) : ByteArray
+    {
+      mutable outBuffer = array(1 + arr.Length) : array[byte];
+      outBuffer[0] = firstByte;
+      Buffer.BlockCopy(arr, 0, outBuffer, 1, arr.Length);
+      outBuffer
+    }   
+    
+    private GetDecimalBytes(dec: Decimal) : ByteArray
+    {
+      // Decimals are 4 * Int32
+      def outBuffer = array(16) : array[byte];
+      def decBytes = Decimal.GetBits(dec);
+      
+      for(mutable i = 0; i < 4; i++)
+      {
+        Buffer.BlockCopy (
+          BitConverter.GetBytes(decBytes[i]),
+          0,
+          outBuffer,
+          4 * i,
+          4
+        )
+      }
+      
+      outBuffer
+    }
+    
+    private GetStringBytes(str: String) : ByteArray
+    {
+      Encoding.Unicode.GetBytes(str)
+    }
+    
+    private CodeToArray(code: PExprCode) : ByteArray
+    {
+      array[code :> byte]
+    }
+    
+    #endregion
+    
+  }
+}

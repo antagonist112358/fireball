@@ -1751,8 +1751,6 @@ namespace Nemerle.Compiler
         | PExpr.ParmOut =>
           ReportFatal (messenger,
                        "ref and out parameters are only allowed in function calls")
-        | PExpr.MatchCases(_) =>
-          ReportFatal (messenger, "match cases only used in PartialFunction construction")
 
         | PExpr.DefMutable(x, null) =>
           def res = DoType(PExpr.DefMutable(x, <[ $(TExpr.DefaultValue(FreshTypeVar()) : typed) ]>), expected, is_toplevel_in_seq);
@@ -4334,7 +4332,7 @@ namespace Nemerle.Compiler
         match (t.Hint)
         {
           | Some(FixedType.StaticTypeVarRef)
-          | Some(t) when t.IsInterface => true
+          | Some(t) when t.IsTrait => true
           | _ => false
         }
       }

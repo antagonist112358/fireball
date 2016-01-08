@@ -939,7 +939,7 @@ namespace Nemerle.Core
         Message.Error(ty.Location, "The Record macro not support a delegate. See http://nemerle.org/wiki/Record_macro.");
       else if (ty.IsEnum)
         Message.Error(ty.Location, "The Record macro not support a enum. See http://nemerle.org/wiki/Record_macro.");
-      else if (ty.IsInterface)
+      else if (ty.IsTrait)
         Message.Error(ty.Location, "The Record macro not support a interface. See http://nemerle.org/wiki/Record_macro.");
       else if (ty.IsModule)
         Message.Error(ty.Location, "The Record macro not support a module. See http://nemerle.org/wiki/Record_macro.");

@@ -358,7 +358,7 @@ namespace Nemerle.Compiler
       }
 
       // add the _N_GetVariantCode methods to variants and variant options
-      Iter(fun(x : TypeBuilder) { x.add_special_variant_methods() });
+      Iter(fun(x : TypeBuilder) { x.add_special_variant_methods(); x.DoRewriteTraitBody() });
 
       run_phase = 3;
       determine_subtyping();
@@ -373,11 +373,11 @@ namespace Nemerle.Compiler
       Manager.OnBeforeAddMembers();
 
       run_phase = 6;
-      Iter(fun(x : TypeBuilder) { x.AddEnumMembers() });
+      Iter(fun(x : TypeBuilder) { x.AddEnumMembers(); x.AddTraitDefaultMethods() });
       // We have to bind trait types first
       IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { y.IsTrait });
       // Then do everything else
-      IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { !y.IsTrait && !y.IsCustomAttributeDefined("Fireball.Internal.TraitSubstructureAttribute") });
+      IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { !y.IsTrait && !y.IsCustomAttributeDefined("Fireball.Internal.FireballTraitAttribute") });
 
       Manager.OnBeforeWithTypedMembers();
       
@@ -399,7 +399,7 @@ namespace Nemerle.Compiler
 
       def check_method_implements (ti : TypeBuilder)
       {
-        unless (ti.IsInterface)
+        unless (ti.IsTrait)
           ti.resolve_method_implements ();
       };
 

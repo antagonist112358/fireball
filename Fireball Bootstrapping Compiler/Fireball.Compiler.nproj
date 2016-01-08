@@ -45,8 +45,10 @@
   <ItemGroup>
     <Folder Include="fbcc\extensions" />
     <Folder Include="fbcc\hierarchy" />
+    <Folder Include="fbcc\builders" />
     <Folder Include="fbcc\typing" />
     <Folder Include="fbcc\parsing" />
+    <Folder Include="fbcc\internal" />
     <Folder Include="ncc" />
     <Folder Include="ncc\codedom" />
     <Folder Include="ncc\completion" />
@@ -73,6 +75,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="fbcc\hierarchy\TypeBuilder-Traits.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="fbcc\internal\PExprSerializer.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="fbcc\parsing\Keywords.n">

@@ -1,0 +1,26 @@
+namespace Fireball.Tests {
+	
+	using System
+	using SGC = System.Collections.Generic
+
+	// CollectionBuilder
+	trait CollectionBuilder[T, TOut : SGC.IEnumerable[T]] {
+		def Build(elements : SGC.IEnumerable[T]) : TOut
+	}
+	
+	// Like IEnumerable
+	trait Traversable[From, T] : SGC.IEnumerable[T] {
+		
+		//def GetEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator { this.GetEnumerator() }
+		
+		def Map[Out, OutCollection : SGC.IEnumerable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[Out, OutCollection]) : OutCollection {
+			builder.Build(TransformCollection(this, transformer))
+		}
+		
+		private def TransformCollection[Out](transformer : T -> Out) : SGC.IEnumerable[Out] {
+			foreach(item in this)
+				yield transformer(item)
+		}
+	}
+	
+}

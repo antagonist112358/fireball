@@ -576,7 +576,7 @@ namespace Nemerle.Compiler
             when (meth.IsStatic)
               res = typer.ConstructMethodOverload (ti, meth) + res;
           match (ti.GetTydecl ()) {
-            | TypeDeclaration.Interface =>
+            | TypeDeclaration.Trait =>
               loop (InternalType.Object_tc)
             | _ =>
               Option.Iter (ti.SuperClass (), loop)

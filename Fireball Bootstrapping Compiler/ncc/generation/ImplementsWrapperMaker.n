@@ -105,7 +105,7 @@ namespace Nemerle.Compiler
       meth.ImplementedMethods = [(ifaceType, impl_meth)];
       meth.Attributes |= NemerleModifiers.SpecialName | NemerleModifiers.Sealed;
 
-      unless (impl_meth.DeclaringType.IsInterface)
+      unless (impl_meth.DeclaringType.IsTrait)
         meth.Attributes = NemerleModifiers.Public | NemerleModifiers.Override;
 
       Manager.MarkAsUsed(meth);
@@ -133,7 +133,7 @@ namespace Nemerle.Compiler
       //Message.Debug($"ty=$ty");
 
       def methref = TExpr.MethodRef(the_method_type, TExpr.This(declaring_type.GetMemType()),
-                                    this, vars, !impl_meth.DeclaringType.IsInterface);
+                                    this, vars, !impl_meth.DeclaringType.IsTrait);
 
       // call the wrapped method, 
       def body = TExpr.Call(ret_type, methref, casted_refs, false);

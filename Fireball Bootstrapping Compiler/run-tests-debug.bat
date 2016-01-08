@@ -22,12 +22,16 @@ ECHO Running Positive tests...
 
 "%TestPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
 
+PAUSE
+
 ECHO Running Negative tests...
 @DEL /Q "%TestPath%\output\*.*"
 @COPY "%TestPath%\negative\*.fb" "%TestPath%\output\
 
 "%TestPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
 
+PAUSE
+
 @DEL /Q "%TestPath%\output\*.*"
-pause
+
 

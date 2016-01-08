@@ -47,10 +47,16 @@ namespace Nemerle.Compiler.Parsetree
 
     | Alias { ty : PExpr; }
 
-    | Interface
+    | Trait
       {
         mutable t_extends : list [PExpr];
         methods : list [ClassMember]; // only iface_member
+        
+        internal this(source: Trait, newMembers: list[ClassMember]) {
+          base(source.Location, source.name, source.modifiers, source.typarms);
+          t_extends = source.t_extends;
+          methods = newMembers;
+        }
       }
 
     | Variant
@@ -101,7 +107,7 @@ namespace Nemerle.Compiler.Parsetree
       match (this)
       {
         | Class        (t_extends = types)
-        | Interface    (t_extends = types)
+        | Trait    (t_extends = types)
         | Variant      (t_extends = types)
         // *New Types*
         | Record       (t_extends = types)         
@@ -255,14 +261,14 @@ namespace Nemerle.Compiler.Parsetree
       match (this)
       {
         | Class        (decls   = decls)
-        | Interface    (methods = decls)
+        | Trait        (methods = decls)
         | Variant      (decls   = decls)
         | VariantOption(decls   = decls)
         // * New Types *
         | Record       (decls   = decls)        
         | Enum         (decls   = decls) => decls
         | Delegate | Macro | Alias       => []
-      }
+      }      
     }
 
     public GetAllInnerTypes() : list[TopDeclaration]
@@ -271,7 +277,7 @@ namespace Nemerle.Compiler.Parsetree
       def getInner(x)
       {
         | Class        (decls   = decls)
-        | Interface    (methods = decls)
+        | Trait        (methods = decls)
         | Variant      (decls   = decls)
         // * New Types *
         | Record       (decls   = decls)
@@ -296,7 +302,7 @@ namespace Nemerle.Compiler.Parsetree
       {
         | Class                => $"class $name"
         | Alias(ty)            => $"type $name = $ty"
-        | Interface            => $"trait $name"
+        | Trait                => $"trait $name"
         | Variant              => $"variant $name"
         | VariantOption        => $"| $name"
         | Macro (header, _, _) => $"macro $name($header)"
@@ -306,6 +312,7 @@ namespace Nemerle.Compiler.Parsetree
         | Record               => $"record $name"
       }
     }
+    
   }
 
   [Record (Exclude = [_env, _tokens, _bodyLocation, _definedIn, _builder, _userData])]
@@ -934,6 +941,11 @@ namespace Nemerle.Compiler.Parsetree
       else
         default
     }
+    
+    internal MakeSplicable() : Splicable.Name
+    {
+      Splicable.Name(this)
+    }
   }
 
   [Record]
@@ -954,8 +966,7 @@ namespace Nemerle.Compiler.Parsetree
     | Match           { expr : PExpr; cases : list [MatchCase]; mutable expr_loc : Location;
                         this(loc : Location, expr : PExpr, cases : list [MatchCase]) { this(loc, expr, cases, Location.Default); }
                         this(expr : PExpr, cases : list [MatchCase]) { this(expr, cases, Location.Default); }
-                      }
-    | MatchCases      { cases : list[MatchCase] }
+                      }                      
     | Ref             {
                         mutable name : Name;
 

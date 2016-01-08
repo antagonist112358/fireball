@@ -1178,7 +1178,7 @@ namespace Nemerle.Compiler
               expect_empty ("type alias declaration");
               TopDeclaration.Alias (locAll, name, mods, typarms, t)
 
-            | "trait" => TopDeclaration.Interface (locAll, name, mods, typarms, t_extends, members2)
+            | "trait" => TopDeclaration.Trait (locAll, name, mods, typarms, t_extends, members2)
             | "variant" => TopDeclaration.Variant (locAll, name, mods, typarms, t_extends, members2)
             | "enum" => TopDeclaration.Enum (locAll, name, mods, typarms, t_extends, members2)
             | _ => Util.ice ()
@@ -3355,12 +3355,7 @@ namespace Nemerle.Compiler
         };
 
       MatchCase (pats, expr, patternsLocation, arrowLocation)
-    }
-    
-    parse_match_cases(group : Token.LooseGroup) : PExpr.MatchCases {
-      def cases = process_groups (group, "function body", parse_match_case);
-      PExpr.MatchCases(cases)
-    }
+    }    
 
     parse_noncase_embedded_expr(stop : TokenStoppers) : PExpr
     {
@@ -3653,7 +3648,7 @@ namespace Nemerle.Compiler
 
                   | [PExpr.TypeEnforcement(PExpr.Spliced (Location = loc, body = id), t) as p] =>
                     //Message.Warning (602, loc, "using ``:'' as a type tests is deprecated, please use ``is'' instead");
-                    TryCase.Catch(p.Location, Splicable.Expression (id, env), t, h.body) :: cases
+                    TryCase.Catch(p.Location, Splicable.Expression (loc, id, env), t, h.body) :: cases
 
                   | [PExpr.Is(PExpr.Spliced (Location = loc, body = id), t) as p] =>
                     TryCase.Catch(p.Location, Splicable.Expression (loc, id, env), t, h.body) :: cases

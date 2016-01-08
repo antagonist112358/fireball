@@ -74,7 +74,7 @@ namespace Nemerle.Compiler
 
             match (t)
             {
-              | TopDeclaration.Interface (methods = decls)   with variantOptionErrorMsg = "variant option can appear only in variant type declaration"
+              | TopDeclaration.Trait (methods = decls)       with variantOptionErrorMsg = "variant option can appear only in variant type declaration"
               | TopDeclaration.Class (decls = decls)         with variantOptionErrorMsg = "variant option can appear only in variant type declaration"
               // New Types
               | TopDeclaration.Record (decls = decls)        with variantOptionErrorMsg = "variant option can appear only in variant type declaration"

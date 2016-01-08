@@ -521,7 +521,7 @@ namespace Nemerle.Compiler
                       lookup(tc)
 
                     | _ when is_where
-                    | Interface
+                    | Trait
                     | Variant
                     | Class =>
                     
@@ -708,9 +708,14 @@ namespace Nemerle.Compiler
               matched_value_type.ForceRequire (needed_type');
               TypePattern (needed_type', nested)
             } else {
-              when (messenger.NeedMessage)
+              when (messenger.NeedMessage) {
+                // TODO: This message has been disabled. Need to figure out how this is going to be handled overall.
+                /*  
                 Message.Warning (602, "using ``:'' as a type tests is "
                                       "deprecated, please use ``is'' instead");
+                */
+                ()
+              }
               TypePattern (matched_value_type, 
                            PT.PExpr.Is (pattern.Location, nested, needed_type))
             }
@@ -736,7 +741,7 @@ namespace Nemerle.Compiler
               }
               else if (matched_value_type.Fix () is FixedType.StaticTypeVarRef)
                 null
-              else if (needed_type.IsInterface || Option.UnSome(matched_value_type.Hint).IsInterface)
+              else if (needed_type.IsTrait || Option.UnSome(matched_value_type.Hint).IsTrait)
                 null // ok, we allow interfaces here
               else if (matched_value_type.TryRequire(needed_type))
               {

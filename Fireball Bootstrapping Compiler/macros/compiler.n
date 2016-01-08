@@ -153,7 +153,7 @@ namespace Nemerle.Compiler
     {
       //Debug.Assert(tb.Name != "MemberBase");
       !(tb.Attributes %&& (Attr.Static | Attr.Struct) // | Attr.Sealed
-        || tb.IsValueType || tb.IsInterface || tb.IsDelegate || tb.IsAlias
+        || tb.IsValueType || tb.IsTrait || tb.IsDelegate || tb.IsAlias
        )
     }
   }
@@ -318,7 +318,7 @@ namespace Nemerle.Compiler
 
           // 1. Is optional field of reference type defined in this project. 
           | Class (tc, [TypeVar where (FixedValue = FixedType.Class(t is TypeBuilder, _))]) when tc.Equals(optinTyInfo) =>
-            exprs ::= if (t.IsInterface)
+            exprs ::= if (t.IsTrait)
               <[
                 match (this.$(n : name))
                 {
@@ -341,7 +341,7 @@ namespace Nemerle.Compiler
 
           // 2. Is collection of reference type defined in this project.
           | Class (_, [TypeVar where (FixedValue = FixedType.Class(t is TypeBuilder, _))]) when isStepInto (t) =>
-            exprs ::= if (t.IsInterface)
+            exprs ::= if (t.IsTrait)
               <[
                 def x = this.$(n : name);
                 when (x != null)
@@ -361,7 +361,7 @@ namespace Nemerle.Compiler
 
           // 3. Is field of reference type defined in this project (represent as TypeBuilder).
           | Class (t is TypeBuilder, _) when isStepInto (t) =>
-            if (ty.IsInterface)
+            if (ty.IsTrait)
               exprs ::= <[
                 def x = this.$(n : name);
                 when (x != null)

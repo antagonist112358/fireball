@@ -611,17 +611,12 @@ public abstract class TypeInfo : MemberInfo, IMember,
     get { attributes %&& NemerleModifiers.Sealed }
   }
 
-  /** Specifies if given type is an interface */
-  public abstract IsInterface : bool
+  /** Specifies if given type is a trait */
+  public abstract IsTrait : bool
   {
     get;
-  }
+  }  
   
-  /** Specifies if the given type is a trait */
-  public virtual IsTrait : bool {
-    get { false }
-  }
-
   internal virtual GetLibraryReference () : LibraryReference { null }
 
   //[Memoize]
@@ -631,7 +626,7 @@ public abstract class TypeInfo : MemberInfo, IMember,
     {
       when (default_indexer == null)
       {
-        if (IsInterface)
+        if (IsTrait)
         {
           foreach (t in GetDirectSuperTypes())
           {
@@ -772,7 +767,7 @@ public abstract class TypeInfo : MemberInfo, IMember,
 
         def acc = if (res is []) acc else res :: acc;
 
-        if (ti.IsInterface)
+        if (ti.IsTrait)
           match (ti.GetDirectSuperTypes())
           {
             | []     => InternalType.Object_tc.LookupMemberImpl (name) :: acc
@@ -901,7 +896,7 @@ public abstract class TypeInfo : MemberInfo, IMember,
   public GetTypeArgumentsForSuperClass(typeInfo : TypeInfo) : list[FixedType]
   {
     assert2(typeInfo != null);
-    assert2(!typeInfo.IsInterface || IsInterface);
+    assert2(!typeInfo.IsTrait || IsTrait);
     assert2(_superTypesCalculated);
 
     match (_superTypeInfosLookup.GetValueOrDefault(typeInfo))
@@ -955,7 +950,7 @@ public abstract class TypeInfo : MemberInfo, IMember,
 
   public LookupParentClassInstantiation(typeInfo : TypeInfo) : FixedType.Class
   {
-    assert2(!typeInfo.IsInterface || IsInterface, "interface lookup not allowed in LookupParentClassInstantiation()");
+    assert2(!typeInfo.IsTrait || IsTrait, "trait lookup not allowed in LookupParentClassInstantiation()");
 
     match (LookupParentInstantiations(typeInfo))
     {

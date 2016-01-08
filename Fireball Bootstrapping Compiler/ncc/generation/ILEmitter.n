@@ -893,7 +893,7 @@ namespace Nemerle.Compiler
             
             def isUpCast = kind is ConversionKind.UpCast;
 
-            when (!isUpCast || castToFixedType.IsInterface)
+            when (!isUpCast || castToFixedType.IsTrait)
               _ilg.Emit(OpCodes.Castclass, cast_to_type);
           }
 
