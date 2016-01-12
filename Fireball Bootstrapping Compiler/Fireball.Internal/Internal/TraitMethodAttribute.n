@@ -22,6 +22,11 @@ namespace Fireball.Internal
       _accessWords = accessWords.ToList();
     }
     
+    public this()
+    {
+      _accessWords = List()
+    }
+    
     public AccessModifiers : IEnumerable[string] { get { _accessWords } }
   }
 }

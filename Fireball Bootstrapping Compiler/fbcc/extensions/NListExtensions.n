@@ -42,5 +42,8 @@ namespace Nemerle.Compiler
       
     }
 
+    public Collect[A, B](this lst: list[A], testFunc: A -> option[B]) : list[B] {
+      lst.Map(testFunc).Filter(_.HasValue).Map(_.Value)
+    }
   }
 }

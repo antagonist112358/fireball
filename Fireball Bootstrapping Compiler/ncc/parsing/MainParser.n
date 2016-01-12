@@ -1221,6 +1221,8 @@ namespace Nemerle.Compiler
       def res =
         match (tok)
         {
+          | Token.Keyword("type") => processType("type")
+          
           | Token.Keyword (key) =>
             match (key)
             {
@@ -1255,7 +1257,6 @@ namespace Nemerle.Compiler
               | _ => Error (tok, "expecting type declaration"); TopDeclaration.Delegate (null);
             }
             
-          | Token.Identifier("type") => processType("type")
           | x => Error (x, "expecting type declaration"); TopDeclaration.Delegate (null);
         };
 
@@ -1323,7 +1324,8 @@ namespace Nemerle.Compiler
                 unless (peek_token() is Token.EndOfGroup)
                   loop(peek_token())
                 
-              | Token.Identifier("type") when peek_second_token() is Token.Identifier => parseNestedTypeDeclaration()
+              | Token.Keyword("type") when peek_second_token() is Token.Identifier => 
+                parseNestedTypeDeclaration()
               // Method or Property
               | Token.Keyword("def") =>
                 // Read 'def' keyword  
@@ -3050,7 +3052,7 @@ namespace Nemerle.Compiler
               expect_empty ("ellipsis expression");
               _op_context = OpContext.Postfix;
               loop ()
-
+              
             | Token.Keyword (str)
             | Token.Operator (str) when str != "$" =>
               match (env.SyntaxKeywords.Find (str)) {
@@ -3345,7 +3347,7 @@ namespace Nemerle.Compiler
       pop_stream ();
 
       def expr =
-        match (parse_expr_sequence (TokenStoppers.Pipe))
+        match (parse_expr_sequence (TokenStoppers.Case))
         {
           | [x] => x
           | [] => fatal_error (last_tok, "match case body cannot be empty")
@@ -4027,7 +4029,9 @@ namespace Nemerle.Compiler
           def group_token = stream :> Token.LooseGroup;
           def child = makeStrsConcat(group_token.Child);
           push_stream (child);
-          result = parse_expr (stop) :: result;
+          
+          unless(should_stop(stop))
+            result = parse_expr (stop) :: result;
           
           if (stream == null || !should_stop (stop))
           {

@@ -112,7 +112,7 @@ namespace Nemerle.Compiler
     }
 
 
-    ApplyTv(tv : TypeVar) : TypeVar
+    internal ApplyTv(tv : TypeVar) : TypeVar
     {
       if (tv.NeedNoSubst) tv
       else
@@ -144,6 +144,23 @@ namespace Nemerle.Compiler
       {
         empty = false;
         map = other.map.Fold(map, fun (f, t, map : Map[int, _]) { map.Add(f, t) })
+      }
+    }
+    
+    public MergeReferences(other: Subst) : void
+    {
+      when(!other.IsEmpty)
+      {
+        empty = false;
+        def onlyRefs = other.map.Filter((_, v) => v is FixedType.StaticTypeVarRef).Map((k,v) => (k, v :> FixedType.StaticTypeVarRef));
+        
+        map = onlyRefs.Fold(map, ((f, t), map: Map[int, TypeVar]) => {
+          def mapValues = map.Map((_, v) => v).Filter(v => v is FixedType.StaticTypeVarRef).Map(_ :> FixedType.StaticTypeVarRef);
+          match (mapValues.Find(tyRef => tyRef.tyvar.Name == t.tyvar.Name)) {
+            | Some(tyref) => map.Add(f, tyref)
+            | None => map
+          }
+        });
       }
     }
 

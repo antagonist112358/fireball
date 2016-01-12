@@ -790,6 +790,7 @@ namespace Nemerle.Compiler.Parsetree
     }
 
     public override Substitute (ty : FixedType) : TypeVar { subst.Apply (ty) }
+    public SubstituteTv(tv: TypeVar) : TypeVar { subst.ApplyTv(tv) }
   }
 
   /** The specified list of typed type parameters will be used as template for new type parameters.

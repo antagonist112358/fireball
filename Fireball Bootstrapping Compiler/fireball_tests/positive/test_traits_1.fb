@@ -1,6 +1,7 @@
 namespace Fireball.Tests {
 	
 	using System
+	using System.Linq
 	using SGC = System.Collections.Generic
 
 	// CollectionBuilder
@@ -11,16 +12,42 @@ namespace Fireball.Tests {
 	// Like IEnumerable
 	trait Traversable[From, T] : SGC.IEnumerable[T] {
 		
-		//def GetEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator { this.GetEnumerator() }
+		def CommonString() : String { "Hello World" }
 		
-		def Map[Out, OutCollection : SGC.IEnumerable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[Out, OutCollection]) : OutCollection {
-			builder.Build(TransformCollection(this, transformer))
+		public def GetNonGenericEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator { this.GetEnumerator() }
+		
+		public def Map[Out](transformer : T -> Out) : SGC.IEnumerable[Out] {
+			TransformCollection(transformer)
 		}
 		
-		private def TransformCollection[Out](transformer : T -> Out) : SGC.IEnumerable[Out] {
+		def TransformCollection[Out](transformer : T -> Out) : SGC.IEnumerable[Out] {
 			foreach(item in this)
 				yield transformer(item)
 		}
 	}
 	
+	
+	// Simple List
+	class SimpleList[T](elements: SGC.IEnumerable[T]) : Traversable[SimpleList[T], T] {
+	
+		private class SimpleListCollectionBuilder[U] : CollectionBuilder[U, SimpleList[U]] {
+			def Build(elements : SGC.IEnumerable[U]) : SimpleList[U] { SimpleList(elements) }
+		}
+		
+		def GetEnumerator() : SGC.IEnumerator[T] { elements.GetEnumerator() }
+				
+	}
+
+	module Program {
+		def Main(_ : Array[String]) : void {
+			val aList = SimpleList([5,4,3,2,1])
+			
+			val numsList = aList.Map(_.ToString())
+			
+			using System.Console		
+			
+			WriteLine(String.Join(", ", numsList.ToArray()))
+			
+		}
+	}
 }

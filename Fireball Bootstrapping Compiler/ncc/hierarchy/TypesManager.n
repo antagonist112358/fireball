@@ -373,11 +373,12 @@ namespace Nemerle.Compiler
       Manager.OnBeforeAddMembers();
 
       run_phase = 6;
-      Iter(fun(x : TypeBuilder) { x.AddEnumMembers(); x.AddTraitDefaultMethods() });
+      // Add members to Enums
+      Iter(fun(x : TypeBuilder) { x.AddEnumMembers() });
       // We have to bind trait types first
       IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { y.IsTrait });
       // Then do everything else
-      IterConditionally(fun(x: TypeBuilder) { x.add_members() }, fun(y: TypeBuilder) { !y.IsTrait && !y.IsCustomAttributeDefined("Fireball.Internal.FireballTraitAttribute") });
+      IterConditionally(fun(x: TypeBuilder) { x.AddTraitDefaultMethods(); x.add_members() }, fun(y: TypeBuilder) { !y.IsTrait && !y.IsCustomAttributeDefined("Fireball.Internal.FireballTraitAttribute") });
 
       Manager.OnBeforeWithTypedMembers();
       
@@ -494,6 +495,11 @@ namespace Nemerle.Compiler
       _codeWriter.FetchUpdatedLocation(member, begin_loc);
       member.PrintBody(_codeWriter);
       _codeWriter.Write("\n\n");
+    }
+    
+    internal MakeFreshTypeVar() : TypeVar
+    {
+      Manager.Solver.FreshTypeVar()
     }
   }
 }

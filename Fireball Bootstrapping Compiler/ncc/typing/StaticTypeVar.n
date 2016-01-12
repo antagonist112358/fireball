@@ -224,6 +224,10 @@ namespace Nemerle.Compiler
         Constraints = [];
     }
 
+    internal ClearSpecialConstraints() : void {
+      this.special = GenericParameterAttributes.None
+    }
+    
     public IsValueType : bool
     {
       get
@@ -434,7 +438,7 @@ namespace Nemerle.Compiler
     | Copy
 
     public TypeVarEnv : TypeVarEnv;
-    public TypeParams : list[StaticTypeVar];
+    public TypeParams : list[StaticTypeVar] { get; private set; }
 
     public HasConstraints : bool
     {
@@ -480,5 +484,6 @@ namespace Nemerle.Compiler
         | Copy => ()
       }
     }
+    
   }
 }

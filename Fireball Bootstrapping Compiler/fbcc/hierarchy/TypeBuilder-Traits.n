@@ -35,6 +35,10 @@ namespace Nemerle.Compiler
     
     private rewrite_trait_body() : void 
     {
+      
+      // Keeps track of the implemented methods in the Trait
+      def method_table = Hashtable();
+        
       def collect_members_with_implementation() : list[PT.ClassMember.Function]
       {
         GetParsedMembers().FoldLeft([], (memb, acc) => match(memb) {
@@ -53,12 +57,31 @@ namespace Nemerle.Compiler
       
       def rewrite_implementation_body(body : FunBody) : FunBody.Parsed
       {
-        def refName = PT.PExpr.Ref(PT.Name("self"));
+        def makeSelfRef(loc: Nemerle.Compiler.Location) { PT.PExpr.Ref(loc, PT.Name("self")); }                      
         
-        def replace_this(_, is_post, e) {
+        def makeSelfMember(loc: Nemerle.Compiler.Location, meth_ref: PT.PExpr.Ref) { match(meth_ref) {
+          | PT.PExpr.Ref(name) => PT.PExpr.Member(loc, makeSelfRef(loc), name.MakeSplicable())
+        }}
+        
+        def replace_implemented_method_call(in_call: PT.PExpr.Call) : PT.PExpr.Call {            
+            match(in_call.func) {
+              | PT.PExpr.Ref(pName) as meth_ref => match(method_table.Get(pName)) {
+                  | Some(numArgs) when numArgs == in_call.parms.Length => 
+                    // replace a method call "Method(a,b,...,n)" with "self.Method(a,b,...,n)"
+                    PT.PExpr.Call(in_call.Location, makeSelfMember(in_call.Location, meth_ref), in_call.parms)
+                  | _ => in_call
+                }
+              | _ => in_call
+            }              
+        }
+        
+        def replace_this(thisRef: PT.PExpr.This) { makeSelfRef(thisRef.Location) }
+        
+        def replace_exprs(_, is_post, e) {
           if(is_post) {
             match(e) {
-              | PT.PExpr.This => refName
+              | PT.PExpr.This as thisRef => replace_this(thisRef)
+              | PT.PExpr.Call as call when method_table.Count > 0 => replace_implemented_method_call(call)
               | other => other
             }
           } else e
@@ -68,11 +91,11 @@ namespace Nemerle.Compiler
         {
           | Parsed(expr : Parsetree.PExpr) =>
             FunBody.Parsed(Util.locate (expr.Location, {
-              Macros.TraverseExpr (None (), expr, false, replace_this)
+              Macros.TraverseExpr (None (), expr, false, replace_exprs)
             }))
           | _ => Util.ice("Tried to rewrite trait method implementation, but got a non-parsed function body. This should not happen. Please report this error to the Fireball team.");
         }        
-      }
+      }      
       
       def create_static_implementation_function(fnc : PT.ClassMember.Function, implName: PT.Splicable, write_attr: bool = true, overwritten: bool = false) : PT.ClassMember.Function
       {
@@ -90,7 +113,7 @@ namespace Nemerle.Compiler
           mods.custom_attrs ::= <[ Fireball.Internal.TraitMethod( ..$attribute_mods ) ]>;
         
         def h = fnc.header;
-        def typeName = <[$(this.GetMemType() : typed) ]>;
+        def typeName = <[$(this.GetMemType().ConstructInvariantClass() : typed) ]>;
         def newParam = PT.PParameter(PT.Splicable.Name(PT.Name("self")), AttributesAndModifiers.Empty, typeName);
         // Rewrite the body
         def body = rewrite_implementation_body(fnc.body);
@@ -122,7 +145,13 @@ namespace Nemerle.Compiler
         def implementedMembers = collect_members_with_implementation();
         
         when (!implementedMembers.IsEmpty) {
+          // Collect the methods which don't have implementations
           mutable newMembers = collect_members_without_implementation();
+          
+          // Build the implemented methods table
+          foreach(memb in implementedMembers) {
+            method_table.Add(memb.PName, memb.header.Parameters.Length)
+          }
         
           foreach(memb in implementedMembers)
           {
@@ -164,42 +193,102 @@ namespace Nemerle.Compiler
       
       def make_call_params_from_typed(header: TFunHeader) : list[PT.PExpr]
       {
-        header.Parameters.Map(tp => <[ $(tp.AsParsed().name.GetName() : name) ]>)
+        header.Parameters
+        // Remove 'self' reference
+        .Filter(t => t.Name != "self")
+        .Map(tp => <[ $(tp.AsParsed().name.GetName() : name) ]>)
       }
 
-      def make_function_args(typed_params: list[TParameter]) : list[PT.PParameter]
-      {
-        typed_params.Tail.Map(tp => tp.AsParsed())
+      def make_function_args(typed_params: list[TParameter], substFunc: TypeVar -> TypeVar) : list[PT.PParameter]
+      {        
+        typed_params.Tail.Map(tp => {
+          def name3 = PT.Splicable.Name(tp.NameLocation, tp.GetParsedName());
+          def new_ty = substFunc(tp.ty);
+          def ty2 = PT.PExpr.TypedType(tp.ty_loc, new_ty);
+          PT.PParameter(tp.Location, name3, ty2, tp.modifiers.Clone(), tp.PatternHack);
+        })
       }
       
-      def make_trait_impl(trait_name: PT.Name, func_name: PT.Splicable, fnc: IMethod, trait_attr: Fireball.Internal.TraitMethodAttribute) : PT.ClassMember.Function
+      def make_trait_impl(in_type: TypeInfo, trait_name: PT.PExpr, func_name: PT.Splicable, fnc: IMethod, tyArgs: list[FixedType], trait_attr: Fireball.Internal.TraitMethodAttribute) : PT.ClassMember.Function
       {
-        def mods = make_mods(trait_attr.AccessModifiers.NToList(), NemerleModifiers.None);
-        //def header = PT.PFunHeader(fnc.Location, fnc.header.TypeParameters, PT.Name(fnc.Name).MakeSplicable(), fnc.header.ReturnType, fnc.header.Parameters.Tail);
-        //def body = FunBody.Parsed(<[ $(trait_name : name) . $(PT.Name(fnc.Name).MakeSplicable()) (this, ..$(header.Parameters) ) ]>);
-        def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
-        def func_args = make_function_args(fnc.Header.Parameters);
-        
-        <[decl:
-          ..$(AttributesAndModifiers(mods, [])) $func_name (..$func_args ) : $(fnc.Header.ReturnType : typed) {
-            $(trait_name : name) . $func_name (..$callparms )
+        def subst = match(GetMemType().args) {
+          | [] => Subst()
+          | args => MakeSubst(args);
+        }
+            
+        match(in_type.GetMemType().args) {
+          | [] => ()
+          | args => 
+            def subst2 = in_type.MakeSubst(args);
+            subst.MergeReferences(subst2);
+        }
+            
+        def (typarms, substFunc : TypeVar -> TypeVar) = 
+          if (fnc.Header.TypeParameters.IsEmpty) 
+            (PT.Typarms.Empty, (x) => x) 
+          else {
+            def copyTyparms = PT.CopyTypedTyparms(fnc.Header.TypeParameters, subst);
+            (copyTyparms, copyTyparms.SubstituteTv)
           }
-        ]>
+        
+        def mods = make_mods(trait_attr.AccessModifiers.NToList(), NemerleModifiers.None);        
+        def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
+        def func_args = make_function_args(fnc.Header.Parameters, substFunc);
+        def ty_args_actual = tyArgs.Map (x => <[ $(x : typed) ]>); 
+        
+        def decl = 
+              <[decl:
+                ..$(AttributesAndModifiers(mods, [])) $func_name (..$func_args ) : $(fnc.Header.ReturnType : typed) {
+                  $trait_name. [..$ty_args_actual] . $func_name (..$callparms )
+                }
+              ]>;
+              
+        decl.header.TypeParameters = typarms;
+        
+        decl
       }
       
-      def make_default_impl(in_type: TypeInfo, trait_name: PT.Name, func_name: PT.Splicable, default_impl: Fireball.Internal.DefaultImplementationAttribute) 
+      def make_default_impl(in_type: TypeInfo, trait_name: PT.PExpr, func_name: PT.Splicable, tyArgs: list[FixedType], default_impl: Fireball.Internal.DefaultImplementationAttribute) 
       {
         match(in_type.GetMembers(MemberPublicBindingFlags).Filter(memb => memb.Name == default_impl.ImplementationName).Map(_ :> IMethod).HeadOption())
         {
-          | Some(fnc) =>
-            def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
-            def func_args = make_function_args(fnc.Header.Parameters);
-
-            Some(<[ decl:
-              public virtual $func_name ( ..$func_args) : $(fnc.Header.ReturnType : typed) {
-                $(trait_name : name) . $func_name ( ..$callparms )
+          | Some(fnc) =>            
+            def subst = match(GetMemType().args) {
+              | [] => Subst()
+              | args => MakeSubst(args);
+            }
+            
+            match(in_type.GetMemType().args) {
+              | [] => ()
+              | args => 
+                def subst2 = in_type.MakeSubst(args);
+                subst.MergeReferences(subst2);
+            }
+            
+            def (typarms, substFunc : TypeVar -> TypeVar) = 
+              if (fnc.Header.TypeParameters.IsEmpty) 
+                (PT.Typarms.Empty, (x) => x) 
+              else {
+                def copyTyparms = PT.CopyTypedTyparms(fnc.Header.TypeParameters, subst);
+                (copyTyparms, copyTyparms.SubstituteTv)
               }
-            ]>)
+              
+            def callparms = <[ this ]> :: make_call_params_from_typed(fnc.Header);
+            def func_args = make_function_args(fnc.Header.Parameters, substFunc);
+            def func_impl_name = PT.PExpr.Ref(PT.Name(default_impl.ImplementationName));
+            def ty_args_actual = tyArgs.Map (x => <[ $(x : typed) ]>);           
+            
+            def decl = 
+                <[ decl:
+                  public virtual $func_name ( ..$func_args) : $(fnc.Header.ReturnType : typed) {
+                    $trait_name . [..$ty_args_actual] . $func_impl_name ( ..$callparms )
+                  }
+                ]>;
+            
+            decl.header.TypeParameters = typarms;
+            
+            Some(decl)
+            
           | None => 
             Message.Error($"could not find default implementation method for $(trait_name).$(func_name) called $(default_impl.ImplementationName).");
             None()
@@ -208,28 +297,35 @@ namespace Nemerle.Compiler
       
       unless(IsEnum || IsDelegate || IsTrait || IsStruct || IsAlias || IsModule)
       {
-        foreach(ifaceTy in InterfacesToImplement().Map(_.TypeInfo))
-        {
+        foreach((_args, ifaceTy) in InterfacesToImplement().Map(a => (a.args, a.TypeInfo)))
+        {        
+          def args = _args.Collect(a => match(a) { | FixedType as a => Some(a); | _ => None() });
+          
           when(ifaceTy.IsCustomAttributeDefined("Fireball.Internal.FireballTraitAttribute"))
           {
-            def trait_name = LazyValue(() => PT.Name(ifaceTy.FullName));            
+            def trait_name = LazyValue(() => ifaceTy.NamespaceNode.FullNameToExpr());
+            //def trait_genParms = LazyValue(() => ifaceTy.Typarms);
+            
+            def instance_methods = ifaceTy.GetMembers(InterfaceMethodBindingFlags);
+            def static_methods = ifaceTy.GetMembers(MemberPublicBindingFlags);
+            
             // Go through all the instance members (which might have default implementations)
-            foreach(ifaceMeth in ifaceTy.GetMembers(InterfaceMethodBindingFlags).Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.DefaultImplementationAttribute")).Map(_ :> IMethod))
+            foreach(ifaceMeth in instance_methods.Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.DefaultImplementationAttribute")).Map(_ :> IMethod))
             {
               def default_attr = get_default_impl_attribute(ifaceMeth);
               def ifaceMethName = PT.Name(ifaceMeth.Name).MakeSplicable();
-              match(make_default_impl(ifaceTy, trait_name, ifaceMethName, default_attr))
+              match(make_default_impl(ifaceTy, trait_name, ifaceMethName, args, default_attr))
               {
-                | Some(decl) => this.Define(decl)
+                | Some(decl) => this.AddToAdditionalDecls(decl)                  
                 | None => ()
               }
             }
             // Go through all the static trait members and look for [TraitMethod] attribute
-            foreach(traitMeth in ifaceTy.GetMembers(MemberPublicBindingFlags).Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.TraitMethodAttribute")).Map(_ :> IMethod))
+            foreach(traitMeth in static_methods.Filter(memb => memb is IMethod && memb.IsCustomAttributeDefined("Fireball.Internal.TraitMethodAttribute")).Map(_ :> IMethod))
             {
               def trait_attr = get_trait_method_attribute(traitMeth);
               def traitMethName = PT.Name(traitMeth.Name).MakeSplicable();
-              def decl = make_trait_impl(trait_name, traitMethName, traitMeth, trait_attr);
+              def decl = make_trait_impl(ifaceTy, trait_name, traitMethName, traitMeth, args, trait_attr);
               this.Define(decl);
             }
           }
@@ -268,11 +364,19 @@ namespace Nemerle.Compiler
                 | PT.PExpr.Literal(Literal.String(_)) :: _  => 
                   def args = parse_exprs(wordsList, []);
                   Fireball.Internal.TraitMethodAttribute(args)
-                | _ => Util.ice("found proper default implementation attribute but then failed to read it.");      
-              }                            
-            | _ => Util.ice("found proper default implementation attribute but then failed to read it.");      
+                | _ => 
+                Util.ice("found proper default implementation attribute but then failed to read it.");      
+              }
+            | <[ $_ ( $word ) ]> => match (word) {
+                | PT.PExpr.Literal(Literal.String(str)) => Fireball.Internal.TraitMethodAttribute([str].ToArray())
+                | _ => Util.ice("found proper default implementation attribute but then failed to read it.");                
+              }
+            | <[ $_ () ]> => Fireball.Internal.TraitMethodAttribute()
+            | _ => 
+            Util.ice("found proper default implementation attribute but then failed to read it.");      
           }
-        | _ => Util.ice("found proper default implementation attribute but then failed to read it.");
+        | _ => 
+        Util.ice("found proper default implementation attribute but then failed to read it.");
       }
     }
     

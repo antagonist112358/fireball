@@ -68,6 +68,9 @@
     <Folder Include="Properties" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="fbcc\extensions\NamespaceTree.NodeExtensions.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="fbcc\extensions\NListExtensions.n">
       <SubType>Code</SubType>
     </Compile>

@@ -2041,13 +2041,15 @@ public partial class TypeBuilder : TypeInfo
   
   internal AddTraitDefaultMethods() : void
   {
-    assert(member_list == []);
-    member_map = Hashtable();
+    when(member_map == null) { member_map = Hashtable(); }
 
     // handle enum members separately
     match (_ast)
     {
-      | PT.TopDeclaration.Trait => add_included_trait_methods()
+      | PT.TopDeclaration.Class
+      | PT.TopDeclaration.Variant
+      | PT.TopDeclaration.Record
+      | PT.TopDeclaration.VariantOption => add_included_trait_methods()
       | _ => ()
     }    
   }

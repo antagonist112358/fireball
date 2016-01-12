@@ -12,6 +12,12 @@ using BinaryStream = System.IO.BinaryReader;
 
 namespace Nemerle.Compiler
 {
+  class SimpleList[T] {
+    module Resolvables[S] {
+      public MakeDick() : System.Collections.Generic.Dictionary[T, S] { System.Collections.Generic.Dictionary() }
+    }
+  }
+  
   internal type ByteArray = array[byte];  
   
   internal sealed class ParseTreeExpressionSerializationException : Exception

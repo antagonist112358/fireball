@@ -344,7 +344,7 @@ namespace Nemerle.Compiler
       } else []
     }
     
-    private fixup(env: GlobalEnv, currentType: TypeBuilder, tyvar : TypeVar, loc: Location) : TypeVar {
+    internal Fixup(env: GlobalEnv, currentType: TypeBuilder, tyvar : TypeVar, loc: Location) : TypeVar {
       
       def correct(tyarg) {
         bind_simple_named_type(env, currentType, Parsetree.Name((tyarg :> FixedType.StaticTypeVarRef).tyvar.Name), [(tyarg :> FixedType.StaticTypeVarRef).tyvar.Name], [], loc)
@@ -356,6 +356,7 @@ namespace Nemerle.Compiler
             | [(_, newref)] => FixedType.StaticTypeVarRef(newref)
             | _ => tyvar
           }
+        | FixedType.Fun(from, to) as func => FixedType.Fun(Fixup(env, currentType, from, loc), func.argsCount, Fixup(env, currentType, to, loc))
         | other => other
       }
     }
@@ -684,7 +685,7 @@ namespace Nemerle.Compiler
                   def type = bind_simple_named_type(env, currentType, name, idl, args.Map(f), t.Location, true);
                   // Check for a member with that type name
                   if (currentType.LookupMemberAvailable && !currentType.LookupMember(name.Id, false).IsEmpty()) {
-                    def memberExprType = fixup(env, currentType, FindMemberTypeRecursive(type, idl.Tail), tyexpr.Location);
+                    def memberExprType = Fixup(env, currentType, FindMemberTypeRecursive(type, idl.Tail), tyexpr.Location);
                     when(!Manager.Solver.CurrentMessenger.LocalError)
                       SetTypedObjects(t, memberExprType);
                     memberExprType
@@ -792,7 +793,7 @@ namespace Nemerle.Compiler
         | _ => ()
       }
     }
-
+    
     public AddTyparms (env : GlobalEnv,
                        tp : Typarms,
                        currentType : TypeBuilder,

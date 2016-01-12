@@ -42,8 +42,15 @@ namespace Nemerle.Compiler
   {
     #region Options
     /// Represent a class type with given type parameters, like "string" or "list[int]".
-    | Class { tycon : TypeInfo; args : list[TypeVar]; }
-
+    | Class { tycon : TypeInfo; args : list[TypeVar]; 
+          internal ConstructInvariantClass() : FixedType.Class {
+            def oldTyvars = this.args.Collect(a => match(a) {|StaticTypeVarRef(tyvar) => Some(tyvar) | _ => None() });
+            def (_, newTyvars) = StaticTypeVar.CopyList(oldTyvars);
+            foreach(tyvar in newTyvars) { tyvar.ClearSpecialConstraints(); }
+            
+            Class(tycon, newTyvars.Map(StaticTypeVarRef(_)))
+          }
+      }
     /// In code like:
     ///      class Foo[T] { bar : list[T]; }
     ///   The "T" in "list[T]" would be represented by a StaticTypeVarRef.
@@ -734,7 +741,6 @@ namespace Nemerle.Compiler
       ConstructFunctionType (Solver.MonoTypes (parms), res)
     }
 
-
     static public ConstructFunctionType (parms : list [TypeVar], res : TypeVar) : FixedType.Fun
     {
       def from =
@@ -1087,10 +1093,14 @@ namespace Nemerle.Compiler
 
     public SigRequire (other : FixedType) : bool
     {
+      def forAllFunc(t1, t2) {
+          t2.Require(t1)
+      }
+        
       match ((FunReturnTypeAndParms (), other.FunReturnTypeAndParms ())) {
         | (Some ((f1, t1)), Some ((f2, t2))) when f1.Length == f2.Length =>
           t1.Require (t2) &&
-          NList.ForAll2 (f1, f2, fun (t1, t2) { t2.Require (t1) })
+          f1.Zip(f2).ForAll((t1, t2) => forAllFunc(t1, t2))
         | _ => false
       }
     }
