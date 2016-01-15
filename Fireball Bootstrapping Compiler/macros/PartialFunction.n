@@ -18,7 +18,7 @@ namespace Nemerle.Core
       
       <[ decl:
         private class $name [A] : PartialFunction[A, $ret_ty ] {
-          public override Apply(x: A) : $ret_ty {
+          public override apply(x: A) : $ret_ty {
             match(x) { ..$(@match.cases) }
           }
           
@@ -36,9 +36,12 @@ namespace Nemerle.Core
       PExpr.Match(expr, @match.cases.Map(set_true(_)))
     }
     
+    // TODO: Fix or remove me
+    /*
     private MakePartialFunctionType(ty: TypeVar, ret_ty : TypeVar) : FixedType.Class {
       FixedType.Class(ret_ty.Manager.InternalType.PartialFunction_tc, [ty, ret_ty ])
     }
+    */
     
     private MakeIsDefined(loc: Location, cases : list[MatchCase]) : PExpr {
       def disable(@case) { @case.disable_warnings = true; @case }

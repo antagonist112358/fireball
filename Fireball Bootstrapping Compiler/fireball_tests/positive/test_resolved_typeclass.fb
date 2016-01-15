@@ -1,7 +1,6 @@
 namespace Fireball.Tests {
 	
 	using System
-	using SCC = System.Collections
 	using SGC = System.Collections.Generic
 	
 	module Traversable {
@@ -10,29 +9,27 @@ namespace Fireball.Tests {
 				yield transformer(item)
 		}
 	}
-		
-	// Base class for all collections...
-	trait TraversableOperations[+T, From] : SGC.IEnumerable[T] {
+	
+	// Like IEnumerable
+	trait Traversable[T] : SGC.IEnumerable[T] {		
 		using Traversable
-						
-		/*
-		def Map[Out, OutCollection : SGC.IEnumerable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[From, Out, OutCollection]) : OutCollection {
+		
+		def Map[Out, OutCollection : SGC.IEnumerable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[Out, OutCollection]) : OutCollection {
 			builder.Build(Transform(this, transformer))
 		}
-		*/
 		
 		def GetNonGenericEnumerator() : System.Collections.IEnumerator implements System.Collections.IEnumerable.GetEnumerator { this.GetEnumerator() }
 	}
-				
+	
 	// CollectionBuilder
-	trait CollectionBuilder[From, T, TOut : SGC.IEnumerable[T]] {
+	trait CollectionBuilder[T, TOut : SGC.IEnumerable[T]] {
 		def Build(elements : SGC.IEnumerable[T]) : TOut
 	}
-		
-	// Simple List
-	class SimpleList[T](elements: SGC.IEnumerable[T]) : TraversableOperations[T, SimpleList[object]] {
 	
-		private class SimpleListCollectionBuilder[U] : CollectionBuilder[SimpleList[object], U, SimpleList[U]] {
+	// Simple List
+	class SimpleList[T](elements: SGC.IEnumerable[T]) : Traversable[T] {
+	
+		private class SimpleListCollectionBuilder[U] : CollectionBuilder[U, SimpleList[U]] {
 			def Build(elements : SGC.IEnumerable[U]) : SimpleList[U] { SimpleList(elements) }
 		}
 		
@@ -49,7 +46,7 @@ namespace Fireball.Tests {
 			fold_rec(acc, Nemerle.Collections.NList.ToList(elements))
 		}
 	
-		resolve val SimpleListBuilder : CollectionBuilder[SimpleList[object], T, SimpleList[T]] = SimpleListCollectionBuilder()
+		resolve val SimpleListBuilder : CollectionBuilder[T, SimpleList[T]] = SimpleListCollectionBuilder()
 	}
 		
 	// Program

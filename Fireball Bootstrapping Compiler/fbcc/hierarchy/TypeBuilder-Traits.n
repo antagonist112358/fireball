@@ -113,7 +113,8 @@ namespace Nemerle.Compiler
           mods.custom_attrs ::= <[ Fireball.Internal.TraitMethod( ..$attribute_mods ) ]>;
         
         def h = fnc.header;
-        def typeName = <[$(this.GetMemType().ConstructInvariantClass() : typed) ]>;
+        def tyvarNames = TyparmVars.Map(splicable => <[ $(splicable.GetName() : name) ]>);
+        def typeName = <[$(PT.Name(this.Name): name) [ ..$tyvarNames ] ]>;
         def newParam = PT.PParameter(PT.Splicable.Name(PT.Name("self")), AttributesAndModifiers.Empty, typeName);
         // Rewrite the body
         def body = rewrite_implementation_body(fnc.body);

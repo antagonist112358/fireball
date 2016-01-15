@@ -419,6 +419,7 @@ namespace Nemerle.Compiler
     }
     
     static IsTopLevelToken(tok : Token) : bool {
+        | Token.Keyword("type") when tok.Next is Token.Identifier => true          
         | Token.Keyword(k) =>
           match (k)
           {
@@ -428,8 +429,6 @@ namespace Nemerle.Compiler
             | "enum" | "trait" | "struct" | "delegate" | "macro"  => true
             | _                                                   => false
           }
-
-        | Token.Identifier("type") when tok.Next is Token.Identifier => true
         
         // This is workaround for complete using directive. Without it compiler
         // parse "u" (which user type for complete "using") as expression and
@@ -445,6 +444,8 @@ namespace Nemerle.Compiler
     {
       def testToken(_tok)
       {
+        | Token.Keyword("type") when _tok.Next is Token.Identifier => true
+        
         | Token.Keyword(k) =>
           match (k)
           {
@@ -454,8 +455,7 @@ namespace Nemerle.Compiler
             | "enum" | "trait" | "struct" | "delegate" | "macro"  => true
             | _                                                       => false
           }
-
-        | Token.Identifier("type") when _tok.Next is Token.Identifier => true
+        
         
         // This is workaround for complete using directive. Without it compiler
         // parse "u" (which user type for complete "using") as expression and
@@ -648,6 +648,10 @@ namespace Nemerle.Compiler
       should_stop(stream, stop)
     }
 
+    has_token : bool {
+      get { stream != null }
+    }
+    
     static should_stop(tok : Token, stop : TokenStoppers) : bool
     {
       match (tok)
@@ -3087,12 +3091,7 @@ namespace Nemerle.Compiler
                   }
                   
                   loop();
-              }
-              
-            | Token.Import(new_env, _, _) =>
-              _ = get_token();
-              env = new_env;
-              loop ()
+              }              
               
             | _ =>
               def expr = parse_embedded_expr (stop);
@@ -4030,8 +4029,22 @@ namespace Nemerle.Compiler
           def child = makeStrsConcat(group_token.Child);
           push_stream (child);
           
-          unless(should_stop(stop))
-            result = parse_expr (stop) :: result;
+          unless(should_stop(stop)) // For match cases // TODO: Remove me later when free floating match cases => PartialFunction
+          {
+            def loop(tok) {
+              match(tok) {
+                | Token.Import(new_env, _, _) =>
+                  _ = get_token();
+                  env = new_env;
+                  loop(peek_token())
+                | Token.EndOfGroup => ()
+                | _ =>
+                  result = parse_expr (stop) :: result;
+              }
+            }
+            
+            loop(child)
+          }
           
           if (stream == null || !should_stop (stop))
           {

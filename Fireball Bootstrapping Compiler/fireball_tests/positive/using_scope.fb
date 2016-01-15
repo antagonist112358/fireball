@@ -56,7 +56,8 @@ namespace Fireball.Tests {
     
     public def Main(args: Array[String]) : void {
     
-      using System.Console;
+      using System.Console
+	  using System.Math
       
       WriteLine("Creating a ScopedClass");
       

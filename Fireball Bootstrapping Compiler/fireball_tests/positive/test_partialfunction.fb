@@ -3,13 +3,13 @@ namespace Fireball.Tests {
   class TestPF {
     val partialFunction = PartialFunc {
       case s : string => s
-    }
-    
+    }   	
+	
     def PrintIfString(o: object) : void {
       using System.Console
       
       when(partialFunction.IsDefinedAt(o))
-        WriteLine(partialFunction.Apply(o))
+        WriteLine(partialFunction(o))
     }
   }
   

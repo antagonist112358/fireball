@@ -136,7 +136,7 @@ namespace Nemerle.Compiler
           imethod.DeclaringType.IsDelegate &&
           imethod.MemberKind == MemberKinds.Constructor;
 
-        def fun_ty = typer.TypeOf (function_called);
+        def fun_ty = typer.TypeOf (function_called);          
 
         assert(!messenger.LocalError);
         
@@ -167,7 +167,7 @@ namespace Nemerle.Compiler
                 | _ => [from]
               }
             //Message.Debug ($"formals_types: $formals_types");
-          
+              
           | _ when Option.IsSome (fun_ty.Hint) =>
             when (messenger.NeedMessage)
               match (function_called) {
@@ -177,7 +177,7 @@ namespace Nemerle.Compiler
                 | _ => {}
               }
             ReportError (messenger, $"the value called ($function_called) has non-functional type $fun_ty")          
-          
+            
           | _ =>
             formals_types =
               NList.RevMap (call_parms, fun (_) { typer.FreshTypeVar () });
@@ -187,7 +187,7 @@ namespace Nemerle.Compiler
             unless (real_fun_ty.Require (fun_ty))
               ReportError (messenger, $"functional value ($function_called) was required to have type $fun_ty while it has $real_fun_ty");
         }
-
+        
         when (is_delegate_constructor) {
           // get the arguments for delegate constructor from the Invoke method
           def from_type = (function_called :> TExpr.StaticRef).from;

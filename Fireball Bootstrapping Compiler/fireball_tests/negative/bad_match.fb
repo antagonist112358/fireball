@@ -4,15 +4,16 @@ namespace Fireball.Compiler.Tests
 	
   module BadMatches {
     
-		def MakesBadMatches(input: option[object]) : bool {
-      match(input) {
-    	  when (input == null) null; //E: parse error near keyword `case': unexpected keyword (case) in expression context
-				case None => false	// W: this match clause is unused
-				case _ => true 			// W: this match clause is unused
-			}
+	def MakesBadMatches(input: option[object]) : bool {
+		match(input) {
+			case None => false
+			case Some(_) => true
+			case None => false					// W: this match clause is unused
+			case Some(_: String) => throw Exception("ERROR")	// W: this match clause is unused
+		}
     }
 		
-		def Main(args : Array[String]) : void {
+		def Main(_ : Array[String]) : void {
 			val anObject = "Hello World"
 			val isAnObject = MakesBadMatches(Some(anObject))
 			Console.WriteLine($"Is it an object? $isAnObject")
