@@ -1,0 +1,20 @@
+Task,Priority,Effort/Difficulty,Status,Notes
+Mutable variables are defined with 'var {variable} (: type) = expr',Medium,Low,100%,
+Immutable variables are defined with 'val {value} (:type) = expr',Medium,Low,100%,
+Public modifier not allowed for mutable fields,Medium,Low,100%,
+"Tuple assignment at class level (e.g. 'val (a, b) = tuple')",Medium,Low,100%,
+Implement default constructors for classes,Medium,Low,100%,All parameters get implemented as readonly private fields
+Default constructor propertly handles default literal values,Low,Low,100%,
+Implement newline handling / parser specification for newlines,High,High,100%,"Latest test seems pretty crazy, and works just fine, so I'm marking this done for now"
+Extend 'using' statements to be allowed anywhere,Medium,High,100%,"Probably will have to setup some sort of alias (compiler generated), which gets scoped
+to where the 'using' statement is specified. There might be a better way but this is my
+current plan."
+Change  'where' clause for type bounds to be integrated into generic type brackets [?],Low,Low,100%,
+Add support for parsing MatchCases into PartialFunctions,Low,Moderate,100%,
+"Add partial function syntax and generation (as private class extending PartialFunction[A, B])",Medium,Moderate,100%,
+"Add support for arbitrary class level expressions (assignments become class members, other expressions get shuffled into the constructor)",High,High,100%,"Not thoroughly tested, but working for several test cases"
+Type inference for fields defined at class level initialized to literal values,Low,Low,100%,
+Type inference for fields defined at class level initialized to non-literal values,Medium,Low,100%,
+Add resolve / resolved for compile time parameter / field value resolution,Medium,Moderate,100%,"This one is complex, and I have a limited number of test cases. It *does* appear to be working properly, though."
+Implement Traits,High,Extensive,100%,See language specification for more details
+"Change match '|' operator and exception '|' operator to new keyword ""case""",Medium,Low,100%,

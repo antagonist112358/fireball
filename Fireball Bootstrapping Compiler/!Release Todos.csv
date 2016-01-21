@@ -1,0 +1,34 @@
+Task,Priority,Effort/Difficulty,Status,Notes
+Add check for assignments through try/catch.,High,Moderate,0%,"Basically a try/catch which assigns a variable should require that the variable is actually an option[T], not T, since the assignment can break if there is an exception."
+Add lower type bounds to type system,Medium,Low,85%,Still need to implement the metadata (attribute) and have the compiler pick it up on assembly load from referenced assemblies
+"Set required default access levels: Field = private, method = public, class/record = internal, trait = public",Medium,Low,75%,"Not implemented for un-implemented types (record, mixin, trait)"
+Remove null value,Medium,Low,75%,This will potentially break other parts of the compiler
+Allow classes and traits to extend Functional types (including partial functions),Medium,Low,0%,
+Double check try/catch as an assignment expression.,Medium,Low,0%,
+Update to Fireball Keywords,Medium,Moderate,80%,Most of the keywords have been implemented
+Handle non-literal default value arguments,Medium,Moderate,75%,"Currently implemented using parameter subsets, needs to change to callsite tracking of named parameters and private static readonly fields for default values"
+Reintroduce the 'new' keyword for creating new instances,Medium,Moderate,0%,
+Implement access modifiers on default constructors,Medium,Moderate,0%,
+Implement companion modules,Medium,Moderate,0%,
+Implement Record type,Medium,High,60%,Needs fixing
+Change property declaration to Fireball spec,Medium,High,0%,See Language notes / specification for details
+Add implicit conversions (used for call-site type conversion from A -> B),Medium,High,0%,
+Implement generic 'environment sensitive' keywords,Medium,High,0%,"Like 'as' in match statement, 'get'/'set' in property definition, 'add'/'remove' in event, etc."
+Rename all namespaces to 'Fireball.Compiler',Medium,High,0%,Will probably break lots of shit. Might require multiple revs / other tasks
+Add optional space instead of dot for accessing class/trait/module/variant/mixin members,Medium,High,0%,
+"Remove useless, unplanned, not-supported macros from Macros library",Medium,High,0%,
+"Implement Disjoint type expressions (like ""Either[A, B]"" from other languages, but can be multiple case types)",Medium,High,0%,
+Implement Mixins,Medium,Extensive,5%,Need to finish the expression serializer
+"Modify extension method syntax from ""module AAA { ? }"" to ""implicit class AAA(inst: Something) { ? }""",Medium,Medium,0%,
+Adjust syntax so that parameterless methods can be called without parenthesis,Low,Low,0%,
+Remove numeric postfix operators '++' and '--',Low,Low,0%,
+Change '++' macro to be useful for any ICollection / ICollection[T],Low,Low,0%,Depends on task #18
+"Change tuple type declaration to be parathesis style, not union style (i.e. using '(Type1, Type2, ?)' instead of 'Type1 * Type2, ?'",Low,Low,0%,
+"VarParms (vardef) should be triggered by ellipsis instead of the keyword ""params""",Low,Low,0%,
+"Add Numeric trait to Fireball internal library, and setup builtin conversions for primative numeric types",Low,Low,0%,
+"Add ""apply"" method to Modules for ""constructor like"" behavior",Low,Low,0%,
+Implement default constructors for records,Low,Moderate,0%,All parameters get implemented as public read/write properties (Pascal cased)
+Remove explicit enumerations and change variant type inheriting from numeric type to emit enumeration,Low,Moderate,0%,
+Allow modules to implement traits,Low,Moderate,0%,"Decided instead to use the type name only. This will make the compiler tricks necessary more difficult, but I think the syntax is simply cleaner that way.
+Behind the scenes, the compiler will generate a singleton, which will be actually passed to the receiver / consumer of the trait type."
+Add implicit classes (used for extension methods),Low,Moderate,0%,

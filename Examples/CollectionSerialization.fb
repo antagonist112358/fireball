@@ -9,38 +9,46 @@ namespace Fireball.Tests {
 	*/
 	module CollectionSerialization {
 
+		// Type aliases
+		type ByteArray = Array[byte]
+		type ByteStream = IEnumerable[byte]
+		type SerializableEnumeration = IEnumerable[_ : ISerializable]
+	
 		#region Serialization
 		
 		
 		trait BinarySerializer[T] {
-			def Serialize(item: T) : Array [ byte ]
+			def Serialize(item: T) : ByteArray
 		}
 		
 		// We want an extension method on every IEnumerable[T] called 'ToByteArray', which will write out the bytes in the array.
-		implicit class CollectionSerializationExtensions[A : ISerializable, T : IEnumerable[A]](collection: T) {
-			def ToByteArray(resolve serializer: BinarySerializer[T]) { serializer.Serialize(collection) }
+		implicit class CollectionSerializationExtensions[T : SerializableEnumeration](collection: T) {
+			
+			// Notice the '=' syntax for single line functions
+			def ToByteArray(resolve serializer: BinarySerializer[T]) = serializer.Serialize(collection)
 		}
 		
-		private class BinaryFormatterCollectionSerializer[T : IEnumerable[T]]
+		private class BinaryFormatterCollectionSerializer[T : ISerializable]
 			implements BinarySerializer[T] {
 			
 			val collectionTypeName = typeof(T).FullName
 			val binFmt = new BinaryFormatter
 			
 			def Serialize(collection : T) : Array [ byte ] {
-				using (memStream = new MemorymemStream) {
-					using(writer = new BinaryWriter(memStream)) {
-						writer.Write($"SerializedCollection:$collectionTypeName")
-						binFmt.Serialize(memStream, collection.ToArray)
-						memStream.ToArray
-					}
-				}
+				scope {
+					memStream = new MemoryStream
+					writer = new BinaryWriter(memStream)
+					
+					writer.Write($"SerializedCollection:$collectionTypeName")
+					binFmt.Serialize(memStream, collection.ToArray)
+					memStream.ToArray				
+				}				
 			}
 			
 		}
 		
 		// Make the BinaryFormatterCollectionSerializer resolvable
-		resolve BinarySerializer[T : IEnumerable[T]] = new BinaryFormatterCollectionSerializer
+		resolve BinarySerializer[T : ISerializable] = new BinaryFormatterCollectionSerializer
 		
 		#endregion
 		
@@ -53,7 +61,7 @@ namespace Fireball.Tests {
 		}
 		
 		
-		private class BinaryFormatterCollectionDeserializer[T : ISerializable]
+		private class BinaryFormatterCollectionDeserializer[T : SerializableEnumeration]
 			implements BinaryDeserializer[T] {		
 			
 			val binFmt = new BinaryFormatter
