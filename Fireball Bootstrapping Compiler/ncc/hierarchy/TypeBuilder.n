@@ -74,9 +74,9 @@ public partial class TypeBuilder : TypeInfo
   public UnimplementedMembers   : list[FixedType.Class * IMember] { get; private set; }
 
   [Accessor(MacroBuilderRegistry)]
-  private builder_registry      : Hashtable[IMacro, PT.Name * PT.ClassMember.TypeDeclaration] = Hashtable();
+  private builder_registry      : Hashtable[object, PT.Name * PT.ClassMember.TypeDeclaration] = Hashtable();
   
-  public RegisteredDefine(source: IMacro, name: PT.Name, tyDecl: PT.ClassMember.TypeDeclaration) : bool {
+  public RegisteredDefine(source: object, name: PT.Name, tyDecl: PT.ClassMember.TypeDeclaration) : bool {
     match(builder_registry.Get(source)) {
       | Some =>  false
       | None =>
@@ -85,7 +85,7 @@ public partial class TypeBuilder : TypeInfo
     }
   }
   
-  public GetRegisteredName(source: IMacro) : option[PT.Name] {
+  public GetRegisteredName(source: object) : option[PT.Name] {
     match(builder_registry.Get(source)) {
       | Some((name, _)) => Some(name)
       | _ => None()

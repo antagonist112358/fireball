@@ -2472,6 +2472,8 @@ namespace Nemerle.Compiler
         | (PExpr.Match) as m =>
           TypeMatch (m, expected)
 
+        | (PExpr.PartialFunction) as pf =>
+          TypePartialFunction(pf, expected)
 
         | PExpr.Typed (CacheRef (desc) as tytree) =>
           tytree.ty = desc.Type;
@@ -4246,6 +4248,10 @@ namespace Nemerle.Compiler
             def res = 
               match (fnc.ty.Hint)
               {
+                // check for partialfunction
+                | Some(FixedType.Class(tc, _)) when (tc.IsDerivedFrom(InternalType.PartialFunction_tc)) =>
+                  def newExpr = <[ $pfnc . apply (..$parms) ]>;
+                  TypeExpr(newExpr);
                 // If fnc is typed to type and there is member "()", call it.
                 | Some(FixedType.Class(tc, _) as c) when !(tc.LookupMember("()") is []) =>
                   // Convert a(params) to A.@()(a, params)
@@ -4502,6 +4508,9 @@ namespace Nemerle.Compiler
         cases.Add(Match_case(patterns, caseBody, disable_warnings));
       }
 
+      // Fix the match type
+      matched_value_type.Fixate();
+      
       if (cases.IsEmpty())
       {
         ReportError(messenger, "cannot have an empty match construct");
@@ -4619,7 +4628,7 @@ namespace Nemerle.Compiler
       }
     }
     #endregion
-
+    
     #region Special macros
     TypeBlock (nameRef : PExpr.Ref, body : PExpr, expected : TypeVar) : TExpr
     {

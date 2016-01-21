@@ -1,9 +1,9 @@
 namespace Fireball.Tests {
 
   class TestPF {
-    val partialFunction = PartialFunc {
+    val partialFunction = {
       case s : string => s
-    }   	
+    }
 	
     def PrintIfString(o: object) : void {
       using System.Console
@@ -11,6 +11,18 @@ namespace Fireball.Tests {
       when(partialFunction.IsDefinedAt(o))
         WriteLine(partialFunction(o))
     }
+  }
+  
+  module EnumerableExtensions {
+  
+	public def Collect[A, B](this seq: System.Collections.Generic.IEnumerable[A], pf: PartialFunction[A, B]) : System.Collections.Generic.IEnumerable[B] {
+		foreach(item in seq) {
+			when(pf.IsDefinedAt(item)) {
+				yield pf(item)
+			}
+		}
+	}
+  
   }
   
   public module Program {
@@ -21,7 +33,24 @@ namespace Fireball.Tests {
       
       foreach(item in testArray)
         tester.PrintIfString(item)
+		
+	  val numericItems = testArray.Collect({
+		case i : int => System.Convert.ToDouble(i)
+		case d : double => d
+	  })
+	  
+	  foreach(number in numericItems)
+		System.Console.Write($"$number ")
+		
+	  System.Console.WriteLine("")
     }
   }
   
 }
+
+/*
+BEGIN-OUTPUT
+Hello World
+1 0.5
+END-OUTPUT
+*/

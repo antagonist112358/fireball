@@ -18,7 +18,8 @@ namespace Nemerle.Core
       
       <[ decl:
         private class $name [A] : PartialFunction[A, $ret_ty ] {
-          public override apply(x: A) : $ret_ty {
+          
+          public override apply(x: A) : $ret_ty { 
             match(x) { ..$(@match.cases) }
           }
           
@@ -34,28 +35,25 @@ namespace Nemerle.Core
         @case
       }
       PExpr.Match(expr, @match.cases.Map(set_true(_)))
-    }
-    
-    // TODO: Fix or remove me
-    /*
-    private MakePartialFunctionType(ty: TypeVar, ret_ty : TypeVar) : FixedType.Class {
-      FixedType.Class(ret_ty.Manager.InternalType.PartialFunction_tc, [ty, ret_ty ])
-    }
-    */
+    }   
     
     private MakeIsDefined(loc: Location, cases : list[MatchCase]) : PExpr {
       def disable(@case) { @case.disable_warnings = true; @case }
-      def defined = cases.Map(case => match(case) {
-        | <[ case: $check => $_ ]> when check is PExpr.Wildcard =>
-          Message.Error("Partial Function case should not have any wildcard cases.");
-          None()
-        | <[ case: $check => $_ ]> => Some(disable(MatchCase([check], <[ true ]>)))
-        | _ => 
-          Message.Error($"invalid match case $case");
-          None()
-      }).Filter(_.HasValue).Map(case_option => case_option.Value) + [
-        MatchCase([PExpr.Wildcard(loc)], <[ false ]>)
-      ];
+      def defined = match(cases) {
+        | _ when cases.Length == 1 => [MatchCase([PExpr.Wildcard(loc)], <[ true ]>)]
+        | multipleCases => multipleCases.Map(case => 
+          match(case) {
+            | <[ case: $check => $_ ]> when check is PExpr.Wildcard =>
+              Message.Error("When using multiple case branches in a partial function, 'wildcard' cases are not supported.");
+              None()
+            | <[ case: $check => $_ ]> => Some(disable(MatchCase([check], <[ true ]>)))
+            | _ => 
+              Message.Error($"invalid match case $case");
+              None()
+          }).Filter(_.HasValue).Map(case_option => case_option.Value) + [
+            MatchCase([PExpr.Wildcard(loc)], <[ false ]>)
+          ]
+      }
       
       <[ match(x) { ..$defined } ]>
     }

@@ -480,6 +480,7 @@ namespace Nemerle.Compiler
         | Spliced         (e)                           // { body : PExpr; }
         | Ellipsis        (e)        => Go(e);          // { body : PExpr; }
         | Match           (e, cs, _) => Go(e); Go(cs);  // { expr : PExpr; cases : list [MatchCase]; mutable expr_loc : Location; }
+        | PartialFunction (e)        => Go(e);          // { cases : list [MatchCase]; }
         | Call            (e, lst)                      // { func : PExpr; parms : list [PExpr]; }
         | GenericSpecifier(e, lst)                      // { func : PExpr; generic_parms : list [PExpr]; }
         | Indexer         (e, lst)   =>                 // { obj : PExpr; args : list [PExpr]; }

@@ -968,7 +968,7 @@ namespace Nemerle.Compiler
               def typeExpr = parse_expr (TokenStoppers.Equal);
               def defval = match (peek_token ()) 
               {
-                      | Token.Operator ("=") =>
+                | Token.Operator ("=") =>
                   shift();
                   def e = parse_expr();
                   Some(e)
@@ -3213,8 +3213,16 @@ namespace Nemerle.Compiler
             else
               rpn_op_stack = (info, loc) :: rpn_op_stack;
 
-            // parse inner elements of bracket-like operators: `( ... )'
-            _expr_stack = parse_expr_sequence (group, _expr_stack);
+              _expr_stack = match(group) {
+                // Special case of ( { expr } )
+                | Token.LooseGroup(Token.BracesGroup as brac) =>
+                  push_stream(brac);
+                  def expr = parse_embedded_expr(stop);
+                  pop_stream("expression inside parenthesis");
+                  expr :: _expr_stack
+                // parse inner elements of bracket-like operators: `( ... )'
+                | _ => parse_expr_sequence (group, _expr_stack);
+              }
 
             when (info is BinaryOperatorInfo)
               _op_context = OpContext.Prefix;
@@ -3442,6 +3450,10 @@ namespace Nemerle.Compiler
             }
 
           | Token.SquareGroup(groups, _, _) => PExpr.ListLiteral(loc, parse_expr_sequence(groups));
+          
+          | Token.BracesGroup (Token.LooseGroup (Token.Keyword ("case")) as group, _, _, _) as brac when !(stop %&& TokenStoppers.Braces) =>
+            PExpr.PartialFunction(loc.Combine(brac.Location), process_groups (group, "partial function body", parse_match_case))
+          
           | Token.BracesGroup as brac when !(stop %&& TokenStoppers.Braces) => ParseBlock(brac, [])
 
           | Token.QuoteGroup(group, _, _) =>

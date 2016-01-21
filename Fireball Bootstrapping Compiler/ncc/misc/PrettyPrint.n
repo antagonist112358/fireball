@@ -269,6 +269,11 @@ namespace Nemerle.Compiler
           SprintExpr (ctx, expr, indentation, acc); acc.Write ($")\n$indentation");
           print_match(cases)
           
+        | PExpr.PartialFunction(cases) =>
+
+          acc.Write ("PartialFunction ");
+          print_match(cases)
+          
         | <[ throw $exc ]> => acc.Write ("throw "); SprintExpr (ctx, exc, indentation, acc);
 
         | PExpr.TryFinally (body, handler) =>

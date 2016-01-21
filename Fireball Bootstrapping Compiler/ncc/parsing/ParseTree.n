@@ -1082,6 +1082,9 @@ namespace Nemerle.Compiler.Parsetree
         }
       }
 
+    // Partial Function
+    | PartialFunction { cases : list [MatchCase]; }
+      
     // macros stuff
     | MacroCall       { name : Name; ns : NamespaceTree.Node;
                         parms : list [SyntaxElement]; }

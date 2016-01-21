@@ -18,17 +18,21 @@ ECHO Cleaning up...
 @DEL /Q "%TestPath%\output\*.*"
 
 ECHO Running Positive tests...
-@COPY "%TestPath%\positive\*.fb" "%TestPath%\output\
+>NUL COPY "%TestPath%\positive\*.fb" "%TestPath%\output\
+>NUL COPY "%FBCCPath%\Fireball.dll" "%TestPath%\output\
 
-"%TestPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
+"%FBCCPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
 
 PAUSE
 
-ECHO Running Negative tests...
 @DEL /Q "%TestPath%\output\*.*"
-@COPY "%TestPath%\negative\*.fb" "%TestPath%\output\
 
-"%TestPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
+ECHO Running Negative tests...
+
+>NUL COPY "%TestPath%\negative\*.fb" "%TestPath%\output\
+>NUL COPY "%FBCCPath%\Fireball.dll" "%TestPath%\output\
+
+"%FBCCPath%\%FBTester%" -p:-nowarn:10003,168 -debugger -d:"%TestPath%\output"
 
 PAUSE
 

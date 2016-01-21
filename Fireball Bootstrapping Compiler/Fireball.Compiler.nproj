@@ -95,6 +95,9 @@
     <Compile Include="fbcc\typing\ResolutionContainer.n">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="fbcc\typing\Typer-PartialFunctions.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="ncc\CompilationOptions.n">
       <SubType>Code</SubType>
     </Compile>

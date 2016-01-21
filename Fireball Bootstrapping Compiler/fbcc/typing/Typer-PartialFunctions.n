@@ -1,0 +1,163 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Compiler.SolverMacros;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Logging;
+using Nemerle.Utility;
+
+using System;
+using System.Diagnostics;
+using SCG = System.Collections.Generic;
+
+using PExpr = Nemerle.Compiler.Parsetree.PExpr;
+using PT    = Nemerle.Compiler.Parsetree;
+using SCG   = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Additional Typer methods for partial function handling.
+  /// </summary>
+  public partial class Typer
+  {
+    #region Partial Functions
+    
+    private RebuildPatternExpression(pat: PExpr) : PExpr {
+      
+          | <[ $type where $e1 = $e2 ]> => RebuildPatternExpression (<[ $type where ($e1 = $e2) ]>) // fix operator precedence issue
+          
+          | PT.PExpr.TypeEnforcement (_, PT.PExpr.ToComplete (_))
+          | PT.PExpr.TypeEnforcement (_, PT.PExpr.Member (_, Parsetree.Splicable.HalfId (_)))
+          | PT.PExpr.Is(_, PT.PExpr.ToComplete (_))
+          | PT.PExpr.Is(_, PT.PExpr.Member (_, Parsetree.Splicable.HalfId (_))) =>            
+            throw System.NotImplementedException ();
+
+          | PT.PExpr.ListLiteral (l) => RebuildPatternExpression (Macros.Lift (l))
+
+          // if we have simple expression left it recognize as type
+          | <[ $(n : name) as $(sname : name) ]> => RebuildPatternExpression(<[ $(n : name)() as $(sname : name) ]>)
+          
+          | PT.PExpr.As(pat, PT.Splicable.Name (_)) => PT.PExpr.TypeEnforcement(PExpr.Wildcard(), RebuildPatternExpression(pat))
+
+          | PT.PExpr.As(_, PT.Splicable.Expression) =>
+            ReportError(messenger, "$ operator used outside of quotation <[ ... ]> context");
+            pat
+
+          | PT.PExpr.TypeEnforcement (_, needed_type) => PT.PExpr.TypeEnforcement(PExpr.Wildcard(), needed_type)
+
+          | PT.PExpr.Is(_, needed_is_type) => PT.PExpr.TypeEnforcement(PExpr.Wildcard(), needed_is_type)
+         
+          | PT.PExpr.TypedPattern (body) => PT.PExpr.TypeEnforcement(PExpr.Wildcard(), PExpr.TypedType(body.ty))
+          
+          | PT.PExpr.Quoted(parse_element) =>
+            // we use Macros functions to translate quoted element
+            Manager.Macros_in_pattern = true;
+            try
+            {
+              def lifted = 
+                match (parse_element)
+                {
+                  | PT.SyntaxElement.Expression  (e) => Macros.quoted_expr (e)
+                  | PT.SyntaxElement.MatchCase   (e) => Macros.QuotedMatchCase (e)
+                  | PT.SyntaxElement.Function    (e) => Macros.quoted_fundecl (e)
+                  | PT.SyntaxElement.Parameter   (e) => Macros.quoted_fparam (e)
+                  | PT.SyntaxElement.ClassMember (e) => Macros.quoted_member (e)
+                  | PT.SyntaxElement.TType => Message.FatalError("matching over typed types not supported")
+                  | PT.SyntaxElement.RawToken
+                  | PT.SyntaxElement.TypeBuilder
+                  | PT.SyntaxElement.MethodBuilder
+                  | PT.SyntaxElement.EventBuilder
+                  | PT.SyntaxElement.FieldBuilder
+                  | PT.SyntaxElement.PropertyBuilder
+                  | PT.SyntaxElement.ParameterBuilder => Util.ice("strange syntax element appeared in quotation")
+                };
+
+              RebuildPatternExpression (Macros.patternize_quotation (lifted))
+            }
+            finally { Manager.Macros_in_pattern = false; }
+
+          | PT.PExpr.Spliced    => ReportError (messenger, "$ operator may appear only within <[ ... ]> quotation"); pat
+          
+          | PT.PExpr.Ellipsis   => ReportError(messenger, ".. arguments list may appear only within <[ ... ]> quotation"); pat
+          
+          | PT.PExpr.ToComplete => Util.ice("The completion tokens allowed only if Manager.IsCompletionInProgress is true.")          
+
+          | _ => pat                 
+
+    }
+    
+    private FixupPartialFunctionCases(pf: PExpr.PartialFunction) : PExpr.PartialFunction {
+      def set_true(@case) { 
+        @case.disable_warnings = true;
+        @case
+      }
+      PExpr.PartialFunction(pf.cases.Map(set_true(_)))
+    }   
+    
+    private MakeIsDefined(loc: Location, cases : list[PT.MatchCase]) : PExpr {
+      def disable(@case) { @case.disable_warnings = true; @case }
+      
+      def cleanup(@case: PT.MatchCase) {
+        | <[ case: $check => $_ ]> when check is PExpr.Wildcard || check is PExpr.Ref =>
+          Message.Error("When using multiple case branches in a partial function, 'wildcard' and 'catch all' cases are not allowed.");
+          None()
+        | <[case : $check => $_ ]> => 
+          def rebuildCheck = RebuildPatternExpression(check);
+          Some(disable(PT.MatchCase([rebuildCheck], <[ true ]>)))
+        | _ =>
+          Message.Error($"invalid partial function case $case");
+          None()
+      }
+      
+      def defined = match(cases) {
+        | [ <[ case: $check => $_ ]> ] when check is PExpr.Wildcard => [PT.MatchCase([PExpr.Wildcard(loc)], <[ true ]>)]
+        | multipleCases => multipleCases
+          .Map(cleanup)
+          .Filter(_.HasValue)
+          .Map(case_option => case_option.Value) + [
+            PT.MatchCase([PExpr.Wildcard(loc)], <[ false ]>)
+          ]
+      }
+      
+      <[ match(x) { ..$defined } ]>
+    }
+    
+    private BuildPartialFunctionWithName(name: PT.Name, pf: PExpr.PartialFunction) : PT.ClassMember.TypeDeclaration {
+      def @match = FixupPartialFunctionCases(pf);
+      def isDefined = MakeIsDefined(name.Location, @match.cases);
+      def ret_texpr = TypeExpr(<[ fun (x : object) { match(x) { ..$(@match.cases) } } ]>);  // x : object because we have no way of knowing the variable type at this point.
+      def ret_ty_name = (ret_texpr.ty.Fix() :> FixedType.Fun).to.Fix().TypeName;
+      def ret_ty = <[$(PT.Name(ret_ty_name) : name)]>;
+      
+      <[ decl:
+        private class $name [A] : PartialFunction[A, $ret_ty ] {
+          
+          public override apply(x: A) : $ret_ty { 
+            match(x) { ..$(@match.cases) }
+          }
+          
+          public override IsDefinedAt(x: A) : bool { $isDefined }
+        }
+      ]>
+    }    
+    
+    TypePartialFunction(pf: PExpr.PartialFunction, expected: TypeVar) : TExpr {
+      def builder = CurrentTypeBuilder;
+      def name = Macros.NewSymbol("PartialFunction");
+      def loc = pf.Location;
+      def refExpr = match(builder.GetRegisteredName(pf)) {
+        | Some(regname) => <[ $(PExpr.Ref(loc, regname)) () ]>
+        | None =>
+          def tydecl = BuildPartialFunctionWithName(name, pf);
+          _ = builder.RegisteredDefine(pf, name, tydecl);
+          def tb = builder.DefineNestedType(tydecl, true);
+          tb.Compile();
+          <[ $(PExpr.Ref(loc, name)) () ]>
+      }
+      
+      TypeExpr(refExpr, expected)
+    }
+    
+    #endregion
+  }
+}

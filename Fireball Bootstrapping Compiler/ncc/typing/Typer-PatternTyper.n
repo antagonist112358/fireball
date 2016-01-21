@@ -481,7 +481,7 @@ namespace Nemerle.Compiler
               when (messenger.NeedMessage)
                     Message.Warning ("using the type check pattern here is redundant, type is always that");
             }
-            
+                        
             match (symbols) 
             {
               | [fld is IField] =>
@@ -543,7 +543,7 @@ namespace Nemerle.Compiler
                       else
                       {
                         ReportError (messenger, $"the matched value type $matched_value_type was expected to be compatible with $option_type");
-                        Pattern.Error ()
+                        Pattern.Error ()                        
                       }
 
                     | VariantOption =>

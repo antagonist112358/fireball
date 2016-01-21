@@ -295,6 +295,23 @@ namespace Nemerle.Compiler
                                                     def cases = cases.Map(go_case);
                                                     <[ match ($(traverse(mexpr))) {.. $cases } ]>
 
+                                                | PExpr.PartialFunction(cases) =>
+                                                    def go_case (c)
+                                                    {
+                                                      def go_guard(g : PExpr)
+                                                      {
+                                                        | <[ $pat when $e ]> => <[ $(traverse(pat)) when $(traverse(e)) ]>
+                                                        | _ => traverse(g)
+                                                      }
+
+                                                      def <[ case: | ..$guards => $exp ]> = c;
+                                                      def guards = guards.Map(go_guard);
+                                                    <[ case: | ..$guards => $(traverse(exp)) ]>
+                                                    }
+
+                                                    def cases = cases.Map(go_case);
+                                                    PExpr.PartialFunction(cases)                                                
+                                                    
                                                 | <[ throw $exc ]> => <[ throw $(traverse(exc)) ]>
                                                 | PExpr.TryFinally(body, handler) => PExpr.TryFinally(traverse(body), traverse(handler))
                                                 | PExpr.Try(body, cases) =>

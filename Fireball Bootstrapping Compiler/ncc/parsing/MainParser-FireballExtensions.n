@@ -312,5 +312,27 @@ namespace Nemerle.Compiler
         }
       }      
     }
+    
+    private ParseEmbeddedPartialFunction (braces: Token) : PExpr {
+        
+        def parse_match_cases(tok: Token) {
+          | Token.LooseGroup (Token.Keyword ("case")) as group => process_groups (group, "function body", parse_match_case)
+          | x => 
+            _ = fatal_error (x.Location, $"expecting partial function declaraction, starting with \"case\" but got '$x' instead.");
+            []
+        }
+        
+        match(braces) {
+          | Token.BracesGroup(Token.LooseGroup, _, _, _) =>
+            def group = (braces :> Token.BracesGroup).Child :> Token.LooseGroup;
+            //push_stream(group);
+            def expr = PExpr.PartialFunction(braces.Location, parse_match_cases(group));
+            //pop_stream("partial function body");
+            expr
+          | _ => Util.ice()
+        }
+        
+      }
+      
   }
 }
