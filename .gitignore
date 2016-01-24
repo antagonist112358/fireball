@@ -22,8 +22,15 @@ bld/
 [Bb]in/
 [Oo]bj/
 
+# Markdown compiled HTML pages for language specification
+Language Specification/Compiled
+
+
 # Visual Studo 2015 cache/options directory
 .vs/
+
+# Visual Studio Code settings directory
+.vscode/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/
@@ -140,8 +147,10 @@ publish/
 **/packages/*
 # except build/, which is used as an MSBuild target.
 !**/packages/build/
-# Uncomment if necessary however generally it will be regenerated when needed
-#!**/packages/repositories.config
+# Keep any 'packages.config' files, however
+!**/packages/packages.config
+# Keep 'install.bat' in the packages directory
+!**/packages/install.bat
 
 # Windows Azure Build Output
 csx/
@@ -194,5 +203,3 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
-
-Fireball Bootstrapping Compiler/fireball_tests/typeclass.exe

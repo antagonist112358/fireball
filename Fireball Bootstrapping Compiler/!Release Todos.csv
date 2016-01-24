@@ -1,5 +1,4 @@
 Task,Priority,Effort/Difficulty,Status,Notes
-Add check for assignments through try/catch.,High,Moderate,0%,"Basically a try/catch which assigns a variable should require that the variable is actually an option[T], not T, since the assignment can break if there is an exception."
 Add lower type bounds to type system,Medium,Low,85%,Still need to implement the metadata (attribute) and have the compiler pick it up on assembly load from referenced assemblies
 "Set required default access levels: Field = private, method = public, class/record = internal, trait = public",Medium,Low,75%,"Not implemented for un-implemented types (record, mixin, trait)"
 Remove null value,Medium,Low,75%,This will potentially break other parts of the compiler

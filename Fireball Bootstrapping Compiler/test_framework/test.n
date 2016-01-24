@@ -148,6 +148,9 @@
 
     private CheckLine (str : string, line_index : int) : void
     {
+      def clean_line(line) {
+        line.Replace("\t", "")
+      }
       regexp match (str)
       {
         | "^END-OUTPUT" => is_reading_output = false
@@ -162,15 +165,15 @@
                 regexp match (str)
                 {
                   | @".*//\s*E:\s*(?<text>.*)\s*$" =>
-                      err_lines.Add (line_index.ToString (), Regex (text))
+                      err_lines.Add (line_index.ToString (), Regex (clean_line(text)))
                   | @".*//\s*W:\s*(?<text>.*)\s*" =>
-                      warn_lines.Add (line_index.ToString(), Regex(text))
+                      warn_lines.Add (line_index.ToString(),Regex (clean_line(text)))
                   | @".*//\s*H:\s*(?<text>.*)\s*" =>
-                      hint_lines.Add (line_index.ToString(), Regex(text))
+                      hint_lines.Add (line_index.ToString(), Regex (clean_line(text)))
                   | @".*//\s*GE:\s*(?<text>.*)\s*$" =>
-                      global_err_lines.Add (line_index.ToString (), Regex (text))
+                      global_err_lines.Add (line_index.ToString (), Regex (clean_line(text)))
                   | @".*//\s*GW:\s*(?<text>.*)\s*" =>
-                      global_warn_lines.Add (line_index.ToString (), Regex (text))
+                      global_warn_lines.Add (line_index.ToString (), Regex (clean_line(text)))
                   | "^BEGIN-OUTPUT" =>
                       is_reading_output = true;
                       was_output = true

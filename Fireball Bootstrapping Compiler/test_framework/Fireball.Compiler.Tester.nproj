@@ -29,7 +29,7 @@
     <RunDebugger>false</RunDebugger>
     <StartProgram />
     <WorkingDirectory />
-    <CmdArgs>-p:-nowarn:10003 -d:"C:\Users\kdivincenzo\Desktop\Fireball\Fireball Bootstrapping Compiler\fireball_tests\positive"</CmdArgs>
+    <CmdArgs>-p:-nowarn:10003 -d:"..\..\fireball_tests\negative"</CmdArgs>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugSymbols>false</DebugSymbols>

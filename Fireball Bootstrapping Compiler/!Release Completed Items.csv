@@ -18,3 +18,4 @@ Type inference for fields defined at class level initialized to non-literal valu
 Add resolve / resolved for compile time parameter / field value resolution,Medium,Moderate,100%,"This one is complex, and I have a limited number of test cases. It *does* appear to be working properly, though."
 Implement Traits,High,Extensive,100%,See language specification for more details
 "Change match '|' operator and exception '|' operator to new keyword ""case""",Medium,Low,100%,
+Add check for assignments through try/catch.,High,Moderate,100%,"Basically a try/catch which assigns a variable should require that the variable is actually an option[T], not T, since the assignment can break if there is an exception."
