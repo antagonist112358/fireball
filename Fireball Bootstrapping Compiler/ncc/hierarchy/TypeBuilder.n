@@ -1243,8 +1243,14 @@ public partial class TypeBuilder : TypeInfo
             if (nested_tyvars_subst == null) tcl
             else nested_tyvars_subst.Apply(tcl) :> FixedType.Class
 
+          // Handle function types
+          | FixedType.Fun(_, _) as funFT =>
+            def funTy = FunctionType.Make(funFT);
+            if (nested_tyvars_subst == null) funTy
+            else nested_tyvars_subst.Apply(funTy) :> FixedType.Class
+
           | _ =>
-            Message.FatalError2(t.Location, "derived or implemented type must be a class, struct or interface");
+            Message.FatalError2(t.Location, "derived or implemented type must be a class, trait, or functional type (e.g. 'int -> string')");
             null
         };
       }

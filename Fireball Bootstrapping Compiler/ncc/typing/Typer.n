@@ -1239,8 +1239,7 @@ namespace Nemerle.Compiler
         assert(invoke != null);
         def invokeTy = fixTy.TypeOfMember(invoke) :> FixedType.Fun;
         def (args, ret) = invokeTy.Decompose;
-        (del, exprTree, args, ret)
-
+        (del, exprTree, args, ret)        
       | _ => (null, null, null, null)
     }
 
@@ -1252,6 +1251,11 @@ namespace Nemerle.Compiler
       def oldIsSpeculativeTyping = Manager.IsSpeculativeTyping;
       Manager.IsSpeculativeTyping = speculative;
 
+      def check_for_functional_type(in_ty: FixedType) {
+        | FixedType.Class as fixTy when fixTy.IsFunctionalType => true
+        | _ => false
+      }
+      
       def result =
         try
         {
@@ -1353,7 +1357,7 @@ namespace Nemerle.Compiler
               expr2.Type.ForceRequire(target);
               expr2
             }
-          }
+          }      
           else if (SubtypingOrImplicitConv (expr.Type, target, out meth))
           {
             log(TYPING, $ "got subtyping, $(expr.Type) ---> $target, meth=$meth");
@@ -1391,6 +1395,11 @@ namespace Nemerle.Compiler
                 }));
               TypeExpr(<[ fun (.. $parms) { $(expr : typed) (.. $refs) } ]>, target)
           }
+          // Is the arg type a Class which inherits the builtin Function types?
+          else if (expr.Type.IsFixed && check_for_functional_type(expr.Type.FixedValue))
+          {
+            TypeExpr(<[ $(expr: typed) . apply ]>)
+          }          
           else if (target.IsNullable)
           {
             def exprIsValue    = expr.Type.IsValueType;
@@ -4252,10 +4261,14 @@ namespace Nemerle.Compiler
                 | Some(FixedType.Class(tc, _)) when (tc.IsDerivedFrom(InternalType.PartialFunction_tc)) =>
                   def newExpr = <[ $pfnc . apply (..$parms) ]>;
                   TypeExpr(newExpr);
-                // If fnc is typed to type and there is member "()", call it.
-                | Some(FixedType.Class(tc, _) as c) when !(tc.LookupMember("()") is []) =>
+                // Check for functional type
+                | Some(FixedType.Class(tc, _)) when (tc.IsDerivedFrom(InternalType.FunctionBase_tc)) =>
+                  def newExpr = <[ $pfnc . apply (..$parms) ]>;
+                  TypeExpr(newExpr);
+                // If fnc is typed to module and there is member "Apply", call it.
+                | Some(FixedType.Class(tc, _) as c) when tc.IsModule && !(tc.LookupMember("Apply") is []) =>
                   // Convert a(params) to A.@()(a, params)
-                  def newExpr = <[ $(c : typed) . @()(..$(pfnc :: parms)) ]>;
+                  def newExpr = <[ $(c : typed) . Apply (..$parms) ]>;
                   TypeExpr(newExpr);
                 | _ => 
                   TryTypeCall(fnc,

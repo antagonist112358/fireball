@@ -10,5 +10,7 @@ Newline Rules
 	- else
 	- implements
 	- extends
-	- ...
+	- includes
+8. The following tokens always start new statements:
+  - case
 

@@ -50,6 +50,10 @@ namespace Nemerle.Compiler
             
             Class(tycon, newTyvars.Map(StaticTypeVarRef(_)))
           }
+          
+          internal IsFunctionalType : bool {
+            get { tycon.BaseType != null && tycon.BaseType.IsDerivedFrom(Manager.InternalType.FunctionBase_tc) }
+          }
       }
     /// In code like:
     ///      class Foo[T] { bar : list[T]; }
@@ -370,7 +374,20 @@ namespace Nemerle.Compiler
           SaveError (s.CurrentMessenger, $"$(this) is not a subtype of $t");
           false
 
-        | (_, Class(tc, _)) when tc.Equals(InternalType.Object_tc) => true
+        | (Fun(inputs, output), Class(tc, genArgs)) when tc.IsDerivedFrom(InternalType.FunctionBase_tc) with (clsArgs = genArgs.FirstN(genArgs.Length - 1), clsRet = genArgs.Last) =>
+          // Make sure the number of inputs matches the functional type number of inputs
+          match(inputs.FixedValue) {
+            | FixedType.Tuple(tupArgs) when tupArgs.Length == clsArgs.Length =>
+              inputs.Unify(FixedType.Tuple(clsArgs)) && output.Unify(clsRet)
+            | _ when clsArgs.Length == 1 => 
+              inputs.Unify(clsArgs.Head) && output.Unify(clsRet)
+            | _ =>
+              def msg = $"$(this): ($(clsArgs)) -> $clsRet";
+              SaveError(s.CurrentMessenger, $"$msg is not a subtype of $t [simple require]");
+              false
+          }
+          
+        | (_, Class(tc, _)) when tc.Equals(InternalType.Object_tc) => true                
         | (Class(tc1, args1), Class(tc2, args2)) =>
           //Message.Debug ($"Require $this $t");
           if (tc1.Equals(tc2) && variant_args_equality(tc1.Typarms, args1, args2))

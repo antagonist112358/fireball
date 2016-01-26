@@ -405,6 +405,20 @@ namespace Nemerle.Compiler
                       def res1 = head.Provide(ext.Type);
                       !(res1 && FixedType.Fun(from, cnt, to).Unify(expected))
 
+                    /*
+                    // Handle classes that extend from functional types
+                    | FixedType.Class(tc, args)      when tc.IsDerivedFrom(Manager.InternalType.FunctionBase_tc) => match(args) {
+                      // Function[A, B]
+                      | head :: to :: []                    with (from = FixedType.Void(), cnt = 0)
+                      // Function[A1, A2, B]
+                      | head :: seq   when seq.Length == 2  with (from = seq.Head, to = seq.Last, cnt = 1)
+                      // Function[A1, ..., An, B]
+                      | head :: seq                         with (from = FixedType.Tuple(seq.FirstN(seq.Length - 1)), to = seq.Last, cnt = seq.Length - 1) =>
+                        def res1 = head.Provide(ext.Type);
+                        !(res1 && FixedType.Fun(from, cnt, to).Unify(expected))
+                    }
+                    */
+                      
                     | _ => true // was error
                   }
                 });

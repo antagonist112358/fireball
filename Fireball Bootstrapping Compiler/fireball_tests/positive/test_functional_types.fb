@@ -1,0 +1,44 @@
+namespace Fireball.Tests {  
+
+  using System
+  using Nemerle
+  using Nemerle.Builtins
+
+  
+  module FunctionExtensions {
+    def Invoked[A, B](this fnc: Function[A, B], arg: A) : B {
+      fnc(arg)
+    }    
+  }
+  
+  // Test class can extend functional types
+  class KType : String -> String {
+    override def apply(input: String) : String { input.ToLower() }
+  }      
+
+  // Test program
+  module Program {
+  
+    def TakesStrToStr(fnc: String -> String) : String -> int {
+      (x) => fnc(x).Length
+    }
+  
+    def println(s: String) : void { Console.WriteLine(s) }
+  
+    def Main(_: Array[String]) : void {
+      val srcString = "HeLLo WorLD"
+      // Test can invoke class extending functional type like a functional
+      val kfnc = KType()
+      val lowered = kfnc(srcString)
+      val upperFnc = (x: String) => x.ToUpper()
+      
+      // Test extensions on fixed functional types
+      val uppered = upperFnc.Invoked(srcString)
+      
+      // Test functional composition with classes extending from functional type
+      val length = (TakesStrToStr(kfnc))(srcString)
+      
+      println($"\"$srcString\": (lowered: $lowered), (uppered: $uppered), length: $length")
+    }
+  }
+}
