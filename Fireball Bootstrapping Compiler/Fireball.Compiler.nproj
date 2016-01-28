@@ -89,7 +89,7 @@
     <Compile Include="fbcc\typing\EnvResolvableResolver.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="fbcc\typing\NamespaceResolvableFinder.n">
+    <Compile Include="fbcc\typing\NamespaceFinder.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="fbcc\typing\ResolutionContainer.n">

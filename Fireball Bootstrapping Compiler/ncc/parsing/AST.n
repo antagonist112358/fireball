@@ -683,7 +683,9 @@ namespace Nemerle.Compiler {
     | Partial         = 0x10000
     | Extern          = 0x20000
     /// field is immutable, but compiler overrides it and can assign something
-    | CompilerMutable = 0x40000 
+    | CompilerMutable = 0x40000
+    // An implicit of some kind
+    | Implicit        = 0x80000
 
     | VirtualityModifiers = New %| Abstract %| Virtual %| Override
     | OverrideModifiers   = Abstract %| Virtual %| Override

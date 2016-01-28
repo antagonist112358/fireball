@@ -939,6 +939,8 @@ public partial class MethodBuilder : MemberBuilder, IMethod
   [Accessor]
   private return_value_modifiers : AttributesAndModifiers;
 
+  private is_implicit_conversion: bool = false;
+  
   /// Parsed representation (AST) of function.
   public new Ast : PT.ClassMember.Function { get { base.Ast :> PT.ClassMember.Function } }
 
@@ -1084,6 +1086,11 @@ public partial class MethodBuilder : MemberBuilder, IMethod
     get { attributes %&& NemerleModifiers.Sealed }
   }
 
+  public IsImplicitConversion : bool
+  {
+    get { is_implicit_conversion }
+  }
+  
   public this(par : TypeBuilder, functionAst : PT.ClassMember.Function)
   {
     this (par, functionAst, false);
@@ -1114,6 +1121,10 @@ public partial class MethodBuilder : MemberBuilder, IMethod
       | None => ()
     }
 
+    // When this method is an implicit conversion, it must be static
+    when(IsImplicitConversion && !IsStatic)
+      Message.Error("Implicit conversion function must be declared in a module (or companion module).");
+      
     this.return_value_modifiers = functionAst.ReturnValueModifiers ?? AttributesAndModifiers();
 
     // both override and abstract imply virtual
@@ -1282,9 +1293,15 @@ public partial class MethodBuilder : MemberBuilder, IMethod
     when (IsStatic && name == "Main")
       Manager.MarkAsUsed (this);
 
+    // Check to see if this is a valid implicit conversion
+    is_implicit_conversion = IsStatic && (attributes %&& NemerleAttributes.Implicit) && !fun_header.ReturnType.Equals(InternalType.Void_tc) && fun_header.Parameters.Length == 1;
+    
+    when(is_implicit_conversion)
+      modifiers.AddCustomAttribute(<[ Fireball.Internal.ImplicitConversionAttribute ]>);
+    
     _isConditional = modifiers.FindAttribute(InternalType.Conditional_tc, par.GlobalEnv).IsSome;
   }
-  
+    
   internal override OnAddMemberComplete(_isIgnored : bool) : void
   {
     unless (typarmsContainer.IsConstraintsSet)
@@ -1460,6 +1477,16 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         Message.Error(loc, "interface static methods cannot be 'protected', but can be 'protected internal'");
     }
 
+    // Check for valid implicit conversion implementation
+    when (attributes %&& NemerleModifiers.Implicit && !is_implicit_conversion) {
+      if (!IsStatic)
+        Message.Error(loc, "implicit conversion functions must be defined in a module / companion module or trait");
+      else if (fun_header.ReturnType.Equals(InternalType.Void_tc))
+        Message.Error(loc, "implicit conversion functions must not return void");
+      else
+        Message.Error(loc, "implicit conversion functions must take exactly one parameter");
+    }
+    
     when (HasAbstractBody && !IsBodyless)
       Message.Error(loc, $"missing body of a non-abstract and non-extern method in $this");
 

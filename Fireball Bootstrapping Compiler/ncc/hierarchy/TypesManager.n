@@ -42,7 +42,7 @@ namespace Nemerle.Compiler
     public mutable infos : list [TypeBuilder] = [];
     mutable assembly_attributes : SCG.List [GlobalEnv * Parsetree.PExpr] = SCG.List();
     internal mutable run_phase : int;
-    private mutable imported_resolvables_finder : NamespaceResolvableFinder = NamespaceResolvableFinder(NamespaceResolvableFinder.EmptyFinder);
+    private mutable imported_resolvables_finder : NamespaceFinder = NamespaceFinder(NamespaceFinder.EmptyFinder);
 
     // used to create fake source code for macro generated expressions
     mutable _codeWriter : LocatingTextWriter;
@@ -215,7 +215,7 @@ namespace Nemerle.Compiler
         tb.NamespaceNode.CleanUp ();
     }
     
-    internal Finder : NamespaceResolvableFinder
+    internal Finder : NamespaceFinder
     {
       get { imported_resolvables_finder }
       set { imported_resolvables_finder = value }

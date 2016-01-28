@@ -12,7 +12,7 @@ namespace Fireball.Internal
   /// <summary> 
   /// Declares a particular member or type as being only understandable by the Fireaball compiler, and not intended for use in other .NET languages.
   ///</summary>
-  [AttributeUsage(AttributeTargets.All, AllowMultiple = false, Inherited = true)]
+  [AttributeUsage(AttributeTargets.All, AllowMultiple = true, Inherited = true)]
   public class FireballInternalAttribute : FireballAttribute
   {
     private isHidden : bool = false;

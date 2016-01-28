@@ -1,0 +1,209 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Nemerle.Compiler
+{
+  
+  internal type TypeListByNode = Hashtable[NamespaceTree.Node, list[TypeInfo]];   
+  
+  /// <summary>
+  /// Description of NamespaceFinder.
+  /// </summary>
+  internal class NamespaceFinder
+  {
+
+    private type CacheList[A] = Hashtable[NamespaceTree.Node, list[A]];
+    private type ConversionsList = Hashtable[TypeInfo, list[IMethod]];
+    
+    private class MemberCache {      
+      private resolvableFields : CacheList[IField] = CacheList();
+      private implicitConversions = ConversionsList();
+      
+      public AddResolvableFields(node: NamespaceTree.Node, params fields: array[IField]) : void {
+        foreach(field in fields) {
+          AddToList(node, field, resolvableFields);
+        }
+      }
+      
+      public AddImplicitConversion(fromType: TypeInfo, method: IMethod) : void {
+        AddToList(fromType, method, implicitConversions);
+      }
+      
+      public GetResolvablesInNode(node: NamespaceTree.Node) : list[IField] { 
+        match(resolvableFields.Get(node)) {
+          | Some(lst) => lst
+          | None => []
+        }
+      }
+      
+      public GetImplicitsFrom(fromType: TypeInfo) : list[IMethod] { 
+        match(implicitConversions.Get(fromType)) {
+          | Some(lst) => lst
+          | None => []
+        }
+      }
+      
+      private AddToList[A, B](key: A, value: B, table: Hashtable[A, list[B]]) : void {
+        _ = table.Update(key, [value], existing => value :: existing)
+      }
+    }
+    
+    // The empty instance
+    public static EmptyFinder : NamespaceFinder = NamespaceFinder();
+    
+    private static BinderFlags = (BindingFlags.Public | BindingFlags.Static);
+    
+    // All the scanned namespaces
+    private scanned_namespaces : list[NamespaceTree.Node] = [];
+    
+    // Each type can be either: Scanned or NeedsToScan
+    private typesToScanMap : TypeListByNode;
+    
+    // Lookup cache
+    private cache : MemberCache;   
+    
+    private this() {
+      typesToScanMap = Hashtable();
+      cache = MemberCache();
+    }
+    
+    private this(scanned : list[NamespaceTree.Node], toScan : TypeListByNode, sourceCache: MemberCache) {
+      scanned_namespaces = scanned;
+      typesToScanMap = toScan;
+      cache = sourceCache;
+    }
+    
+    public this(source : NamespaceFinder) {
+      scanned_namespaces = source.scanned_namespaces;
+      typesToScanMap = source.typesToScanMap;
+      cache = source.cache;
+    }
+    
+    // Scans namespace nodes for candidate types which could contain resolvable values
+    public ScanNamespaceNodes(nodes : list[NamespaceTree.Node]) : NamespaceFinder {
+      
+      def scan_children(children, toScan) {
+        match (children) {
+          | node :: xs => 
+            def nodeValue = match(node.Value) {
+              | NamespaceTree.TypeInfoCache.Cached(ty) => Some(ty)
+              | NamespaceTree.TypeInfoCache.NotLoaded(extTy) =>
+                extTy.ConstructTypeInfo(node, true);
+                Some(extTy.tycon)
+              | _ => None()
+            }
+            match(nodeValue) {
+              | Some(tyInfo) when tyInfo.LookupMemberAvailable => 
+                cache.AddResolvableFields(node, GetTypeResolvables(tyInfo).ToArray());
+                GetTypeImplicitConversions(tyInfo).Iter(conv => cache.AddImplicitConversion(conv.ReturnType.FixedValue.TypeInfo, conv));                
+                scan_children(xs, toScan)
+              | Some(tyInfo) when !tyInfo.LookupMemberAvailable => scan_children(xs, tyInfo :: toScan)
+              | _ => scan_children(xs, toScan)
+            }
+          | [] => toScan
+        }
+      }
+      
+      def scan_node(node, scanned_nses, toScan) {
+        if (scanned_nses.Contains(node))
+          (scanned_nses, toScan)
+        else {         
+          match (node.Children) {
+            | null => (node :: scanned_nses, toScan)
+            | children => 
+              def ts = scan_children(children.Values.NToList(), GetOrCreateList(toScan, node));
+              (node :: scanned_nses, UpdateList(toScan, node, ts))
+          }
+        }
+      }
+
+      def (scanned, toScan) = nodes.FoldLeft( (scanned_namespaces, typesToScanMap), (curr_node, (s, t)) => scan_node(curr_node, s, t));
+      
+      NamespaceFinder(scanned, toScan, cache);
+    }
+    
+    // Updates the finder by scanning all the types which needed to be scanned and now have typed memebers
+    public ScanAllTypesToScan() : NamespaceFinder {
+     
+      def loop(node, tyList, toScan : list[TypeInfo]) {
+        match(tyList) {
+          | ty :: tail => 
+            if (ty.LookupMemberAvailable) { 
+              cache.AddResolvableFields(node, GetTypeResolvables(ty).ToArray());
+              GetTypeImplicitConversions(ty).Iter(conv => cache.AddImplicitConversion(conv.ReturnType.FixedValue.TypeInfo, conv));                
+              loop(node, tail, toScan)
+            } else loop(node, tail, ty :: toScan)
+          | _ => toScan
+        }
+      }
+      
+      if (this.typesToScanMap.Count() > 0) {     
+        
+        def toScan = typesToScanMap.Fold(Hashtable(), ( node, types, acc) => {
+          def notScanned = loop(node, types, []);        
+          acc.Add(node, notScanned);
+          acc
+        });
+      
+        NamespaceFinder(scanned_namespaces, toScan, cache)
+        
+      } else this
+    }
+    
+    // Populates a ResolverRegistryContainer with all of the resolvables that this finder has found that are in scope for the container
+    public GetResolvableFieldsInScope(env : GlobalEnv) : list[IField] {
+      env.OpenNamespaces.FoldLeft([], (node, acc) => {
+        cache.GetResolvablesInNode(node) + acc
+      })
+    }
+    
+    public GetImplicitConversionsFrom(typeInfo: TypeInfo) : list[IMethod] {
+      cache.GetImplicitsFrom(typeInfo)
+    }
+    
+    // Takes a given environment and registers all the known resolvables visible
+    //public RegisterAllVisibleImportedResolvables(from : TypeInfo, 
+    
+    private static TypeHasResolvables(tyInfo : TypeInfo) : bool {
+      tyInfo.GetFields(BinderFlags).Exists(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))
+    }
+    
+    private static GetTypeResolvables(tyInfo: TypeInfo) : list[IField] {
+      tyInfo.GetFields(BinderFlags).Filter(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))
+    }
+    
+    private static GetTypeImplicitConversions(tyInfo: TypeInfo) : list[IMethod] {
+      tyInfo.GetMembers(BindingFlags.Static).Collect(memb => match(memb) { | x is IMethod => Some(x) | _ => None }).Filter(meth => meth.IsCustomAttributeDefined("Fireball.Internal.ImplicitConversionAttribute"))
+    }
+    
+    private static GetOrCreateList(hashTable : TypeListByNode, node: NamespaceTree.Node) : list[TypeInfo] {
+      match(hashTable.ContainsKey(node)) {
+        | true => hashTable[node]
+        | false => 
+          def lst = [];
+          hashTable.Add(node, lst);
+          lst
+      }
+    }
+    
+    private static UpdateList(hashTable: TypeListByNode, node: NamespaceTree.Node, types : list[TypeInfo]) : TypeListByNode {
+      match(types) {
+        | [] => 
+          match (hashTable.Get(node)) {
+            | Some(elems) when elems.IsEmpty => hashTable.Remove(node)
+            | _ => ()
+          }
+          hashTable
+        | elems => hashTable.Update(node, () => elems, _ => elems)
+      }
+      
+    }
+        
+  }
+}

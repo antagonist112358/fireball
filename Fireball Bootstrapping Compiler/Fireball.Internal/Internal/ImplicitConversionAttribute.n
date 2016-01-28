@@ -1,0 +1,25 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Specifies that a method is an implicit conversion from type A -> B.
+  /// Note: Used by the Fireball compiler, and not intended for direct usage.
+  /// </summary>
+  [System.AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
+  public sealed class ImplicitConversionAttribute : FireballInternalAttribute
+  {
+    private source_type: String;
+    
+    public this(sourceType: String) { source_type = sourceType; }
+    
+    public SourceTypeName: String { get { source_type } }
+  }
+}
