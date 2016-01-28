@@ -2489,6 +2489,7 @@ namespace Nemerle.Compiler
               | "volatile"  => add_and_loop(attr, NemerleModifiers.Volatile)
               | "partial"   => add_and_loop(attr, NemerleModifiers.Partial)
               | "extern"    => add_and_loop(attr, NemerleModifiers.Extern)
+              | "implicit"  => add_and_loop(attr, NemerleModifiers.Implicit)
               | _           => (attr, acc)
             }
           | _ =>
@@ -2535,6 +2536,7 @@ namespace Nemerle.Compiler
               | "volatile"  => add_and_loop(NemerleModifiers.Volatile)
               | "partial"   => add_and_loop(NemerleModifiers.Partial)
               | "extern"    => add_and_loop(NemerleModifiers.Extern)
+              | "implicit"  => add_and_loop(NemerleModifiers.Implicit)
               | _           => acc
             }
           | _ =>

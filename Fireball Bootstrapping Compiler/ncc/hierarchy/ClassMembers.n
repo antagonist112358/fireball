@@ -1296,8 +1296,10 @@ public partial class MethodBuilder : MemberBuilder, IMethod
     // Check to see if this is a valid implicit conversion
     is_implicit_conversion = IsStatic && (attributes %&& NemerleAttributes.Implicit) && !fun_header.ReturnType.Equals(InternalType.Void_tc) && fun_header.Parameters.Length == 1;
     
-    when(is_implicit_conversion)
-      modifiers.AddCustomAttribute(<[ Fireball.Internal.ImplicitConversionAttribute ]>);
+    when(is_implicit_conversion) {
+      def retTypeStr = "\"" + fun_header.ReturnType.TypeInfo.Name  +"\"";
+      modifiers.AddCustomAttribute(<[ Fireball.Internal.ImplicitConversionAttribute($retTypeStr) ]>);
+    }
     
     _isConditional = modifiers.FindAttribute(InternalType.Conditional_tc, par.GlobalEnv).IsSome;
   }

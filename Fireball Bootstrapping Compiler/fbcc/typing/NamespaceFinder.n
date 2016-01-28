@@ -50,7 +50,7 @@ namespace Nemerle.Compiler
       }
       
       private AddToList[A, B](key: A, value: B, table: Hashtable[A, list[B]]) : void {
-        _ = table.Update(key, [value], existing => value :: existing)
+        _ = table.Update(key, [], existing => value :: existing)
       }
     }
     
@@ -136,7 +136,7 @@ namespace Nemerle.Compiler
           | ty :: tail => 
             if (ty.LookupMemberAvailable) { 
               cache.AddResolvableFields(node, GetTypeResolvables(ty).ToArray());
-              GetTypeImplicitConversions(ty).Iter(conv => cache.AddImplicitConversion(conv.ReturnType.FixedValue.TypeInfo, conv));                
+              GetTypeImplicitConversions(ty).Iter(conv => cache.AddImplicitConversion(conv.Header.Parameters.Head.ty.FixedValue.TypeInfo, conv));                
               loop(node, tail, toScan)
             } else loop(node, tail, ty :: toScan)
           | _ => toScan
@@ -146,8 +146,8 @@ namespace Nemerle.Compiler
       if (this.typesToScanMap.Count() > 0) {     
         
         def toScan = typesToScanMap.Fold(Hashtable(), ( node, types, acc) => {
-          def notScanned = loop(node, types, []);        
-          acc.Add(node, notScanned);
+          def notScanned = loop(node, types, []);
+          when(notScanned.Length > 0) { acc.Add(node, notScanned); }
           acc
         });
       
@@ -179,7 +179,8 @@ namespace Nemerle.Compiler
     }
     
     private static GetTypeImplicitConversions(tyInfo: TypeInfo) : list[IMethod] {
-      tyInfo.GetMembers(BindingFlags.Static).Collect(memb => match(memb) { | x is IMethod => Some(x) | _ => None }).Filter(meth => meth.IsCustomAttributeDefined("Fireball.Internal.ImplicitConversionAttribute"))
+      def members = tyInfo.GetMembers(BinderFlags);
+      members.Collect(memb => match(memb) { | x is IMethod => Some(x) | _ => None() }).Filter(meth => meth.IsCustomAttributeDefined("Fireball.Internal.ImplicitConversionAttribute"))
     }
     
     private static GetOrCreateList(hashTable : TypeListByNode, node: NamespaceTree.Node) : list[TypeInfo] {

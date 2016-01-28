@@ -1,0 +1,25 @@
+namespace Fireball.Tests {
+
+	using System
+
+	class Vector(x: double, y: double) {
+		def GetX() : double { x }
+		def GetY() : double { x }
+		def GetMagnitude() : double { Math.Sqrt(x*x + y*y) }
+	}
+
+	module Program {
+		implicit def VectorToLength(vect: Vector) : double { vect.GetMagnitude() }
+		
+		def Main(_: Array[String]) : void {
+			val aVector = Vector(3.0, 4.0)
+			
+			def takesDouble(d: double) : void {
+				Console.WriteLine($"Vector Magnitude: $d")
+			}
+			
+			takesDouble(aVector)
+		}
+	}
+
+}

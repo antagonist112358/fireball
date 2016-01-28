@@ -80,6 +80,9 @@
     <Compile Include="Internal\FireballInternalAttribute.n">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Internal\ImplicitConversionAttribute.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Internal\LowerBoundOfAttribute.n">
       <SubType>Code</SubType>
     </Compile>
