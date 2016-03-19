@@ -4,12 +4,11 @@ namespace Fireball.Tests {
   using Nemerle
   using Nemerle.Builtins
 
-  
   module FunctionExtensions {
     def Invoked[A, B](this fnc: Function[A, B], arg: A) : B {
       fnc(arg)
     }    
-  }
+  }  
   
   // Test class can extend functional types
   class KType : String -> String {

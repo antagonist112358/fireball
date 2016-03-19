@@ -1,0 +1,2 @@
+﻿static internal class _N_MacroContexts
+

@@ -1,7 +1,7 @@
 /* Test generic type variable bounds */
 namespace Fireball.Tests
 {
-	using System
+	using System  
 	using System.Collections
 	using System.Collections.Generic
 
@@ -37,6 +37,8 @@ namespace Fireball.Tests
 		}
 		
 		public val Empty : ListNode[T] = EmptyListNode()
+    
+    private val macroTest = <[ def somethingHere() : void { /* Does Nothing */ } ]>
 	}
 	
 	
@@ -54,8 +56,8 @@ namespace Fireball.Tests
 				
 				if (object.ReferenceEquals(currentNode, DefaultListNode[T2].Empty)) false
 				else true
-			}
-			
+			}		
+      
 			def Current : T2
 			{
 				get { currentNode.Head }
@@ -104,21 +106,24 @@ namespace Fireball.Tests
 			"Lower-bound casting finally works!"
 		}
 	}
-	
+  	
 	public module Program
 	{
+    private type TestType = Array[String]    
+    
 		def Main(args : Array[String]) : void {
 			val aList = RealListNode(Stringable())
-			val bList = aList.Prepend("Hello World")
+      val locationName = "World"
+			val bList = aList.Prepend($"Hello $locationName")
 
 			foreach(item in bList) {
 				Console.WriteLine(item)
-			}
-			
+			}			
+      
 			val subChild = SubChild1()
 			val cont = RealContainer(Child1())
-			val cont2 = cont.Replace(subChild)
-			
+			val cont2 = cont.Replace(subChild)			     
+      
 			assert(cont2.Value == subChild)
 		}
 	}

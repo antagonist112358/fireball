@@ -8,6 +8,7 @@ namespace Fireball.Tests {
 		def GetMagnitude() : double { Math.Sqrt(x*x + y*y) }
 	}
 
+	// Entry Point
 	module Program {
 		implicit def VectorToLength(vect: Vector) : double { vect.GetMagnitude() }
 		
@@ -18,7 +19,13 @@ namespace Fireball.Tests {
 				Console.WriteLine($"Vector Magnitude: $d")
 			}
 			
+			// Test implicit conversion during method invocation (similar to C# 'implicit operator')
 			takesDouble(aVector)
+      
+			// Test implicit conversion in expression (no equivalent)
+			val finalResult = 2.00D * aVector  // Should convert this to a double using 'VectorToLength'
+      
+			assert(finalResult == 10.0D)
 		}
 	}
 

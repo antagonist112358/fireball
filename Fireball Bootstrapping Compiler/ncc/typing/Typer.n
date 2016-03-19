@@ -1118,8 +1118,15 @@ namespace Nemerle.Compiler
       {
         def methods1 = LookupConversions(from);
         methods1.AddRange(LookupConversions(to));
-        def implConversions = Manager.Hierarchy.Finder.GetImplicitConversionsFrom(from.FixedValue.TypeInfo);
-        methods1.AddRange(implConversions);
+        
+        match(from.FixedValue.TypeInfo)
+        {
+          | ti when ti != null =>
+            def implConversions = Manager.Hierarchy.Finder.GetImplicitConversionsFrom(from.FixedValue.TypeInfo);
+            methods1.AddRange(implConversions);
+          | _ => ()
+        }
+
         def methods = SquashDuplicates(methods1);
 
         if (methods.IsEmpty) false
