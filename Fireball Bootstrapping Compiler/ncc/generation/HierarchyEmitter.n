@@ -625,9 +625,17 @@ namespace Nemerle.Compiler
           TypeAttributes.SequentialLayout /* [DF] default struct layout is sequential */
         else
           TypeAttributes.AutoLayout;
-      when (attrs %&& NemerleModifiers.Public)
+      
+      // Default to public for types
+      when (attrs == NemerleModifiers.None || attrs %&& NemerleModifiers.Public) {
         if (is_nested) result |= TypeAttributes.NestedPublic
         else result |= TypeAttributes.Public;
+      }
+      
+      /*
+      when (attrs %&& NemerleModifiers.Public)
+        if (is_nested) result |= TypeAttributes.NestedPublic
+        else result |= TypeAttributes.Public;*/
       when (attrs %&& NemerleModifiers.Private)
         if (is_nested) result |= TypeAttributes.NestedPrivate
         else Message.Error ("Private is not allowed for top level types");
@@ -937,7 +945,8 @@ namespace Nemerle.Compiler
     {
       mutable result = MethodAttributes.HideBySig;
 
-      when (attrs %&& NemerleModifiers.Public)
+      // Default to public
+      when (attrs %&& NemerleModifiers.Public || attrs == NemerleModifiers.None)
         result |= MethodAttributes.Public;
 
       when (attrs %&& NemerleModifiers.Private)
@@ -1198,9 +1207,17 @@ namespace Nemerle.Compiler
     {
       // Converts Nemerle modifiers to the CLI field attributes.
       def make_field_attributes (attrs)
-      {
+      {        
         mutable result = FieldAttributes.PrivateScope;
 
+        // Fields default to: Mutable - private, Readonly/Immutable - public
+        when (attrs == NemerleModifiers.None) {
+          if (attrs %&& (NemerleModifiers.Mutable | NemerleModifiers.CompilerMutable))
+            result |= FieldAttributes.Private;
+          else
+            result |= FieldAttributes.Public;
+        }
+        
         when (attrs %&& NemerleModifiers.Public) result |= FieldAttributes.Public;
         when (attrs %&& NemerleModifiers.Private) result |= FieldAttributes.Private;
 

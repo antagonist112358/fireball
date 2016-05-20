@@ -4531,7 +4531,7 @@ namespace Nemerle.Compiler
       }
 
       // Fix the match type
-      matched_value_type.Fixate();
+      //matched_value_type.Fixate();
       
       if (cases.IsEmpty())
       {

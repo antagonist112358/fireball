@@ -140,10 +140,17 @@ public abstract class MemberBuilder : MemberInfo, IMember, System.IEquatable[IMe
     {
       match(ast) {
         | PT.ClassMember.Field => 
-          if(ast.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute", Env))
-            attributes |= NemerleModifiers.Public;
-          else
-            attributes |= NemerleModifiers.Private;
+        
+            if (modifiers.Attributes %&& (NemerleModifiers.Mutable | NemerleModifiers.CompilerMutable) || modifiers.Attributes %&& NemerleModifiers.Private)
+              attributes |= NemerleModifiers.Private;
+            else
+              attributes |= NemerleModifiers.Public;
+            /*            
+            else if(ast.modifiers.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute", Env))
+              attributes |= NemerleModifiers.Public;
+            else
+              attributes |= NemerleModifiers.Private;
+            */
         | _ => attributes |= NemerleModifiers.Public;
       }
       
