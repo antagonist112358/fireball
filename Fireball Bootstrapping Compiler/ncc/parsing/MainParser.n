@@ -932,7 +932,7 @@ namespace Nemerle.Compiler
       result;
     }
     
-    // Parses default constructors for classes, mixins, and record types
+    // Parses default constructors for classes, traits, mixins, and record types
     processConstructor(body: Token.RoundGroup, baseTok: Token, members: SCG.List.[ClassMember], ctorMods: NemerleModifiers) : void {
       
       //id.Location, id, AttributesAndModifiers(fieldMods, []), typeExpr
@@ -1573,6 +1573,12 @@ namespace Nemerle.Compiler
             new_group_beginning ();
             result
 
+          | Token.Operator ("=") =>
+            expect_operator("=");     // Read the "="
+            def bodyExpr = parse_expr(TokenStoppers.None);
+            loc += bodyExpr.Location;
+            FunBody.Parsed (bodyExpr);
+            
           | x =>
             Error(x, "expecting method body");
 

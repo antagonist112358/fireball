@@ -130,7 +130,7 @@ namespace Nemerle.Compiler
       TargetIsWinexe = false;
       IgnoreConfusion = false;
       ThrowOnError = false;
-      GeneralTailCallOpt = false;
+      GeneralTailCallOpt = true;
       ProgressBar = false;
       ColorMessages = true;
       UseLoadedCorlib = false;
@@ -533,10 +533,10 @@ namespace Nemerle.Compiler
                                   help = "Recursive loading references of used assemblies",
                                   handler = fun (val) { this.GreedyReferences = val; }),
 
-        Getopt.CliOption.Flag (name = "-general-tail-call-opt",
-                     aliases = ["-Ot"],
-                     help = "Enable general tail call optimization (programs are slower on MS.NET, but faster on Mono)",
-                     handler = fun () { this.GeneralTailCallOpt = true }),
+        Getopt.CliOption.Flag (name = "-disable-tail-call-opt",
+                     aliases = ["-Dtc"],
+                     help = "Disable general tail call optimization (disables emitting \"tailcall\" opcode)",
+                     handler = fun () { this.GeneralTailCallOpt = false }),
 
         Getopt.CliOption.String (name = "-disable-keyword",
                                  aliases = ["-no-keyword"],

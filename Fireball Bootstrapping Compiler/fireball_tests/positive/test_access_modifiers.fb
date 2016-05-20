@@ -1,0 +1,48 @@
+namespace Fireball.Tests {
+
+  using System
+
+  class Accessability(x: int, s: string) {
+    def CalcValue() : int { x * 10 }
+    def AppendWith(other: string) : string { $"$s $other" }
+    val defaultString = "Important Text"
+  }
+
+  module Companion {
+    abstract class InnerClass {
+      val piApproximation = 3.14159
+      abstract def Correction(input: int) : double
+    }
+  }
+  
+  module Program {
+    
+    class CompanionTest : Companion.InnerClass {
+      var setting = false
+      
+      private def Implode() : void { Console.WriteLine("Boom") }
+      
+      override def Correction(input: int) : double {
+        (input :> double) / (piApproximation * piApproximation)
+      }
+    }
+    
+    def Main(_: Array[String]) : void {
+      val test = CompanionTest()
+      val calc = Accessability(5, "Results are valid through phase:")
+      
+      println("Correction: {0}", test.Correction(calc.CalcValue()))
+      println(calc.AppendWith("test"))      
+    }
+    
+    def println(msg: string, params args: Array[object]) : void = Console.WriteLine(msg, args)
+  }
+}
+
+
+/*
+BEGIN-OUTPUT
+Correction: 5.06606774036199
+Results are valid through phase: test
+END-OUTPUT
+*/

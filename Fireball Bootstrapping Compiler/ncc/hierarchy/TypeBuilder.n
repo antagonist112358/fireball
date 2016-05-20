@@ -295,11 +295,15 @@ public partial class TypeBuilder : TypeInfo
     
     // If no part of a partial type includes an accessibility specification, the type is given the appropriate 
     // default accessibility (§3.5.1).
+    // Note: Deviating from this rule to instead make all types public by default
     when (resuleAccessModifiers == NemerleModifiers.None)
+      resuleAccessModifiers = NemerleModifiers.Public;
+      /*
       if (_declaringType != null)
         resuleAccessModifiers = if (IsVariantOption) NemerleModifiers.Public else NemerleModifiers.Private;
       else
         resuleAccessModifiers = NemerleModifiers.Internal;
+      */
 
     attributes = resuleAccessModifiers | resuleOtherModifiers;
     

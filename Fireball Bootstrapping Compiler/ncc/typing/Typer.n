@@ -1119,10 +1119,10 @@ namespace Nemerle.Compiler
         def methods1 = LookupConversions(from);
         methods1.AddRange(LookupConversions(to));
         
-        match(from.FixedValue.TypeInfo)
+        match(from.TypeInfo)
         {
           | ti when ti != null =>
-            def implConversions = Manager.Hierarchy.Finder.GetImplicitConversionsFrom(from.FixedValue.TypeInfo);
+            def implConversions = Manager.Hierarchy.Finder.GetImplicitConversionsFrom(from.TypeInfo);
             methods1.AddRange(implConversions);
           | _ => ()
         }

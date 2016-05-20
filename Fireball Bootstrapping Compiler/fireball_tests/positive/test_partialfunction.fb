@@ -1,7 +1,7 @@
 namespace Fireball.Tests {
 
   class TestPF {
-    val partialFunction = {
+    val partialFunction : PartialFunction[object, string] = {
       case s : string => s
     }
 	

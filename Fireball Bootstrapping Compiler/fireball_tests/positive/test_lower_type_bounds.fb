@@ -36,9 +36,7 @@ namespace Fireball.Tests
 			def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator { throw NotImplementedException() }
 		}
 		
-		public val Empty : ListNode[T] = EmptyListNode()
-    
-    private val macroTest = <[ def somethingHere() : void { /* Does Nothing */ } ]>
+		public val Empty : ListNode[T] = EmptyListNode()       
 	}
 	
 	
