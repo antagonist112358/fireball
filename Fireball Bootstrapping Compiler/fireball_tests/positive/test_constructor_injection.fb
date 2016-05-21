@@ -1,0 +1,37 @@
+namespace Fireball.Tests {
+  using System
+  
+  class Computer(input: int) {
+  
+    private var preResult = input * 2.0
+    
+    if (preResult > 25)
+      preResult = (2.0* preResult) / 3.14159
+    else if (preResult < 0)
+      preResult = 0
+    else
+      preResult = 1.075 * preResult
+  
+    def Output: double { get { preResult } }
+  }
+
+  module Program {
+    using System.Console    
+    def Main(_: Array[String]): void {
+      foreach(i in $[10..13]) {
+        val computer = Computer(i)
+        WriteLine($"Computation Result: $(computer.Output)")
+      }
+    }
+  }
+  
+}
+
+/*
+BEGIN-OUTPUT
+Computation Result: 21.5
+Computation Result: 23.65
+Computation Result: 25.8
+Computation Result: 16.5521280625416
+END-OUTPUT
+*/

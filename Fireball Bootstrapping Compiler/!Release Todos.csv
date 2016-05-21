@@ -1,8 +1,8 @@
 Task,Priority,Effort/Difficulty,Status,Notes
 Add lower type bounds to type system,Medium,Low,85%,Still need to implement the metadata (attribute) and have the compiler pick it up on assembly load from referenced assemblies
-"Set required default access levels: Field = private, method = public, class/record = internal, trait = public",Medium,Low,75%,"Not implemented for un-implemented types (record, mixin, trait)"
+"Set required default access levels: Fields:( mutable = private, immutable = public), method = public, class/record = public, trait = public",Medium,Low,75%,"Not implemented for un-implemented types (record, mixin, trait)"
 Remove null value,Medium,Low,75%,This will potentially break other parts of the compiler
-Allow classes and traits to extend Functional types (including partial functions),Medium,Low,0%,
+Allow classes and traits to extend Functional types (including partial functions),Medium,Low,75%,
 Double check try/catch as an assignment expression.,Medium,Low,0%,
 Update to Fireball Keywords,Medium,Moderate,80%,Most of the keywords have been implemented
 Handle non-literal default value arguments,Medium,Moderate,75%,"Currently implemented using parameter subsets, needs to change to callsite tracking of named parameters and private static readonly fields for default values"
@@ -23,11 +23,9 @@ Adjust syntax so that parameterless methods can be called without parenthesis,Lo
 Remove numeric postfix operators '++' and '--',Low,Low,0%,
 Change '++' macro to be useful for any ICollection / ICollection[T],Low,Low,0%,Depends on task #18
 "Change tuple type declaration to be parathesis style, not union style (i.e. using '(Type1, Type2, ?)' instead of 'Type1 * Type2, ?'",Low,Low,0%,
-"VarParms (vardef) should be triggered by ellipsis instead of the keyword ""params""",Low,Low,0%,
-"Add Numeric trait to Fireball internal library, and setup builtin conversions for primative numeric types",Low,Low,0%,
 "Add ""apply"" method to Modules for ""constructor like"" behavior",Low,Low,0%,
-Implement default constructors for records,Low,Moderate,0%,All parameters get implemented as public read/write properties (Pascal cased)
+Implement default constructors for records,Low,Moderate,0%,
 Remove explicit enumerations and change variant type inheriting from numeric type to emit enumeration,Low,Moderate,0%,
-Allow modules to implement traits,Low,Moderate,0%,"Decided instead to use the type name only. This will make the compiler tricks necessary more difficult, but I think the syntax is simply cleaner that way.
+Allow modules to implement traits,Low,Moderate,0%,All parameters get implemented as public read/write properties (Pascal cased)
+Add implicit classes (used for extension methods),Low,Moderate,0%,"Decided instead to use the type name only. This will make the compiler tricks necessary more difficult, but I think the syntax is simply cleaner that way.
 Behind the scenes, the compiler will generate a singleton, which will be actually passed to the receiver / consumer of the trait type."
-Add implicit classes (used for extension methods),Low,Moderate,0%,
