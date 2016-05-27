@@ -45,6 +45,11 @@ namespace Nemerle.Compiler
   {
     public TopDeclarations : list[TopDeclaration]
     {
+      get; protected set;
+    }
+    
+    public Source : ISource
+    {
       get
     }
 
@@ -67,13 +72,19 @@ namespace Nemerle.Compiler
     {
       get { array(0) }
     }
+    
+    internal ReplaceDeclarations(decls: list[TopDeclaration]) : ParseResult
+    {
+      TopDeclarations = decls;
+      this;
+    }
   }
 
   [Record]
   public sealed class DefaultParseResult : ParseResult
   {
     private lexer : LexerBase;
-
+    
     public override CommentLocations  : SCG.List[Location * string * bool]
     {
       get
@@ -112,7 +123,7 @@ namespace Nemerle.Compiler
       def lexer = LexerFile(manager, source.FileIndex, source.GetText(), manager.Options.LexerStoreComments);
       when(manager.Options.IndentationSyntax)
         lexer.SwitchToIndentationMode();
-      DefaultParseResult(MainParser.Parse(lexer), lexer)
+      DefaultParseResult(MainParser.Parse(lexer), source, lexer)
     }
   }
 
@@ -176,11 +187,11 @@ namespace Nemerle.Compiler
       {
         | (_, false) =>
           Message.Error(Location(source.FileIndex, 1, 1), $"can't parse file with extension '$extension', parser not registered");
-          ParseResult([])
+          ParseResult([], source)
 
         | (None, true) =>
           Message.Error(Location(source.FileIndex, 1, 1), $"can't parse file with extension '$extension', see parser initialization warnings");
-          ParseResult([])
+          ParseResult([], source)
 
         | (Some(parser), true) => parser.Parse(source)
       }

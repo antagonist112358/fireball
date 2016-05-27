@@ -1,0 +1,45 @@
+namespace Fireball.Tests {
+
+  using System  
+
+  // This is a companion module to the below class (because they share the same name, and are in the same source file).
+  module ClassWithCompanion {
+    using System.IO
+    
+    private val output: TextWriter = Console.Out
+    
+    protected def printLine(msg: String, params args: Array[object]) : void {
+      match(args) {
+        case pargs when pargs.Length > 0 => output.WriteLine(msg, pargs)
+        case _ => output.WriteLine(msg)
+      }
+    }
+  }
+  
+  class ClassWithCompanion {
+    def LogMessage(msg: String, params args: Array[object]) : void = printLine(msg, args)
+    def LogColorMessage(color: ConsoleColor, msg: String, params args: Array[object]) : void {
+      val currentColor = Console.ForegroundColor
+      Console.ForegroundColor = color
+      output.WriteLine(msg, args)
+      Console.ForegroundColor = currentColor
+    }
+  }
+
+  module Program {
+    def Main(_: Array[String]): void {
+      val logger = ClassWithCompanion()
+      
+      logger.LogMessage("Hello: {0}", "World")
+      
+      logger.LogColorMessage(ConsoleColor.Green, "Hello Fireball!")
+    }
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Hello: World
+Hello Fireball!
+END-OUTPUT
+*/

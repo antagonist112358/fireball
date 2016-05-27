@@ -694,15 +694,18 @@ namespace Nemerle.Compiler
 
         try
         {
-          ProgressBar (1);
-
+          ProgressBar (1);          
+          
           LoadExternalLibraries ();
 
           ProgressBar (2);
 
           Hierarchy = TypesManager (this);
 
-          def parseResults = Options.Sources.Map(Parser.Parse);
+          def parseResults = {
+            def unmerged = Options.Sources.Map(Parser.Parse);
+            MergeCompanionModules(unmerged);
+          }
 
           Message.MaybeBailout();    // we have detected multiple files already
 
@@ -775,6 +778,99 @@ namespace Nemerle.Compiler
           Hierarchy.RemoveProgramTypes();
       }
     }
+    
+    // Used to merge module definitions in the same file as a class of the same name into the class (for companion modules)
+    private MergeCompanionModules(parseResults: list[ParseResult]) : list[ParseResult] {
+
+      def MakeStatic(memb: ClassMember) : ClassMember {
+        match(memb) {
+          | ClassMember.Field as fld => 
+            fld.modifiers.mods |= NemerleModifiers.Static;
+            fld
+          | ClassMember.Function as fnc =>
+            fnc.modifiers.mods |= NemerleModifiers.Static;
+            fnc
+          | ClassMember.Property as prop =>
+            prop.modifiers.mods |= NemerleModifiers.Static;
+            prop
+          | ClassMember.Event as evnt =>
+            evnt.modifiers.mods |= NemerleModifiers.Static;
+            evnt
+          | other => other
+        }
+      }
+      
+      def MergeCompanion(classDef: TopDeclaration.Class, moduleDef: TopDeclaration.Class) : TopDeclaration.Class {
+        TopDeclaration.Class(classDef.name, classDef.modifiers, classDef.typarms, classDef.t_extends, moduleDef.decls.Map(MakeStatic) + classDef.decls);
+      }
+      
+      def IsCompanion(classDef: TopDeclaration.Class, other: TopDeclaration) : bool {
+        match(other) {
+          | TopDeclaration.Class(t_extends, _)
+            when t_extends.Count() == 0 && other.Name == classDef.Name && other.modifiers.Modifiers %&& NemerleModifiers.Static => true
+          | _ => false
+        }
+      }
+      
+      def CheckAndMerge(topDecl: TopDeclaration, others: list[TopDeclaration]) : TopDeclaration * list[TopDeclaration] {
+        mutable result = [];
+        mutable companion: option[TopDeclaration.Class] = None();
+        
+        match(topDecl) {
+          | TopDeclaration.Class as classDef when !(classDef.modifiers.Modifiers %&& NemerleModifiers.Static) =>
+            foreach(other in others) {
+              if (IsCompanion(classDef, other)) {
+                match(companion) {
+                  | None => companion = Some(other :> TopDeclaration.Class)
+                  | Some(comp) => 
+                    Message.Error(other.Location, $"class \"$(classDef.Name)\" can only have one companion module (first companion module seen at $(comp.Location))");
+                    result += [other];
+                }
+              } else {
+                result += [other];
+              }             
+            }
+            
+            match(companion) {
+              | Some(moduleDef) => (MergeCompanion(classDef, moduleDef), result)
+              | None => (classDef, result)
+            }                        
+            
+          | TopDeclaration.Class as moduleDef when (moduleDef.modifiers.Modifiers %&& NemerleModifiers.Static) =>
+            foreach(other in others) {
+              match(other) {
+                | TopDeclaration.Class as classDef when !(classDef.modifiers.Modifiers %&& NemerleModifiers.Static) && IsCompanion(classDef, moduleDef) =>
+                  match(companion) {
+                    | None => companion = Some(classDef)
+                    | Some(comp) =>
+                      Message.Error(other.Location, $"module \"$(moduleDef.Name)\" can only be a companion module for a single class (first class seen at $(comp.Location))");
+                      result += [classDef];
+                  }
+                | _ => result += [other];
+              }
+            }
+            
+            match(companion) {
+              | Some(classDef) => (MergeCompanion(classDef, moduleDef), result)
+              | None => (moduleDef, result)
+            }
+                        
+          | _ => (topDecl, others)
+        }
+      }     
+      
+      def DoMerge(decls: list[TopDeclaration], acc: list[TopDeclaration]) : list[TopDeclaration] {
+        match(decls) {
+          | head :: tail => 
+            def (outDecl, tailActual) = CheckAndMerge(head, tail);
+            DoMerge(tailActual, [outDecl] + acc);
+          | [] => acc
+        }
+      }
+      
+      parseResults.Map(res => res.ReplaceDeclarations(DoMerge(res.TopDeclarations, []).Reverse() ))
+    }
+    
     public Lookup (typeName : string) : TypeInfo
     {
       def res = LookupTypeInfo(typeName);

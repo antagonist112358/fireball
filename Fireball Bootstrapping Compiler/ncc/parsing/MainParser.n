@@ -699,7 +699,9 @@ namespace Nemerle.Compiler
       def current_env = env;
 
       while (stream != null)
+      {
         ParseClassMember(parentType, members, macro_collector);
+      }
       
       pop_stream("type member");
 
@@ -1012,7 +1014,7 @@ namespace Nemerle.Compiler
       }
     }    
     
-    /** Parses toplevel type (like class, interface, etc.).
+    /** Parses toplevel type (like class, trait, etc.).
         We are inside stream with modifiers and custom attributes already read.
      */
     ParseTypeDeclaration (mods : AttributesAndModifiers, startLocation : Location) : TopDeclaration
@@ -1271,16 +1273,14 @@ namespace Nemerle.Compiler
     ParseClassMember (parentType : string, members : SCG.List[ClassMember], macro_collector : SCG.List[PExpr] = null) : void
     { 
       def start_tok = get_token ();
+      mutable customs: list[Token.SquareGroup] = [];
+      mutable mods: AttributesAndModifiers = AttributesAndModifiers.Empty;
+      mutable parsed_some_top_extension = false;
       
-      match (start_tok)
-      {
-        | Token.LooseGroup (toks) as group =>
-          push_stream (toks);
-
-          mutable customs = get_customs ();
-          def mods = get_keywords_and_modifiers();
-
-          mutable parsed_some_top_extension = false;
+      def ParseCustomsAndMods() : void {
+          customs = get_customs ();
+          mods = get_keywords_and_modifiers();
+          
           def collect_type_macro_inv = AttributesAndModifiers();
 
           parse_top_extensions (collect_type_macro_inv, MacroTargets.All & ~MacroTargets.Parameter);
@@ -1292,6 +1292,14 @@ namespace Nemerle.Compiler
             foreach (type_macro_attr in collect_type_macro_inv.GetCustomAttributes())
                 mods.AddCustomAttribute(type_macro_attr)
           }
+      }
+      
+      match (start_tok)
+      {
+        | Token.LooseGroup (toks) as group =>
+          push_stream (toks);
+          
+          ParseCustomsAndMods();
 
           mutable prmsOpenLoc;
           mutable prmsCloseLoc;
@@ -1325,8 +1333,10 @@ namespace Nemerle.Compiler
               | Token.Import(new_env, _, _) =>
                 shift();
                 env = new_env;
-                unless (peek_token() is Token.EndOfGroup)
+                unless (peek_token() is Token.EndOfGroup) {
+                  ParseCustomsAndMods();
                   loop(peek_token())
+                }
                 
               | Token.Keyword("type") when peek_second_token() is Token.Identifier => 
                 parseNestedTypeDeclaration()

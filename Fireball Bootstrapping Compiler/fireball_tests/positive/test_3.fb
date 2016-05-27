@@ -3,10 +3,13 @@ namespace Fireball.Tests {
 	using System
 	using SCG = System.Collections.Generic
 	
-	public abstract class Dummy { }
+	public abstract class Dummy { }		
 	
-	public class Idiot(name: String) : Dummy { 
-		public static def Create(idiotName: String) : Idiot { Idiot(idiotName) }
+	module Idiot {
+		public def Create(idiotName: String) : Idiot { Idiot(idiotName) }
+	}
+		
+	public class Idiot(name: String) : Dummy {		
 	}
 	
 	public module Tester {
