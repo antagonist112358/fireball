@@ -8,9 +8,9 @@ Update to Fireball Keywords,Medium,Moderate,80%,Most of the keywords have been i
 Handle non-literal default value arguments,Medium,Moderate,75%,"Currently implemented using parameter subsets, needs to change to callsite tracking of named parameters and private static readonly fields for default values"
 Reintroduce the 'new' keyword for creating new instances,Medium,Moderate,0%,
 Implement access modifiers on default constructors,Medium,Moderate,0%,
-Implement companion modules,Medium,Moderate,0%,
+Implement companion modules,Medium,Moderate,100%,
 Implement Record type,Medium,High,60%,Needs fixing
-Change property declaration to Fireball spec,Medium,High,0%,See Language notes / specification for details
+Change property declaration to Fireball spec,Medium,High,50%,Still need to implement public properties for public vals and vars
 Add implicit conversions (used for call-site type conversion from A -> B),Medium,High,0%,
 Implement generic 'environment sensitive' keywords,Medium,High,0%,"Like 'as' in match statement, 'get'/'set' in property definition, 'add'/'remove' in event, etc."
 Rename all namespaces to 'Fireball.Compiler',Medium,High,0%,Will probably break lots of shit. Might require multiple revs / other tasks
@@ -29,3 +29,4 @@ Remove explicit enumerations and change variant type inheriting from numeric typ
 Allow modules to implement traits,Low,Moderate,0%,All parameters get implemented as public read/write properties (Pascal cased)
 Add implicit classes (used for extension methods),Low,Moderate,0%,"Decided instead to use the type name only. This will make the compiler tricks necessary more difficult, but I think the syntax is simply cleaner that way.
 Behind the scenes, the compiler will generate a singleton, which will be actually passed to the receiver / consumer of the trait type."
+"Add ""lazy"" keyword for deferred evaluation",Medium,Moderate,0%,Lazy will be completely thread-safe

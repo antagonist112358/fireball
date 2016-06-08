@@ -15,9 +15,7 @@ namespace Fireball.Tests {
 		}
 
 		public def ITest : ITest
-		{
-			get { FB_ITest_Implementation() }
-		}
+			with get { FB_ITest_Implementation() }
 	
 	}
 	

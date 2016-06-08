@@ -1,0 +1,64 @@
+namespace Fireball {
+
+  using System
+  using System.IO
+ 
+  module Program {     
+  
+    def MakeTemplate(args: list[String], gen: int) : String {
+      val genArgs = String.Join(",", args.ToArray())
+      val opts = String.Join(Environment.NewLine,
+        args.Map(a => $"\tcase Point$gen$a { val Value : $a = default($a) }").ToArray()
+      )
+      val implConv = String.Join(Environment.NewLine,
+        args.Map(a => $"\tstatic def @: (value : $a) : Either[$genArgs] { Either.[$genArgs].Point$gen$a(value) }").ToArray()
+      )
+      
+      $@"
+  variant Either[$genArgs] {
+$opts
+    
+$implConv
+  }" + Environment.NewLine
+    }
+    
+    def WriteHeader(writer: TextWriter) : void {
+      writer.WriteLine("namespace Fireball {")
+      writer.WriteLine(Environment.NewLine + " using System ")
+      writer.Write(Environment.NewLine)
+    }
+  
+    def WriteFooter(writer: TextWriter) : void {
+      writer.WriteLine(Environment.NewLine + "}")
+    }
+    
+    val startLetter: list[String] = [ "A" ]
+    
+    val letters : list[String] = [
+      "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"
+    ]
+    
+    def Main() : void {
+    
+      def WriteRecursive(letters, remaining, gen, writer) {
+        match(remaining) {
+          case l :: tail => 
+            val acc = letters + [l]
+            writer.WriteLine(MakeTemplate(acc, gen))
+            WriteRecursive(acc, tail, gen + 1, writer)
+          case [] => ()
+        }
+      }
+    
+      using (fs = File.Create("EitherOut.fb")) {
+        using (writer = StreamWriter(fs)) {
+          WriteHeader(writer)
+          WriteRecursive(startLetter, letters, 2, writer)
+          WriteFooter(writer)
+        }
+      }
+    
+    }
+  }
+  
+}

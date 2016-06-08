@@ -1,0 +1,114 @@
+/*
+  Example generated code (in C#) for Structural Type Contract (or just "Structural Typing"). This example would be for a contract that supports any type 
+  which is arithmetic (i.e. supports addition, subtraction, multiplication, and division).
+  
+  The second example, below the generated code, is the equivalent Fireball code for generating this structural type contract. The third and final example
+  shows how this structural type contract could be used in a hypothetical "Vector" type.
+  
+  Notes:
+  1)  Sealed abstract class is used to prevent derivation, and to implicitly indicate that types *are not* intended to derive from the structural type
+      definition.
+  2)  Structural type contracts will only allow for the specification of public members.
+  3)  Use of a structural type contract in a type constraint requires the Fireball keyword "implements" (see usage in 3rd example)
+  4)  The *compiler* itself will check that any type used in-situ of the structural type contract actually fulfills the contract itself, providing full type-safety.
+  5)  The compiler has special code which recognizes implicit operations (such as op_Addition or "+", etc.) on built-in types (such as int, double, etc.)
+*/
+
+// Example generated code (by compiler)
+[StructuralTypeContract]
+public sealed abstract class Arithmetic<T>
+{  
+  private Arithmetic() { }
+
+  [Operator]
+  public static T op_Addition(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+  
+  [Operator]
+  public static T op_Subtraction(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+   
+  [Operator]
+  public static T op_Multiply(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+  
+  [Operator]
+  public static T op_Divide(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+  
+  [Operator]
+  public static double op_Explicit(T x) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+  
+  [Operator]
+  public static T op_Explicit(double d) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+}
+
+
+
+// Fireball code to create this contract
+type Arithmetic[T] = {
+  <Operator> def @+ (x: T, y: T) : T
+  <Operator> def @- (x: T, y: T) : T
+  <Operator> def @* (x: T, y: T) : T
+  <Operator> def @/ (x: T, y: T) : T
+  <Operator> def @:> (x: T) : Double
+  <Operator> def @:> (d: Double) : T
+}
+
+// Using this structural type in a generic class
+// Note: T could be Int, UInt, Long, Double, Float, or any other type which has the methods defined in the above "Arithmetic[T]" structural type contract.
+// Notice: That the type constraint involves the keyword "implements" not a typical type check in the form "A : B" or "A >: B"
+struct class Vector[T implements Arithmetic[T]](_x: T, _y: T, _z: T) {
+
+  def X : T = _x
+  def Y : T = _y
+  def Z : T = _z
+  
+  lazy val Magnitude : T = {
+    using System.Math
+    
+    val xd = _x :> double
+    val yd = _y :> double
+    val zd = _z :> double
+    
+    Sqrt(xd * xd + yd * yd + zd * zd) :> T
+  }
+  
+  // Precedence is set there to indicate that "negation" should be performed before any of the below operations.
+  <UnaryOperator(precedence = OperatorPrecedence.Negation)> 
+  def @-(x: Vector[T]) : Vector[T] {
+    val xd = x._x :> double * -1.0d
+    val yd = x._y :> double * -1.0d
+    val zd = x._z :> double * -1.0d
+    
+    new Vector(xd:> T, yd:> T, zd:> T)  // Type inferred to be T
+  }
+
+  <Operator> def @+ (x: Vector[T], y: Vector[T]) : Vector[T] {
+    new Vector(x._x + y._x, x._y + y._y, x._z + y._z)
+  }
+
+  <Operator> def @- (x: Vector[T], y: Vector[T]) : Vector[T] {
+    new Vector(x._x - y._x, x._y - y._y, x._z - y._z)
+  }
+
+  // Precedence is set there to indicate that "*" operations should be performed before addition or subtraction.
+  // Commutative is set to true here, which will automatically generate the Operator: "def @*(value: T, vect: Vector[T]) : Vector[T] = vect * value
+  <Operator(precedence = OperatorPrecedence.Multiplication, commutative = true)>
+  def @*(vect: Vector[T], value: T) : Vector[T] {
+    new Vector(vect._x * value, vect._y * value, vect._z * value)
+  }
+  
+  <Operator(precedence = OperatorPrecedence.Addition, commutative = true)>
+  def @+(vect: Vector[T], value: T) : Vector[T] {
+    new Vector(vect._x + value, vect._y + value, vect._z + value)
+  }
+  
+  <Operator(precedence = OperatorPrecedence.Multiplication)> 
+  def dot(x: Vector[T], y: Vector[T]) : T {
+    (x._x * y._y) + (x._y * y._y) + (x._z * y._z)
+  }
+
+  // The above operations allows for syntax like:
+  // val vect1 = new Vector(1, 2, 3) // Type inference will give Vector[Int]
+  // val vect2 = new Vector(2, 5, 7)
+  // ((3 * vect1 dot -vect2) + vect1) dot vect2 
+
+  // Other members here...
+}

@@ -1954,10 +1954,10 @@ public partial class TypeBuilder : TypeInfo
 
         | (PT.ClassMember.Property) as p =>
           def r = PropertyBuilder (this, p);
-          when (r.IsIndexer && r.Name == "Item" && default_indexer == null)
+          when (r.IsIndexer && r.Name == "Apply" && default_indexer == null)
           {
-            default_indexer = "Item";
-            modifiers.AddCustomAttribute (<[ System.Reflection.DefaultMemberAttribute ("Item") ]>);
+            default_indexer = "Apply";
+            modifiers.AddCustomAttribute (<[ System.Reflection.DefaultMemberAttribute ("Apply") ]>);
           }
 
           AddMember (r);

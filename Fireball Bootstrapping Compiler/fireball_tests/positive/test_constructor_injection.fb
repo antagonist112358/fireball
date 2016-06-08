@@ -12,7 +12,7 @@ namespace Fireball.Tests {
     else
       preResult = 1.075 * preResult
   
-    def Output: double { get { preResult } }
+    def Output: double = preResult
   }
 
   module Program {

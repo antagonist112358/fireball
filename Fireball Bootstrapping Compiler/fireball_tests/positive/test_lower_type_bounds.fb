@@ -14,8 +14,8 @@ namespace Fireball.Tests
 	// Test lower-type bounds
 	trait ListNode[+T] : IEnumerable[T]
 	{
-		def Head : T { get }
-		def Tail : ListNode[T] { get }
+		def Head : T
+		def Tail : ListNode[T]
 		def Prepend[U :> T](item : U) : ListNode[U]
 	}
 
@@ -23,14 +23,12 @@ namespace Fireball.Tests
 	
 		private class EmptyListNode : ListNode[T]
 		{
-			def Head : T {
-				get { throw NotImplementedException() }
-			}
+			def Head : T
+				with get { throw NotImplementedException() }
 			
-			def Tail : ListNode[T] {
-				get { throw NotImplementedException() }
-			}
-			
+			def Tail : ListNode[T]
+				with get { throw NotImplementedException() }
+					
 			def Prepend[U :> T](item : U) : ListNode[U] { throw NotImplementedException() }
 			def GetEnumerator() : IEnumerator[T] { throw NotImplementedException() }
 			def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator { throw NotImplementedException() }
@@ -57,16 +55,16 @@ namespace Fireball.Tests
 			}		
       
 			def Current : T2
-			{
-				get { currentNode.Head }
+			with get {
+				currentNode.Head
 			}
 			
 			def Dispose() : void { }
 			def Reset() : void { }
 		}
 		
-		def Head : T { get { head } }
-		def Tail : ListNode[T] { get { tail } }
+		def Head : T = head
+		def Tail : ListNode[T] = tail
 		
 		def Prepend[U :> T](item : U) : ListNode[U]
 		{
@@ -90,12 +88,12 @@ namespace Fireball.Tests
 	// Test upper-type bounds
 	public trait Container[T]
 	{
-		def Value : T { get }
+		def Value : T
 		def Replace[U :> T](item : U) : Container[U]
 	}
 	
 	class RealContainer[T](item : T) : Container[T] {
-		def Value : T { get { item } }
+		def Value : T with get { item }
 		def Replace[U :> T](newItem : U) : Container[U] { RealContainer(newItem) }
 	}
 	

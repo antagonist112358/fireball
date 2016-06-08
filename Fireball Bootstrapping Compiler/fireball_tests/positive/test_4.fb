@@ -49,13 +49,11 @@ namespace Fireball.Tests {
 			openFileHandles = openFileHandles.Reverse()
 		}
 		
-		def HasFiles : bool { get { openFileHandles.Length > 0 } }
+		def HasFiles : bool = { openFileHandles.Length > 0 }
 		
-		def OpenFiles : SCG.IEnumerable[FileStream] {
-			get {
-				foreach(openFile in openFileHandles)
-					yield openFile
-			}
+		def OpenFiles : SCG.IEnumerable[FileStream] with get{
+			foreach(openFile in openFileHandles)
+				yield openFile
 		}
 	}
 }

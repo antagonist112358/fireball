@@ -1,0 +1,23 @@
+type BuiltinNumeric = Byte | Sbyte | Short | UShort | Int | UInt | Long | ULong | Double | Float
+
+class Processor[T : Exception] {
+
+  type ValueOrException = String | T
+
+  def Process(input: ValueOrException) : String {
+    case s: String => $"$s: Processed."
+    case ex: T => $"Failed due to exception: ${ex.Message}"
+  }
+  
+  /* Alternate syntax:
+  def Process(input: (String | T)) : String {
+    case s: String => $"$s: Processed."
+    case ex: T => $"Failed due to exception: ${ex.Message}"  
+  }
+  */
+}
+
+val p = new Processor
+
+p Process new DivideByZeroException("Computation resulted in division by zero") // Valid!
+p Process "Computation of \"5 / 3\""  // Valid!

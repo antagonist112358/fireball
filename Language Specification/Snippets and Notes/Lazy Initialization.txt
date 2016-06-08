@@ -1,0 +1,17 @@
+public class Test 
+{
+  private readonly Lazy<string> _FB_Message_LazyInternal = new Lazy<string>(() => { ...Initialization Expression... }, LazyThreadSafetyMode.ExecutionAndPublication);
+  
+  [LazyProperty]
+  public string Message
+  {
+    get { return _FB_Message_LazyInternal.Value; }
+  }
+}
+
+
+
+// Fireball code to create a lazy intialized value
+class Test {
+  lazy val Message : String = { ...Initialization Expression... }   
+}

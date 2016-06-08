@@ -37,7 +37,7 @@ namespace Nemerle.Compiler
         // Coroutines and async
         ,"yield",        "async",           "await"
         // Type implementation and extension
-        ,"implements",     "includes"
+        ,"implements",   "extends"
         // Typing and type aliasing
         ,"typeof",       "is",              "type"
         // Instantiation and variables
@@ -62,8 +62,9 @@ namespace Nemerle.Compiler
       
       public KeywordsWhichNeverStartNewStatement : array[String] = array [
         "else",
-        "includes",
+        "extends",
         "implements",
+        "with",
         "catch",
         "finally",
         "yield",

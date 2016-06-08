@@ -95,6 +95,9 @@ using SCG = System.Collections.Generic;
 [assembly: Nemerle.Internal.OperatorAttribute ("Nemerle.Core", "?.",    false, 285, 285)]
 [assembly: Nemerle.Internal.OperatorAttribute ("Nemerle.Core", ".",     false, 285, 301)]
 
+// Adding for the "new" keyword
+[assembly: Nemerle.Internal.OperatorAttribute ("Nemerle.Core", "new",   true, 275, 247)]
+
 namespace Nemerle.Imperative
 {
   using Nemerle.Compiler.BindingFlags;

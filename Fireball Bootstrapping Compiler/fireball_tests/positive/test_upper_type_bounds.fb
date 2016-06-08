@@ -3,10 +3,10 @@ namespace Fireball.Tests {
 	using System
 	
 	// Simple class hierarchy
-	class Super { virtual def Depth : int { get { 1 } } }
-	class Child1 : Super { override def Depth : int { get { 2 } } }
-	class Child2 : Super { override def Depth : int { get { 2 } } }
-	class SubChild1 : Child1 { override def Depth : int { get { 3 } } }
+	class Super { virtual def Depth : int with get { 1 } }
+	class Child1 : Super { override def Depth : int with get { 2 } }
+	class Child2 : Super { override def Depth : int with get { 2 } }
+	class SubChild1 : Child1 { override def Depth : int with get { 3 } }
 
 	// A class with an upper-type bound
 	class ClassHierarchyPrinter[T : Super] {

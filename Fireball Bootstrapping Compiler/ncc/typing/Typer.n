@@ -4275,10 +4275,39 @@ namespace Nemerle.Compiler
                   def newExpr = <[ $pfnc . apply (..$parms) ]>;
                   TypeExpr(newExpr);
                 // If fnc is typed to module and there is member "Apply", call it.
-                | Some(FixedType.Class(tc, _) as c) when tc.IsModule && !(tc.LookupMember("Apply") is []) =>
-                  // Convert a(params) to A.@()(a, params)
-                  def newExpr = <[ $(c : typed) . Apply (..$parms) ]>;
+                | Some(FixedType.Class(tc, _) as c) when !(tc.LookupMember("Apply").IsEmpty()) =>                                    
+                  def applyMember = tc.LookupMember("Apply").Head;
+                  
+                  // If its a module, use the type's "Apply" method
+                  def target = if (tc.IsModule) { <[ $(c : typed ) ]> } else { pfnc }
+                  
+                  def newExpr = {
+                    if (applyMember.MemberKind == MemberKinds.Property) 
+                      <[ $target . Apply [..$parms] ]>;
+                    else
+                      <[ $target . Apply (..$parms) ]>;
+                  }
+                  
                   TypeExpr(newExpr);
+                  
+                // Check for default .NET indexer named "Item"
+                | Some(FixedType.Array(_, _)) =>
+                  TypeExpr(<[ $pfnc [..$parms] ]>);
+                  
+                /*
+                | Some(FixedType.Class(tc, _)) when !tc.IsModule with itemMember = tc.LookupMember("Item") =>
+                  if (itemMember.Length == 1 && itemMember.Head.MemberKind == MemberKinds.Property) {
+                    def newExpr = <[ $pfnc . Item[..$parms] ]>;
+                    TypeExpr(newExpr);
+                  } else {
+                    TryTypeCall(fnc,
+                                parameters,
+                                expected,
+                                var_args = false,
+                                final = !Manager.IsSpeculativeTyping);
+                  }
+                */
+                
                 | _ => 
                   TryTypeCall(fnc,
                               parameters,
@@ -4290,16 +4319,26 @@ namespace Nemerle.Compiler
             res
         };
 
-      match (res)
+      def res2 = match (res)
       {
-        | TExpr.Call (TExpr.PropertyMember (_, prop), _, _) when prop.IsIndexer =>
-          unless (is_property)
-            ReportError (messenger, $ "attempt to call an indexer property `$(prop.Name)'");
-        // it fails for overloaded indexers
-        // | expr when is_property =>
-        //  ReportError (messenger,
-        //               $ "the thing indexed isn't property, it is $(expr)");
-        | _ => ()
+        | TExpr.Call (TExpr.PropertyMember (obj, prop), _, _) when prop.IsIndexer =>
+          // Rewrite function call into property indexer
+          
+          /*
+          if (is_property) {
+            def func = DelayTypingOfIndexerExpr(obj, pfnc, parms, expected, _);
+            DelayAction(callExpr, expected, DelayedLambdaAction(desc = "delayed typing of indexer", fn = func))
+          } else {
+            res
+          }
+          */
+          
+          //unless (is_property)
+          //  ReportError (messenger, $ "attempt to call an indexer property `$(prop.Name)'");
+            
+          res
+            
+        | _ => res
       }
 
       when (fnc.ParsedObject == null) //(pfnc.TypedObject == null)
@@ -4308,7 +4347,7 @@ namespace Nemerle.Compiler
         //res.Location = pfnc.Location;
       }
 
-      res
+      res2
     }
 
     #endregion

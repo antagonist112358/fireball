@@ -471,6 +471,23 @@ namespace Nemerle.Compiler
     }
 
     #region Utility functions operating on current token stream
+    // Be careful calling this function, as it is slow
+    scan_group_for_keyword(kw: string) : bool
+    {           
+      def scan_group_recursive(tok : Token) : bool
+      {
+        match(tok)
+        {
+          | Token.Keyword(word) when word == kw => true
+          | Token.EndOfGroup => false
+          | hasNextToken when hasNextToken.Next != null => scan_group_recursive(hasNextToken.Next)
+          | _ => false
+        }
+      }
+      
+      scan_group_recursive(peek_token()) 
+    }
+    
     push_stream (newstream : Token) : void {
       streams_stack.Push (stream);
       stream = newstream;
@@ -508,6 +525,11 @@ namespace Nemerle.Compiler
       if (stream != null) stream
       else Token.EndOfGroup (last_tok.Location)
     }
+    
+    peek_stream() : Token {
+      if (streams_stack.Count == 0) Token.EndOfGroup(stream.Location)
+      else streams_stack.Peek()
+    }
 
     peek_second_token () : Token {
       if (stream != null)
@@ -515,7 +537,7 @@ namespace Nemerle.Compiler
         else Token.EndOfGroup (stream.Location)
       else Token.EndOfGroup (last_tok.Location)
     }
-
+    
     peek_sibling_token () : Token {
       if (stream != null) stream
       else {
@@ -616,6 +638,15 @@ namespace Nemerle.Compiler
       }
     }
 
+    expect_keyword(kw: string) : void
+    {
+      match(get_token()) 
+      {
+        | Token.Keyword(word) when word == kw => ()
+        | x => Error(x, "expecting keyword '" + kw + "'");
+      }
+    }
+    
     flag_keyword (kw : string) : bool
     {
       match (peek_token ())
@@ -1348,12 +1379,12 @@ namespace Nemerle.Compiler
                 match(peek_token()) {
                   | Token.Identifier | Token.Operator("$") =>
                     def id = get_splicable_id();
-                    mutable is_property = false;
+                    mutable is_property = scan_group_for_keyword("with");
                     def (typarms, (parms, parmsloc)) =
                       match (peek_token(), peek_second_token())
                       {
                         | (Token.SquareGroup, Token.SquareGroup) =>
-                          is_property = true;
+                          //is_property = true;
                           (ParseGenericParameters(), parse_parameters (allow_resolved = false));
 
                         | (Token.SquareGroup, Token.RoundGroup) =>
@@ -1363,6 +1394,10 @@ namespace Nemerle.Compiler
                           is_property = true;
                           (Typarms.Empty, parse_parameters (allow_resolved = false));
 
+                        | (Token.RoundGroup, Token.Keyword("with")) =>
+                          //is_property = true;
+                          (Typarms.Empty, parse_parameters ());
+                          
                         | (Token.RoundGroup, _) =>
                           (Typarms.Empty, parse_parameters ());
 
@@ -1787,7 +1822,7 @@ namespace Nemerle.Compiler
     )
       : void
     {
-      def redirect (parsedFieldName, uniqueFieldName, getterOrSetterFunc)
+      def _redirect (parsedFieldName, uniqueFieldName, getterOrSetterFunc)
       {
         match (getterOrSetterFunc)
         {
@@ -1803,251 +1838,213 @@ namespace Nemerle.Compiler
 
       def loc = startLocation + ret_type.Location;
       mutable impl = [];
-      when (flag_keyword ("implements"))
-        impl = comma_separated_list (fun () { parse_expr (TokenStoppers.All) });
-
-      //def get_tokenName(tok: Token) {
-      //    match(tok) {
-      //        | Token.Keyword(str) => str
-      //        | Token.Operator(str) => str
-      //        | Token.Identifier(str) => str
-      //        | _ => if (tok == null) "{Unknown}" else tok.GetType().Name
-      //    }
-      //}
-        
-      def parsedMember =
-      match (peek_token ())
+      mutable setter = None ();
+      mutable getter = None ();
+      
+      def parse_property_accessor(toks : Token) : void 
       {
-        | Token.BracesGroup as group =>
-          shift ();
-          take_attributes_out (ref customs, System.AttributeTargets.Property, true, mods);
-          mutable setter      = None ();
-          mutable getter      = None ();
-          mutable initializer = None ();
+        def next          = toks.Next;
+        def bodyLocation  = if (next == null) toks.Location.FromEnd() else CalcTokenLocation(next);
+        def loc2          = if (next == null) toks.Location else toks.Location + bodyLocation;
+        mutable mycustoms = get_customs ();
+        def mymods        = get_modifiers ();
+            
+        match (get_token ())
+        {
+          | Token.Identifier (i) as nametok =>
+            def genLoc = nametok.Location.AsGenerated();
 
-          // Nested (in proprty) field should be hiden. It is necessary to rename
-          // it (make it name unique) and add redirection on new name. The redirectedNames
-          // contains list of pare (parsedFieldName * uniqueFieldName).
-          mutable redirectedNames = null;
+            Util.locate (loc2,
+              match (i)
+              {
+                | "get" =>
+                  // Parse property getter
+                  unless (getter.IsNone)
+                    Message.Error ("property cannot have multiple getters");
 
-          foreach (Token.LooseGroup (toks) in group)
-          {
-            push_stream (toks);
-            def next          = toks.Next;
-            def bodyLocation  = if (next == null) toks.Location.FromEnd() else CalcTokenLocation(next);
-            def loc2          = if (next == null) toks.Location else toks.Location + bodyLocation;
-            mutable mycustoms = get_customs ();
-            def mymods        = get_modifiers ();
+                  def method_atts = AttributesAndModifiers(mymods, []);
+                  take_attributes_out (ref mycustoms, System.AttributeTargets.Method, false, method_atts);
+                  parse_top_extensions (method_atts, MacroTargets.Method);
 
-            match (get_token ())
-            {
-              | Token.Identifier (i) as nametok =>
-                def genLoc = nametok.Location.AsGenerated();
+                  def return_value_atts = AttributesAndModifiers();
+                  take_attributes_out (ref mycustoms, System.AttributeTargets.ReturnValue, true, return_value_atts);
 
-                Util.locate (loc2,
-                  match (i)
-                  {
-                    | "get" =>
-                      // Parse property getter
-                      unless (getter.IsNone)
-                        Message.Error ("property cannot have multiple getters");
+                  def bodyBracesGroup = TryPeekBracesGroup();
+                  def kind = impl;
+                  def body = ParseFunctionOrExpression([]);
+                  def name = AddPrefixToSplicable("get_", id, genLoc);
+                  def fh = PFunHeader(genLoc, name, ret_type, parms);
+                  def member = ClassMember.Function(loc2.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
+                  InitBodyLocations(member, bodyBracesGroup);
+                  member._env = env;
+                  member.ReturnValueModifiers = return_value_atts;
+                  getter = Some (member);
 
-                      def method_atts = AttributesAndModifiers(mymods, []);
-                      take_attributes_out (ref mycustoms, System.AttributeTargets.Method, false, method_atts);
-                      parse_top_extensions (method_atts, MacroTargets.Method);
+                | "set" =>
+                  // Parse property setter
+                  unless (setter.IsNone)
+                    Message.Error ("property cannot have multiple setters");
 
-                      def return_value_atts = AttributesAndModifiers();
-                      take_attributes_out (ref mycustoms, System.AttributeTargets.ReturnValue, true, return_value_atts);
+                  def method_atts = AttributesAndModifiers(mymods, []);
+                  take_attributes_out (ref mycustoms, System.AttributeTargets.Method, false, method_atts);
+                  parse_top_extensions (method_atts, MacroTargets.Method);
 
-                      def bodyBracesGroup = TryPeekBracesGroup();
-                      def kind = impl;
-                      def body = ParseFunctionOrExpression([]);
-                      def name = AddPrefixToSplicable("get_", id, genLoc);
-                      def fh = PFunHeader(genLoc, name, ret_type, parms);
-                      def member = ClassMember.Function(loc2.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
-                      InitBodyLocations(member, bodyBracesGroup);
-                      member._env = env;
-                      member.ReturnValueModifiers = return_value_atts;
-                      getter = Some (member);
+                  def return_value_atts = AttributesAndModifiers();
+                  take_attributes_out (ref mycustoms, System.AttributeTargets.ReturnValue, false, return_value_atts);
 
-                    | "set" =>
-                      // Parse property setter
-                      unless (setter.IsNone)
-                        Message.Error ("property cannot have multiple setters");
+                  def par_atts = AttributesAndModifiers(NemerleModifiers.None, []);
+                  take_attributes_out (ref mycustoms, System.AttributeTargets.Parameter, true, par_atts);
 
-                      def method_atts = AttributesAndModifiers(mymods, []);
-                      take_attributes_out (ref mycustoms, System.AttributeTargets.Method, false, method_atts);
-                      parse_top_extensions (method_atts, MacroTargets.Method);
-
-                      def return_value_atts = AttributesAndModifiers();
-                      take_attributes_out (ref mycustoms, System.AttributeTargets.ReturnValue, false, return_value_atts);
-
-                      def par_atts = AttributesAndModifiers(NemerleModifiers.None, []);
-                      take_attributes_out (ref mycustoms, System.AttributeTargets.Parameter, true, par_atts);
-
-                      def val_n = MkSplicableName("value", genLoc); // "value" parameter of setter
-                      def setter_parms = parms + [PParameter (val_n, ret_type, par_atts)];
-
-                      def bodyBracesGroup = TryPeekBracesGroup();
-                      def kind = impl;
-                      def body = ParseFunctionOrExpression(setter_parms);
-                      def name = AddPrefixToSplicable("set_", id, genLoc);
-                      def fh = PFunHeader(genLoc, typarms, name, PExpr.Void(), setter_parms);
-                      def member = ClassMember.Function(loc2.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
-                      InitBodyLocations(member, bodyBracesGroup);
-                      member._env = env;
-                      member.ReturnValueModifiers = return_value_atts;
-                      setter = Some (member);
-
-                    | "default" =>
-                      // Parse property initializer
-                      when (initializer.IsSome)
-                        Message.Error("property cannot have multiple initializers");
-                      
-                      def initExpr = ParseBlockOrExpression([]);                      
-                      def bodyBracesGroup = TryPeekBracesGroup();
-                      when (bodyBracesGroup != null)
-                      {
-                        initExpr.Location = bodyBracesGroup.Location;
-                      }
-                      
-                      initializer = Some(initExpr);
-                      
-                    | _ =>
-                      // Parse embedded (in property) field
-                      def parsedFieldName = MkName(i, nametok.Location);
-                      // rename field only if not in IDE!
-                      def doRenaming = !Manager.IsIntelliSenseMode;
-                      def uniqueFieldName = if (doRenaming) MkTempName($"field_$(i)_embeded_in_$(id)", i, nametok.Location)
-                                            else parsedFieldName;
-                      def t = parse_return_type(false, Location.Default);
-                      def fieldMods = (mods.mods & NemerleModifiers.Static) %| mymods;
-                      def attrs = AttributesAndModifiers(fieldMods, []);
-                      take_attributes_out (ref mycustoms,
-                                           System.AttributeTargets.Field, true, attrs);
-                      def parsedField = ClassMember.Field (loc2 + t.Location,
-                                                           Splicable.Name(uniqueFieldName),
-                                                           attrs, t);
-
-                      when (redirectedNames == null)
-                        redirectedNames   = SCG.List();
-                      
-                      when (doRenaming)
-                        redirectedNames.Add((parsedFieldName, uniqueFieldName));
-
-                      parsedField._env = env;
-                      members.Add(parsedField);
-
-                      match (peek_token ())
-                      {
-                        | Token.Operator ("=") as toc =>
-                          // Parse initializer expression of embedded field
-                          // TODO: Remove code duplication (make function for parse all kind of fields)
-                          shift ();
-                          def bodyLocation = toc.Location.FromEnd() + CalcTokenLocation(stream);
-                          def val = parse_expr ();
-
-                          val.Location = bodyLocation; // correct location
-                          parsedField.Initializer = val;
-
-                          //TODO: Convert this approach (with Custom Attribute) to yield multiple members
-                          Util.locate (bodyLocation,
-                            attrs.AddCustomAttribute (<[
-                              $(MkNameGenerated("Nemerle") : name).InternalMacros.StaticInitializer ($val)
-                            ]>)
-                          );
-
-                          parsedField.Location = loc2.Combine(last_tok.Location).Combine(bodyLocation);
-                          InitBodyLocations(parsedField, null, bodyLocation);
-
-                        | _ => ()
-                      }
+                  // Parse the parameters of the setter
+                  def (setParms, parmsLoc) = parse_optional_parameters();                  
+                  mutable is_default_name = false;
+                  
+                  def val_n = if (setParms.IsEmpty) {
+                    is_default_name = true;                    
+                    MkSplicableName("value", genLoc); // "value" parameter of setter
+                  } else if (setParms.Length > 1) {
+                    Message.Error(parmsLoc, "setter cannot have more than one parameter");
+                    setParms.Head.name :> Splicable.Name;
+                  } else {
+                    setParms.Head.name :> Splicable.Name;
                   }
-                );
+                  
+                  //def val_n = MkSplicableName("value", genLoc); // "value" parameter of setter
+                  def setter_parms = parms + [PParameter (val_n, ret_type, par_atts)];
 
-              | x => Error (x, "expecting property accessor");
-            }
-            pop_stream ("property member");
-          }
+                  def bodyBracesGroup = TryPeekBracesGroup();
+                  def kind = impl;
+                  def body = ParseFunctionOrExpression(setter_parms);
+                  def name = AddPrefixToSplicable("set_", id, genLoc);
+                  def fh = PFunHeader(genLoc, typarms, name, PExpr.Void(), setter_parms);
+                  def member = ClassMember.Function(loc2.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
+                  InitBodyLocations(member, bodyBracesGroup);
+                  member._env = env;
+                  member.ReturnValueModifiers = return_value_atts;
+                  setter = Some (member);
+                  
+                  when(body is FunBody.Parsed && is_default_name)
+                  {
+                    Message.Warning(786, nametok.Location, "no setter parameter name specified, using: 'value' as default parameter name");
+                  }
+
+                | x => Message.Error($"'$x' is not a valid property accessor")             
+              }
+            );
+
+          | x => Error (x, "expecting property accessor");
+        }       
+      }
+      
+      def parse_implements() : void
+      {
+        unless(impl.IsEmpty())
+          Message.Error ("property can have only one 'implements' expression");
+
+        def impl_parsed = comma_separated_list (fun () { parse_expr (TokenStoppers.All) });
+        
+        when(impl.IsEmpty())
+          impl = impl_parsed;
+      }
+      
+      // Check for "implements" at the beginning
+      when (flag_keyword ("implements"))
+        impl = comma_separated_list (fun () { parse_expr (TokenStoppers.All) });           
+              
+      mutable tok = peek_token();
+      mutable break = false;
+      
+      do
+      {
+        match(tok) 
+        {
+          | Token.Keyword("implements") =>
+            shift();
+            parse_implements();
+            
+          | Token.Keyword("with") as withTok => 
+            shift();
+            parse_property_accessor(withTok);     
           
-          def prop = ClassMember.Property (loc + group.Location, id, mods,
+          | Token.Operator("=") as toc =>            
+            unless (getter.IsNone)
+              Message.Error ("property cannot have multiple getters");
+            
+            shift();              
+            def genLoc = toc.Location.AsGenerated();
+            take_attributes_out (ref customs, System.AttributeTargets.Property, true, mods);
+
+            def method_atts = mods;
+            def return_value_atts = AttributesAndModifiers();
+            def kind = impl;
+            def body = FunBody.Parsed(parse_expr());
+            def loc2 = body.expr.Location;
+            def name = AddPrefixToSplicable("get_", id, genLoc);
+            def fh = PFunHeader(genLoc, name, ret_type, parms);
+            def member = ClassMember.Function(loc2.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
+            member._bodyOpenTokenLocation = loc2.FromStartAsGenerated();
+            member._bodyCloseTokenLocation = loc2.FromEndAsGenerated();
+            member._env = env;
+            member.ReturnValueModifiers = return_value_atts;
+            getter = Some(member);
+          
+          | Token.EndOfGroup =>
+            def genLoc = last_tok.Location.AsGenerated();
+            take_attributes_out (ref customs, System.AttributeTargets.Property, true, mods);
+
+            def method_atts = mods;
+            def return_value_atts = AttributesAndModifiers();
+            def kind = impl;
+            def body = FunBody.Abstract();
+            def name = AddPrefixToSplicable("get_", id, genLoc);
+            def fh = PFunHeader(genLoc, name, ret_type, parms);
+            def member = ClassMember.Function(startLocation.AsGenerated(), fh.ParsedSplicableName, method_atts, fh, kind, body);
+            member._bodyOpenTokenLocation = startLocation.FromStartAsGenerated();
+            member._bodyCloseTokenLocation = last_tok.Location.FromEndAsGenerated();
+            member._env = env;
+            member.ReturnValueModifiers = return_value_atts;
+            getter = Some(member);
+            
+          | t =>
+            Error (t, "expecting property declaration");
+            break = true
+        }
+        
+        tok = peek_token();
+        when (tok is Token.EndOfGroup) {
+          match(peek_stream()) {
+            | Token.LooseGroup(Token.Keyword("with")) =>
+              pop_stream();
+              def lg = stream :> Token.LooseGroup;
+              rewrite_stream(null);
+              push_stream(null);
+              rewrite_stream(lg.Child);
+              tok = peek_token();
+            | _ => ()
+          }
+        }
+      } while(!(tok is Token.EndOfGroup) && !break);
+        
+      def parsedMember = match((getter, setter)) 
+      {
+        | (Some(_), Some(_))
+        | (None, Some(_))
+        | (Some(_), None) =>
+          def finalLoc = last_tok.Location.FromEndAsGenerated();
+          def prop = ClassMember.Property (loc + finalLoc, id, mods,
             parameters = parms, returnType = ret_type,
-            getter = getter, setter = setter, initializer = initializer);
+            getter = getter, setter = setter, initializer = None());
                     
           prop._parsedParametersOpenLocation  = prmsOpenLoc;
           prop._parsedParametersCloseLocation = prmsCloseLoc;
           prop.ParsedImplemented              = impl;
 
-          InitBodyLocations(prop, group);
-
-          when (redirectedNames != null)
-            foreach ((parsedFieldName, uniqueFieldName) in redirectedNames)
-            {
-              redirect(parsedFieldName, uniqueFieldName, prop.setter);
-              redirect(parsedFieldName, uniqueFieldName, prop.getter);
-            }
-
-          //unless (parentType == "interface")
-          //{
-          //  def field = TryExpandAutoproperty(prop);
-
-          //  when (field != null)
-          //    members.Add(field);
-          //}
-
+          prop._bodyOpenTokenLocation = loc.FromStartAsGenerated();
+          prop._bodyCloseTokenLocation = finalLoc;
+          
           prop
-
-        /*  
-        
-        | Token.Operator ("=") as toc =>
-          shift ();
-          def bodyLocation = toc.Location.FromEnd() + CalcTokenLocation(stream);
-          def val = parse_expr ();
-          val.Location = bodyLocation; // correct location
-
-          //TODO: Convert this approach (with Custom Attribute) to yield multiple members
-          Util.locate (bodyLocation,
-            mods.AddCustomAttribute (<[
-              $(MkNameGenerated("Nemerle") : name).InternalMacros.StaticInitializer ($val)
-            ]>)
-          );
-          take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
-          def floc   = loc.Combine (last_tok.Location).Combine (bodyLocation);
-          def result = ClassMember.Field (floc, id, mods, ret_type, val);
-          InitBodyLocations(result, null, bodyLocation);
-          result
-
-        | Token.EndOfGroup =>
-          take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
-          ClassMember.Field (loc, id, mods, ret_type)
-
-        */
           
-        | t => {
-          Error (t, "expecting '{' in property declaration");
-          /*
-              // Check if we have retried with a semicolon
-              when(retrying_with_semicolon) {
-                
-              }
-              
-              // Get some debug info
-              def lastTokenType = get_tokenName(last_tok);
-              def streamToken = get_tokenName(stream);
-              
-              // Retry wtih semicolon
-              retrying_with_semicolon = true;
-              Message.Debug($"Retrying failed parse with semi-colon appended (Last_tok: $lastTokenType, Stream: $streamToken).");
-              push_back();
-              _ = parse_expr(TokenStoppers.None);
-              retrying_with_semicolon = false;
-              
-              take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
-              ClassMember.Field (loc, id, mods, ret_type)
-          */
-          null
-          }
-          
+        | _ => null
       }
 
       when (parsedMember != null)
@@ -2761,6 +2758,16 @@ namespace Nemerle.Compiler
                 defval = defval,
                 patternHack = pattern)
     }
+    
+    parse_optional_parameters() : list[PParameter] * Location {
+      match(peek_token())
+      {
+        | Token.RoundGroup (_, _, _)
+        | Token.SquareGroup (_, _, _) => parse_parameters(false, false, false)
+        | _ => ([], Location.Default)
+      }
+    }
+    
     /// parameters of (a:foo,b,c) or [a,b:foo,c] kind
     /// Now also includes (a:foo, b, c)(resolved d: int) kind
     parse_parameters (allow_patterns = false, allow_omit = false, allow_resolved = true) : list [PParameter] * Location
@@ -2847,7 +2854,7 @@ namespace Nemerle.Compiler
             | Token.BracesGroup | Token.Keyword ("where")
             | Token.Semicolon | Token.Operator ("=") => PExpr.Error (colon.Location.FromEnd())
             | _ =>
-              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal | TokenStoppers.Comma /*| TokenStoppers.Where */)
+              parse_expr(TokenStoppers.Braces | TokenStoppers.Dollar | TokenStoppers.Equal | TokenStoppers.Comma | TokenStoppers.With /*| TokenStoppers.Where */)
           }
 
         | t =>

@@ -1,0 +1,31 @@
+namespace Fireball {
+
+  using System
+
+  variant Either[A, B] {
+    case First { val Value : A = default(A) }
+    case Second { val Value : B = default(B) }       
+    
+    static def @: (value : A) : Either[A, B] { Either.[A, B].First(value) }
+    static def @: (value : B) : Either[A, B] { Either.[A, B].Second(value) }
+  }
+
+  module Program
+  {
+    def Main() : void
+    {
+      EitherMethodTest("5");
+      EitherMethodTest(15);
+      _ = Console.ReadLine();
+    }
+  
+    def EitherMethodTest(value : Either[String, int]) : void
+    {
+      match(value)
+      {
+        case First(s) => Console.WriteLine($"Value: $s");
+        case Second(i) => Console.WriteLine($"Value: $(i.ToString())")
+      }
+    }
+  }
+}
