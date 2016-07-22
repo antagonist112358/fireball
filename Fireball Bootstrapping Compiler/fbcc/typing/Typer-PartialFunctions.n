@@ -86,7 +86,7 @@ namespace Nemerle.Compiler
 
     }
     
-    private FixupPartialFunctionCases(pf: PExpr.PartialFunction) : PExpr.PartialFunction {
+    private static FixupPartialFunctionCases(pf: PExpr.PartialFunction) : PExpr.PartialFunction {
       def set_true(@case) { 
         @case.disable_warnings = true;
         @case

@@ -224,9 +224,11 @@ namespace Nemerle.Compiler
         Constraints = [];
     }
 
+    /* Not currently used ---
     internal ClearSpecialConstraints() : void {
       this.special = GenericParameterAttributes.None
     }
+    --- */
     
     public IsValueType : bool
     {

@@ -497,9 +497,5 @@ namespace Nemerle.Compiler
       _codeWriter.Write("\n\n");
     }
     
-    internal MakeFreshTypeVar() : TypeVar
-    {
-      Manager.Solver.FreshTypeVar()
-    }
   }
 }

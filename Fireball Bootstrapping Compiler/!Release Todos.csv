@@ -3,7 +3,7 @@ Add lower type bounds to type system,Medium,Low,85%,Still need to implement the 
 "Set required default access levels: Fields:( mutable = private, immutable = public), method = public, class/record = public, trait = public",Medium,Low,75%,"Not implemented for un-implemented types (record, mixin, trait)"
 Remove null value,Medium,Low,75%,This will potentially break other parts of the compiler
 Allow classes and traits to extend Functional types (including partial functions),Medium,Low,75%,
-Double check try/catch as an assignment expression.,Medium,Low,0%,
+Double check try/catch as an assignment expression.,Medium,Low,75%,Still need to verify local variable assignment works properly
 Update to Fireball Keywords,Medium,Moderate,80%,Most of the keywords have been implemented
 Handle non-literal default value arguments,Medium,Moderate,75%,"Currently implemented using parameter subsets, needs to change to callsite tracking of named parameters and private static readonly fields for default values"
 Reintroduce the 'new' keyword for creating new instances,Medium,Moderate,0%,
@@ -19,7 +19,7 @@ Add optional space instead of dot for accessing class/trait/module/variant/mixin
 "Implement Disjoint type expressions (like ""Either[A, B]"" from other languages, but can be multiple case types)",Medium,High,0%,
 Implement Mixins,Medium,Extensive,5%,Need to finish the expression serializer
 "Modify extension method syntax from ""module AAA { ? }"" to ""implicit class AAA(inst: Something) { ? }""",Medium,Medium,0%,
-Adjust syntax so that parameterless methods can be called without parenthesis,Low,Low,0%,
+Adjust syntax so that parameterless methods can be called without parenthesis,Medium,Moderate,0%,
 Remove numeric postfix operators '++' and '--',Low,Low,0%,
 Change '++' macro to be useful for any ICollection / ICollection[T],Low,Low,0%,Depends on task #18
 "Change tuple type declaration to be parathesis style, not union style (i.e. using '(Type1, Type2, ?)' instead of 'Type1 * Type2, ?'",Low,Low,0%,
@@ -30,3 +30,6 @@ Allow modules to implement traits,Low,Moderate,0%,All parameters get implemented
 Add implicit classes (used for extension methods),Low,Moderate,0%,"Decided instead to use the type name only. This will make the compiler tricks necessary more difficult, but I think the syntax is simply cleaner that way.
 Behind the scenes, the compiler will generate a singleton, which will be actually passed to the receiver / consumer of the trait type."
 "Add ""lazy"" keyword for deferred evaluation",Medium,Moderate,0%,Lazy will be completely thread-safe
+Add default constructor syntax to variant options,Medium,Low,0%,
+Change pattern extractor (default) to extract public properties instead of fields,Medium,Moderate,0%,
+"Add optimization to convert all internal/private methods without a ""this"" reference to static",Low,Moderate,0%,

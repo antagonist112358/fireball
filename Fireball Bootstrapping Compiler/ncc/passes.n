@@ -780,7 +780,7 @@ namespace Nemerle.Compiler
     }
     
     // Used to merge module definitions in the same file as a class of the same name into the class (for companion modules)
-    private MergeCompanionModules(parseResults: list[ParseResult]) : list[ParseResult] {
+    private static MergeCompanionModules(parseResults: list[ParseResult]) : list[ParseResult] {
 
       def MakeStatic(memb: ClassMember) : ClassMember {
         match(memb) {

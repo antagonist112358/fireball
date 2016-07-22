@@ -220,8 +220,14 @@ namespace Nemerle.Compiler
                 // VladD2: We are need new the optimizer. The current implementation did not qualitative.
                 Optimizer(the_method).Run();
               }
+              // Run the next phase typer
               def t4 = Typer4 (the_method, ptyper);
               t4.Run ();
+              
+              // Run all other stages
+              def tryCatchAssignmentValidator = TryCatchAssignmentValidator(the_method, ptyper);
+              tryCatchAssignmentValidator.Run ();
+              
             }
            })
 

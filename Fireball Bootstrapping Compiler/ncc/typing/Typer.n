@@ -2271,7 +2271,7 @@ namespace Nemerle.Compiler
               || fnc is <[ _ . $_ ]>)
             TypeExpr (PartialApplication (expression), expected)
           else
-            TypeCall(expression, fnc, parms, expected, is_property = false);
+            TypeCall(expression, fnc, parms, expected, _is_property = false);
 
 
         | PExpr.Assign (PExpr.Tuple (vars), e2) =>
@@ -2994,7 +2994,7 @@ namespace Nemerle.Compiler
                 | p is IProperty => p.IsIndexer
                 | _ => false
               })
-          => Some(TypeCall(pExpr, <[ $(tExpr : typed) ]>, args, expected, is_property = true))
+          => Some(TypeCall(pExpr, <[ $(tExpr : typed) ]>, args, expected, _is_property = true))
 
         | TExpr.Delayed(d) when d.IsResolved =>
           DelayTypingOfIndexerExpr(d.ResolutionResult, pExpr, args, expected, lastAttempt)
@@ -4075,7 +4075,7 @@ namespace Nemerle.Compiler
              pfnc        : PExpr,
              parms       : list [PExpr],
              expected    : TypeVar,
-             is_property : bool) : TExpr
+             _is_property : bool) : TExpr
     {
       log (TYPING, $ "type call to $pfnc");
       pfnc.ResetTypedObject(); //pfnc.TypedObject = null;
@@ -4321,7 +4321,7 @@ namespace Nemerle.Compiler
 
       def res2 = match (res)
       {
-        | TExpr.Call (TExpr.PropertyMember (obj, prop), _, _) when prop.IsIndexer =>
+        | TExpr.Call (TExpr.PropertyMember (_, prop), _, _) when prop.IsIndexer =>
           // Rewrite function call into property indexer
           
           /*

@@ -16,8 +16,7 @@ namespace Fireball.Tests {
 	}
 	
 	// Like IEnumerable
-	trait Traversable[T] : SGC.IEnumerable[T] {		
-		using Traversable
+	trait Traversable[T] extends SGC.IEnumerable[T] {
 		
 		def Map[Out, OutCollection : Traversable[Out]](transformer : T -> Out)(resolved builder : CollectionBuilder[Out, OutCollection]) : OutCollection {
 			builder.Build(Transform(this, transformer))
@@ -47,9 +46,9 @@ namespace Fireball.Tests {
 	}
 	
 	// Simple List
-	class SimpleList[T](elements: SGC.IEnumerable[T]) : Traversable[T] {	
+	class SimpleList[T](elements: SGC.IEnumerable[T]) extends Traversable[T] {	
 	
-		private class SimpleListCollectionBuilder[U] : CollectionBuilder[U, SimpleList[U]] {
+		private class SimpleListCollectionBuilder[U] extends CollectionBuilder[U, SimpleList[U]] {
 			def Build(elements : SGC.IEnumerable[U]) : SimpleList[U] { SimpleList(elements) }
 		}
 		
@@ -70,7 +69,7 @@ namespace Fireball.Tests {
 			foreach(tup in lstWithLength)
 				Console.WriteLine(tup)
 			
-			val charactersAndLength = lstWithLength.FlatMap( (s, len) => s.ToCharArray() )
+			val charactersAndLength = lstWithLength.FlatMap( (s, _) => s.ToCharArray() )
 				
 			Console.WriteLine($"Type of \"charactersAndLength\": $(charactersAndLength.GetType())")				
 			

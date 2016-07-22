@@ -1,0 +1,181 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Compiler.Parsetree;
+using Nemerle.Utility;
+
+using System;
+using SCG = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Description of MainParser_TypeParsing.
+  /// </summary>
+  public partial class MainParser
+  {
+    
+    private ParseTyparms() : Typarms * Location 
+    {
+      def tyvarsLocation = match(peek_token()) {
+        | Token.SquareGroup(children, _, _) as group when children != null => group.Location
+        | _ => Location.Default
+      }
+      
+      (ParseGenericParameters(), tyvarsLocation)
+    }
+    
+    private ParseDefaultConstructor() : list[ClassMember]
+    {
+      def defaultCtorMembers = SCG.List();
+      
+      mutable modifiers = get_modifiers();
+      when (modifiers == NemerleModifiers.None) { modifiers = NemerleModifiers.Public }
+      
+      match(peek_token())
+      {
+        | Token.RoundGroup(children, _, _) =>
+          // Read the round group
+          def body = get_token() :> Token.RoundGroup;
+          // Process the ctor
+          processConstructor(body, children, defaultCtorMembers, modifiers);
+        | _ => ()
+      }
+      
+      defaultCtorMembers.NToList()
+    }
+    
+    private ParseExtends(startLoc: Location) : list[PExpr] * Location
+    {
+      mutable end_loc = startLoc;
+      match (peek_token ())
+      {
+        | Token.Keyword ("extends") as colonToc =>
+          def errTypeExpected(loc)
+          {
+            Message.Error (loc, "Type expected");
+            end_loc = loc;
+          }
+
+          shift ();
+          def tok = peek_token ();
+
+          // if type not present.
+          if (tok == null || tok is Token.BracesGroup || tok is Token.Keyword ("where"))
+          {
+            errTypeExpected (colonToc.Location);
+            ([], end_loc)
+          }
+          else match (maybe_parse_ellipsis ())
+          {
+            | Some (e) => ([e], end_loc)
+            | _ =>
+              // parse , separated sequence as one expression
+              def res = comma_separated_list (() => parse_expr (TokenStoppers.All));
+              match (res.Find (e => e is PExpr.Error || e is Member (_, null)))
+              {
+                | Some (errTok) =>
+                  push_back ();
+                  errTypeExpected (errTok.Location);
+                  (res.Filter (e => !(e is PExpr.Error || e is Member (_, null))), end_loc)
+                | _ => (res, end_loc)
+              }
+          }
+        | _ => ([], end_loc)
+      }      
+    }
+    
+    private AddMemberReferences(td: TopDeclaration, members: list[ClassMember]) : void
+    {
+      foreach (member in members)
+      {
+        | TypeDeclaration(nestedType) =>
+          member._definedIn     = td;
+          nestedType._definedIn = td;
+
+        | Property(getter = Some(g), setter = Some(s)) =>
+          member._definedIn = td;
+          g._definedIn = td;
+          s._definedIn = td;
+
+        | Property(getter = Some(accessor))
+        | Property(setter = Some(accessor)) =>
+          member._definedIn   = td;
+          accessor._definedIn = td;
+
+        | _ => member._definedIn = td;
+      }
+    }   
+    
+    private ParseVariantDeclaration(mods: AttributesAndModifiers, startLocation: Location, attribWords : list[string]) : TopDeclaration
+    {      
+      /// first get name of this declartion
+      def name = get_splicable_id ();
+      mutable end_loc = name.Location;
+      
+      // Parse type parameters
+      def (typarms, tyvarsLocation) = ParseTyparms();
+      
+      when (tyvarsLocation != Location.Default)
+        end_loc = tyvarsLocation;
+        
+      // Parse "extends"
+      def (t_extends, ext_end_loc) = ParseExtends(end_loc);
+      end_loc = ext_end_loc;
+      
+      mutable bodyBracesGroup;
+      mutable members = SCG.List();
+      
+      match(get_token())
+      {
+        | Token.BracesGroup (children, _, _, _) as tok =>
+          bodyBracesGroup = tok;
+          end_loc         = tok.Location;
+          push_stream (children);
+          
+          match (maybe_parse_ellipsis ())
+          {
+            | Some(e) =>
+              pop_stream ();
+              members.Add(ClassMember.Field (e.Location, null, null, e)); // special encoding for <[ decl: variant A { ..$mems } ]>
+
+            | _ =>
+              pop_stream ();
+              
+              in_variant = true;
+              def macro_collector = SCG.List();
+              members = ParseClassMembers(children, "variant", macro_collector);
+              _ = members.RemoveAll(_ is ClassMember.TypeDeclaration (TopDeclaration.Delegate(null)));
+                  
+              foreach(macro_attr in macro_collector) { mods.AddCustomAttribute(macro_attr); }
+                  
+              in_variant = false
+          }          
+        
+        | x =>
+          Error(x, "expecting variant body");
+          push_back()
+      }
+      
+      def members2 = members.NToList();
+      def locAll   = startLocation + end_loc;
+      
+      def td = if (attribWords.Exists(wrd => wrd == "enum")) TopDeclaration.Enum(locAll, name, mods, typarms, t_extends, members2) else TopDeclaration.Variant(locAll, name, mods, typarms, t_extends, members2);
+      
+      InitBodyLocations(td, bodyBracesGroup);
+
+      if (tyvarsLocation != Location.Default)
+      {
+        td._headerLocation        = startLocation + tyvarsLocation;
+        td._typeParametersLocation = tyvarsLocation;
+      }
+      else td._headerLocation     = startLocation + name.Location;
+      
+      AddMemberReferences(td, members2);
+      
+      td.name = name;
+      td.Location = startLocation + end_loc;
+      td
+    }
+    
+  }
+}

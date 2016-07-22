@@ -15,9 +15,9 @@ namespace Fireball.Tests {
 	
 	public class TestsInitializationExpressions[T](sequence: SCG.IEnumerable[T]) {
 	
-		val sequenceEmpty = if (sequence.Count() > 0) true else false
+		private val sequenceEmpty = if (sequence.Count() > 0) true else false
 		
-		val sizeNeeded = {
+		val sizeNeeded : String = {
 			NList.ToList(sequence).FoldLeft( "", (element, accStr) => {
 				accStr + "," + element.ToString()
 			})
@@ -26,18 +26,18 @@ namespace Fireball.Tests {
 		when(sequence.Count() > 0)
 			Console.WriteLine("Collection has elements")
 			
-		val start = 0
+		val start : int = 0
 		
-		val head = if(!sequenceEmpty) Some(sequence.First()) else None()				
+		val head : option[T] = if(!sequenceEmpty) Some(sequence.First()) else None()				
 						
 	}
 	
 	public class FileOpener(files : SCG.IEnumerable[string], fileMode: System.IO.FileMode) {
-		val hasInputFiles = (files.Count() > 0)
+		val hasInputFiles : bool = (files.Count() > 0)
 		
 		using System.IO
 		
-		var openFileHandles = [] : list[FileStream]
+		var openFileHandles : list[FileStream] = []
 		
 		when (hasInputFiles) {
 			val mode = fileMode

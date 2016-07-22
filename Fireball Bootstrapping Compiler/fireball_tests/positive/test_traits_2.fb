@@ -1,0 +1,50 @@
+namespace Fireball.Tests {
+	
+	using System
+	using System.Linq
+	using SCG = System.Collections.Generic
+ 
+  trait TestRunner {
+    using System.Console
+    
+    // This will need to be implemented in the target class
+    val tests : SCG.List[string]
+    
+    // This should show up in the target class, but not the generated interface
+    protected def CheckTesting() : void {
+      if (true) {
+        WriteLine("In Test Mode")
+      } else {
+        WriteLine("Not in Test Mode")
+      }
+    }
+    
+    // This should be generated 
+    protected def GetTests() : SCG.IEnumerable[string] = tests.AsEnumerable()
+    
+    // This should be generated
+    def RunTests() : void {
+      foreach(test in tests) {
+        WriteLine($"Running test: $test")
+      }
+    }
+    
+  }
+  
+  class Dummy extends TestRunner {  
+    val tests : SCG.List[string] = SCG.List( [ "Pressure Check", "Plasma Stability", "Bottle Confinement", "Neutron Flux" ])
+        
+    CheckTesting()
+	
+	RunTests()
+  }
+  
+  module Program {
+  
+	def Main(_: Array[String]) : void {
+		val dummy = new Dummy()		
+	}
+  
+  }
+  
+}

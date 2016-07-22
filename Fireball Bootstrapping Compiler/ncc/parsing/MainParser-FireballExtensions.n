@@ -311,28 +311,99 @@ namespace Nemerle.Compiler
           members.Add(field);
         }
       }      
+    }   
+    
+    private create_property_function(loc: Location, bodyLocation: Location, mods: AttributesAndModifiers, id : Splicable, 
+                                     body_expr: option[PExpr], prefix: string, returnType: PExpr, pparams: list[PParameter]) : ClassMember.Function
+    {
+        def body = match(body_expr)
+        {
+          | Some(expr) => FunBody.Parsed(expr)
+          | None => FunBody.Abstract()
+        }       
+        
+        def genLoc = id.Location.AsGenerated();
+        def name = AddPrefixToSplicable(prefix + "_", id, genLoc);
+        def fh = PFunHeader(genLoc, name, returnType, pparams);
+        def bodyMods = AttributesAndModifiers(mods.mods, []);
+        def member = ClassMember.Function(loc.FromEnd().AsGenerated(), fh.ParsedSplicableName, bodyMods, fh, [], body);
+
+        InitBodyLocations(member, null, bodyLocation);
+        member._env = env;
+        member.ReturnValueModifiers = AttributesAndModifiers();
+        
+        member      
     }
     
-    private ParseEmbeddedPartialFunction (braces: Token) : PExpr {
+    private ParseBlockOrExpression() : PExpr
+    {
+      match(peek_token())
+      {
+        | Token.BracesGroup => parse_block([], false)
+        | _ => parse_expr()
+      }
+    }
+    
+    // Handles parsing of vals and vars at the class level, which could be generated as properties
+    private parse_field_as_property (
+                    _parentType   : string,
+                    members       : SCG.List[ClassMember],
+                    startLocation : Location,
+                    mods          : AttributesAndModifiers,
+                    id            : Splicable,
+                    mut           : bool,
+                    ret_type      : PExpr) : void
+    {
+      mutable customs : list[Token.SquareGroup] = [];
+      mutable bodyLocation = Location.Default;      
+      mutable endLocation = Location.Default;
+      def loc = startLocation + ret_type.Location;
+      
+      
+      take_attributes_out (ref customs, System.AttributeTargets.Field, true, mods);
+      
+      def make_prop_setter(body_expr : option[PExpr], prefix: string, returnType: PExpr) : ClassMember.Function
+      {
+        def pparams = PParameter(MkNameGenerated("value"), AttributesAndModifiers.Empty, ret_type) :: [];
         
-        def parse_match_cases(tok: Token) {
-          | Token.LooseGroup (Token.Keyword ("case")) as group => process_groups (group, "function body", parse_match_case)
-          | x => 
-            _ = fatal_error (x.Location, $"expecting partial function declaraction, starting with \"case\" but got '$x' instead.");
-            []
-        }
-        
-        match(braces) {
-          | Token.BracesGroup(Token.LooseGroup, _, _, _) =>
-            def group = (braces :> Token.BracesGroup).Child :> Token.LooseGroup;
-            //push_stream(group);
-            def expr = PExpr.PartialFunction(braces.Location, parse_match_cases(group));
-            //pop_stream("partial function body");
-            expr
-          | _ => Util.ice()
-        }
-        
+        create_property_function(loc, bodyLocation, mods, id, body_expr, prefix, returnType, pparams)
+      }
+      def make_prop_getter(body_expr : option[PExpr], prefix: string, returnType: PExpr) : ClassMember.Function
+      {
+        create_property_function(loc, bodyLocation, mods, id, body_expr, prefix, returnType, [])
       }
       
+      def init_expr = match(peek_token())
+      {
+        | Token.Operator ("=") as toc =>
+          shift ();
+          endLocation = CalcTokenLocation(stream);
+          bodyLocation = toc.Location.FromEnd() + endLocation;
+          def body_expr = ParseBlockOrExpression();
+          body_expr.Location = bodyLocation; // correct location
+          
+          Some(body_expr)
+          
+        | _ => None()
+      }
+      
+      def initializer = init_expr;
+      
+      def (setter, getter) = if (mut) {
+        (Some(make_prop_setter(None(), "set", PExpr.Void())), Some(make_prop_getter(None(), "get", ret_type)))
+      } else {
+        (None(), Some(make_prop_getter(None(), "get", ret_type)))
+      }
+      
+      def prop = ClassMember.Property(loc + endLocation, id, mods, parameters = [], returnType = ret_type, 
+        getter = getter, setter = setter, initializer = initializer);
+      
+      prop._parsedParametersOpenLocation = if (bodyLocation != Location.Default) bodyLocation.FromStart().AsGenerated() else loc;
+      prop._parsedParametersCloseLocation = if (bodyLocation != Location.Default) bodyLocation.FromEnd().AsGenerated() else loc;
+      prop.ParsedImplemented = [];
+      
+      members.Add(prop)      
+    }
+    
   }
 }

@@ -5,20 +5,20 @@ namespace Fireball.Tests {
   class Accessability(x: int, s: string) {
     def CalcValue() : int { x * 10 }
     def AppendWith(other: string) : string { $"$s $other" }
-    val defaultString = "Important Text"
+    val defaultString : String = "Important Text"
   }
 
   module Companion {
     abstract class InnerClass {
-      val piApproximation = 3.14159
+      val piApproximation : double = 3.14159
       abstract def Correction(input: int) : double
     }
   }
   
   module Program {
     
-    class CompanionTest : Companion.InnerClass {
-      var setting = false
+    class CompanionTest extends Companion.InnerClass {
+      var setting : bool = false
       
       private def Implode() : void { Console.WriteLine("Boom") }
       

@@ -8,7 +8,7 @@ namespace Fireball.Tests {
 	
 	module TestModule {
 	
-		private class FB_ITest_Implementation : ITest {
+		private class FB_ITest_Implementation extends ITest {
 			public def MustImplement(a: int) : void {
 				Console.WriteLine($"You specified the number: $a")
 			}			

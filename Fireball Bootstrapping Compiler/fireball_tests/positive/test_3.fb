@@ -9,7 +9,7 @@ namespace Fireball.Tests {
 		public def Create(idiotName: String) : Idiot { Idiot(idiotName) }
 	}
 		
-	public class Idiot(name: String) : Dummy {		
+	public class Idiot(name: String) extends Dummy {		
 	}
 	
 	public module Tester {
@@ -24,7 +24,7 @@ namespace Fireball.Tests {
 		public val test = "Breakin' hard"
 		
 		// Mutable fields are not allowed to be public.
-		protected var breaks = 7
+		protected var breaks : int = 7
 		
 		// vals without assignment are not allowed
 		val villageIdiot = Idiot.Create("Paul")
@@ -32,9 +32,9 @@ namespace Fireball.Tests {
 		// vars without assignment are not allowed
 		var anotherIdiot = Idiot("Rebecca")
 		
-		public val test2 = Tester.InnerTester.GetString()
+		public val test2 : String = Tester.InnerTester.GetString()
 		
-		//val emptyList = System.Collections.Generic.List()				
+		val emptyList = new System.Collections.Generic.List()
 		
 		// Test tuple assignment
 		var tupleVar = (5, "string")

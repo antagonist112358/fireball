@@ -10,7 +10,7 @@ namespace Fireball.Tests {
 
 	// Entry Point
 	module Program {
-		implicit def VectorToLength(vect: Vector) : double { vect.GetMagnitude() }
+		implicit def VectorToLength(vect: Vector) : double = vect.GetMagnitude()
 		
 		def Main(_: Array[String]) : void {
 			val aVector = Vector(3.0, 4.0)

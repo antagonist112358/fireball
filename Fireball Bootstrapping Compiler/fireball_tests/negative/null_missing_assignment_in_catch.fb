@@ -1,0 +1,31 @@
+namespace Fireball.Tests {
+
+	using System
+
+  module Program {
+  
+    private var nameOption : option[String] = None()
+  
+    def WouldAssignButThrows : option[String] = {
+      val divisor = 0
+      Some($"Android $(18/divisor)")
+    }
+  
+    def Main(_: Array[String]) : void {
+      try {
+        nameOption = WouldAssignButThrows //E: assignment to
+      } catch {
+        case DivideByZeroException => 
+          nameOption = None()
+          Console.WriteLine("Division by zero - no assignment")
+        case NotImplementedException =>
+          /* Missing assignment here */
+          //nameOption = None()
+          Console.WriteLine("Assignment method not implemented")
+      }
+      
+      Console.WriteLine($"Optional Name: $nameOption")
+    }
+  }
+  
+}

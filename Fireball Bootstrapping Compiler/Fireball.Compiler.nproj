@@ -49,6 +49,7 @@
     <Folder Include="fbcc\typing" />
     <Folder Include="fbcc\parsing" />
     <Folder Include="fbcc\internal" />
+    <Folder Include="fbcc\stages" />	
     <Folder Include="ncc" />
     <Folder Include="ncc\codedom" />
     <Folder Include="ncc\completion" />
@@ -80,9 +81,11 @@
     <Compile Include="fbcc\hierarchy\TypeBuilder-Traits.n">
       <SubType>Code</SubType>
     </Compile>
+	<!-- Excluded for now (until necessity arises)
     <Compile Include="fbcc\internal\PExprSerializer.n">
       <SubType>Code</SubType>
     </Compile>
+	-->
     <Compile Include="fbcc\parsing\Keywords.n">
       <SubType>Code</SubType>
     </Compile>
@@ -98,6 +101,9 @@
     <Compile Include="fbcc\typing\Typer-PartialFunctions.n">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="fbcc\stages\*.n">
+      <SubType>Code</SubType>
+    </Compile>	
     <Compile Include="ncc\CompilationOptions.n">
       <SubType>Code</SubType>
     </Compile>

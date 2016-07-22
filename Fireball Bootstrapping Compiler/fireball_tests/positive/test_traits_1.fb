@@ -10,7 +10,7 @@ namespace Fireball.Tests {
 	}
 	
 	// Like IEnumerable
-	trait Traversable[From, T] : SGC.IEnumerable[T] {
+	trait Traversable[From, T] extends SGC.IEnumerable[T] {
 		
 		def CommonString() : String { "Hello World" }
 		
@@ -28,9 +28,9 @@ namespace Fireball.Tests {
 	
 	
 	// Simple List
-	class SimpleList[T](elements: SGC.IEnumerable[T]) : Traversable[SimpleList[T], T] {
+	class SimpleList[T](elements: SGC.IEnumerable[T]) extends Traversable[SimpleList[T], T] {
 	
-		private class SimpleListCollectionBuilder[U] : CollectionBuilder[U, SimpleList[U]] {
+		private class SimpleListCollectionBuilder[U] extends CollectionBuilder[U, SimpleList[U]] {
 			def Build(elements : SGC.IEnumerable[U]) : SimpleList[U] { SimpleList(elements) }
 		}
 		

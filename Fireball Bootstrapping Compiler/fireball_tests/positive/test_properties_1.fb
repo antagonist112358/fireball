@@ -1,0 +1,112 @@
+namespace Fireball.Tests {
+  
+  using System
+  using System.Collections.Generic
+  using System.Linq
+  
+  trait Container {
+    // Test abstract property (getter only)
+    def Capacity : int with get
+    
+    // Test abstract property (getter only, alternative syntax)
+    def Populated : int
+        
+    // Test abstract property (setter only)
+    def FlowControl : bool with set
+    
+    // Test abstract property (getter only with indexer)
+    def Slot(index: int) : int? with get
+  }
+  
+  class Dummy(size: int) extends Container {
+    
+    private var dummyVariable = false
+    private val storage : Array[int?] = Array(size)
+    
+    // Method with no arguments (implemented as a Property)
+    def Capacity : int = storage.Length
+        
+    // Method with no arguments (implemented as a Property)        
+    def Populated: int = {
+      var cnt = 0
+      foreach(maybeInt in storage)
+        when(maybeInt.HasValue) { cnt += 1 }
+          
+      cnt
+    }
+    
+    // Property (get only)
+    def Unpopulated : int with get { 
+      var cnt = storage.Length
+      foreach(maybeInt in storage)
+        when(maybeInt.HasValue) { cnt -= 1 }
+        
+      cnt
+    }
+    
+    // Property (set only)
+    def FlowControl : bool with set(value) {
+      dummyVariable = value
+    }
+    
+    def Slot(index: int) : int? with get {
+      when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to $(Capacity - 1)]") }
+    
+      storage(index)
+    }
+    
+    def Apply(index: int) : int 
+		with get {
+			when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to $(Capacity - 1)]") }      
+			if (storage(index).HasValue) { storage(index).Value }
+			else -1 
+		} with set(stVal) {
+			when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to $(Capacity - 1)]") }      
+			when (stVal < 0) { throw InvalidOperationException("Value must be positive") }      
+			storage(index) = stVal
+		}
+    
+  }
+  
+  module Program {
+    private val p = Dummy(5)
+    private val c : Container = p
+    
+    def Main(_: Array[string]) : void {
+      using System.Console
+      WriteLine($"Capacity:  $(c.Capacity)")
+      WriteLine($"Populated: $(c.Populated)")
+      
+      def slotHasValue(index) {
+        /*val s = */c.Slot(index).HasValue
+        //s.HasValue
+      }
+      
+      WriteLine($"Slot 2 Has Value: $(slotHasValue(2))")
+      WriteLine($"Slot 4 Has Value: $(slotHasValue(4))")
+      WriteLine("Populating Slots: 0, 1, 2, and 3...")
+      p(0) = 3
+      p(1) = 5
+      p(2) = 7
+      p(3) = 9
+      WriteLine($"Capacity:  $(c.Capacity)")
+      WriteLine($"Populated: $(c.Populated)")
+      WriteLine($"Slot 2 Has Value: $(slotHasValue(2))")
+      WriteLine($"Slot 4 Has Value: $(slotHasValue(4))")      
+    }
+  }
+}
+
+/*
+BEGIN-OUTPUT
+Capacity:  5
+Populated: 0
+Slot 2 Has Value: False
+Slot 4 Has Value: False
+Populating Slots: 0, 1, 2, and 3...
+Capacity:  5
+Populated: 4
+Slot 2 Has Value: True
+Slot 4 Has Value: False
+END-OUTPUT
+*/

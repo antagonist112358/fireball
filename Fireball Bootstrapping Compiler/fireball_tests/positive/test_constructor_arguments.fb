@@ -12,7 +12,7 @@ namespace Fireball.Tests {
 	}
 	
 	// Default constructor test
-	class DefaultConstructorTest(a: int) : Base {
+	class DefaultConstructorTest(a: int) extends Base {
 		def PrintOutA() : string { a.ToString() }
 		override def ToString() : String { a.ToString(); }
 	}

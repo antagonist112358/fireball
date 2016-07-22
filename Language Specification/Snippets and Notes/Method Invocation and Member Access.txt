@@ -7,7 +7,7 @@ Method parameters are, in essence, the result of computing:
 Consider the following example:
 
 // Given these methods (method signatures):
-def method(a: A, b: B c: Void -> C = new C()) : Void { ... }
+def method(a: A, b: B c: Void -> C = () => new C()) : Void { ... }
 def AsToBs(a: A) : B { ... }
 def convert(b: B) : Void -> C { ... }
 def AltConvert(a: A, b: B) : Void -> C { ... }
@@ -87,16 +87,6 @@ val c = Four TwoInstance BsToCs someB		// NOT OK!
 val c = Four.TwoInstance BsToCs(someB)
 val c = Four.TwoInstance BsToCs someB
 val c = { Four.TwoInstance } BsToCs someB
-val c = Four TwoInstance :: BsToCs someB
-
-// The "Left Result into Right operator" evaluates everything to the left of it and then applies the functions to the right
-// The signature is: expression(Void -> T) { ... } :: expression(T -> U) { ... }
-// This expression:
-val c = Four TwoInstance :: BsToCs someB
-// Can be interpreted as:
-val temp = Four.TwoInstance
-def leftExpr[U](func: Two -> U) => func(temp)
-val c = leftExpr(inst => inst.BsToCs(someB))
 
 Let's look at Linq and functional composition:
 
@@ -105,6 +95,7 @@ val listOfNumbers = List(1, 2, 3, 4, 5)
 val evenNumbers = listOfNumbers.Where(_ % 2 == 0)
 val doubled = evenNumbers.Select(_ * 2)
 val summed = doubled.Sum()
+val summed = List(1, 2, 3, 4, 5).Where(_ % 2 == 0).Select(_ * 2).Sum()
 
 // How can this be shortened?
 val evenNumbers = List(1, 2, 3, 4, 5) Where (_ % 2 == 0)
@@ -113,8 +104,8 @@ val summed = doubled Sum
 
 // Can this become a single-line?
 val summed = {{ List(1, 2, 3, 4, 5) Where (_ % 2 == 0) } Select (_ * 2)} Sum
-// But the above is hideous...
-// Lets use the Left-Yielding operator ( :: )
-val summed = List(1, 2, 3, 4, 5) Where (_ % 2 == 0) :: Select (_ * 2) :: Sum
+// But we can do better... 
+// In this example, each method can be applied to the result of the previous expression
+val summed = List(1, 2, 3, 4, 5) Where (_ % 2 == 0) Select (_ * 2) Sum
 // ...straight sexy, and obvious what is intended.
 // Note: The above is converted into the previous expression by the compiler.

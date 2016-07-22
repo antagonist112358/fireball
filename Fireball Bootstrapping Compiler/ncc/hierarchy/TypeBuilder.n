@@ -1602,7 +1602,7 @@ public partial class TypeBuilder : TypeInfo
     BindType(tenv, t)
   }
 
-  internal TryBindType(other_tenv : TypeVarEnv, t: PT.PExpr) : option[TypeVar] {
+  internal protected TryBindType(other_tenv : TypeVarEnv, t: PT.PExpr) : option[TypeVar] {
     try {
       Some(BindType(other_tenv, t))
     } catch {

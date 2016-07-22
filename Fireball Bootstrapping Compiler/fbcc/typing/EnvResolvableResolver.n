@@ -10,12 +10,10 @@ using Nemerle.Compiler.NamespaceTree;
 
 namespace Nemerle.Compiler
 {
-  /// <summary>
-  /// Description of EnvResolvableResolver.
-  /// </summary>
-  
+  /* Not used currently ---
   internal module EnvResolvableResolver
   {
+
     public GetResolvables(from: TypeBuilder, nses : list[NamespaceTree.Node]) : list[IField] {
       def loop(nodes : list[NamespaceTree.Node], acc) : list[TypeInfo] {
         match(nodes) {
@@ -42,5 +40,8 @@ namespace Nemerle.Compiler
       }).Flatten();
       
     }
+
   }
+  -- */
+  
 }

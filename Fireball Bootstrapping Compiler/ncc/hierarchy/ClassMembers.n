@@ -770,7 +770,36 @@ public partial class PropertyBuilder : MemberBuilder, IProperty
     //TODO: Add BodyLocation support to fields and event
     _bodyLocation = propertyAst.BodyLocation;
     is_mutable = Option.IsSome (propertyAst.setter);
-    ty = par.BindFixedType (propertyAst.SignatureType);
+    
+    def type_initialization_expression(expr : Parsetree.PExpr) {
+      Typer(propertyAst.Env, par, InitializerHelper.EmptyMemberBuilder(par)).TypeExpr(expr).Type
+    }
+    
+    // check if property's type is valid
+    match ((propertyAst.SignatureType, propertyAst.initializer)) {
+      | (<[ _ ]>, Some(initializer)) => //Message.Error ("type inference for fields is available only when assigning literal value to them")
+        try {
+          ty = type_initialization_expression(initializer).Fix();
+          def propTypePExpr = Parsetree.PExpr.TypedType(ty);
+          propertyAst.returnType = propTypePExpr;
+          match(propertyAst.getter) {
+            | Some(getter) => getter.header.ReturnType = propTypePExpr;
+            | _ => ()
+          }
+          match(propertyAst.setter) {
+            | Some(setter) => match(setter.header.Parameters.Head.Type) {
+              | <[_]> => setter.header.Parameters.Head.Type = propTypePExpr;
+              | _ => ()
+            }
+            | _ => ()
+          }
+        } catch {
+          | _ => ty = par.BindFixedType(propertyAst.SignatureType);        
+        }
+          
+      | _ =>
+        ty = par.BindFixedType(propertyAst.SignatureType);
+    }   
 
     parms = propertyAst.parameters.Map(parm => par.BindFixedType(parm.Type));
 

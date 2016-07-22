@@ -1014,7 +1014,7 @@ namespace Nemerle.Compiler.Parsetree
           this.member = member;
         }
       }
-    | Call            { func : PExpr; parms : list [PExpr]; }
+    | Call            { func : PExpr; parms : list [PExpr]; [RecordIgnore] mutable is_constructor_call : bool = false; }
     | GenericSpecifier { func : PExpr; generic_parms : list [PExpr]; }
     | ListLiteral     { elements : list [PExpr]; }
     | Assign          { target : PExpr; source : PExpr; }

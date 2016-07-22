@@ -21,6 +21,9 @@ public sealed abstract class Arithmetic<T>
   private Arithmetic() { }
 
   [Operator]
+  public static T op_Negation(T x) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+
+  [Operator]
   public static T op_Addition(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
   
   [Operator]
@@ -33,28 +36,31 @@ public sealed abstract class Arithmetic<T>
   public static T op_Divide(T x, T y) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
   
   [Operator]
-  public static double op_Explicit(T x) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
-  
-  [Operator]
-  public static T op_Explicit(double d) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }
+  public static double op_Explicit(T x) { throw new NotImplementedException("Structural Type Contract methods should not be invoked."); }  
 }
 
 
 
 // Fireball code to create this contract
 type Arithmetic[T] = {
+  // Negation
+  <Operator> def @- (x: T) : T
+  // Addition
   <Operator> def @+ (x: T, y: T) : T
+  // Subtraction
   <Operator> def @- (x: T, y: T) : T
+  // Multiplication
   <Operator> def @* (x: T, y: T) : T
+  // Division
   <Operator> def @/ (x: T, y: T) : T
+  // Explicit conversion to Double
   <Operator> def @:> (x: T) : Double
-  <Operator> def @:> (d: Double) : T
 }
 
 // Using this structural type in a generic class
 // Note: T could be Int, UInt, Long, Double, Float, or any other type which has the methods defined in the above "Arithmetic[T]" structural type contract.
 // Notice: That the type constraint involves the keyword "implements" not a typical type check in the form "A : B" or "A >: B"
-struct class Vector[T implements Arithmetic[T]](_x: T, _y: T, _z: T) {
+struct class Vector3[T implements Arithmetic[T]](_x: T, _y: T, _z: T) {
 
   def X : T = _x
   def Y : T = _y
@@ -73,42 +79,42 @@ struct class Vector[T implements Arithmetic[T]](_x: T, _y: T, _z: T) {
   // Precedence is set there to indicate that "negation" should be performed before any of the below operations.
   <UnaryOperator(precedence = OperatorPrecedence.Negation)> 
   def @-(x: Vector[T]) : Vector[T] {
-    val xd = x._x :> double * -1.0d
-    val yd = x._y :> double * -1.0d
-    val zd = x._z :> double * -1.0d
+    val xd = -x._x
+    val yd = -x._y
+    val zd = -x._z
     
-    new Vector(xd:> T, yd:> T, zd:> T)  // Type inferred to be T
+    new Vector3(xd, yd, zd)
   }
 
   <Operator> def @+ (x: Vector[T], y: Vector[T]) : Vector[T] {
-    new Vector(x._x + y._x, x._y + y._y, x._z + y._z)
+    new Vector3(x._x + y._x, x._y + y._y, x._z + y._z)
   }
 
   <Operator> def @- (x: Vector[T], y: Vector[T]) : Vector[T] {
-    new Vector(x._x - y._x, x._y - y._y, x._z - y._z)
+    new Vector3(x._x - y._x, x._y - y._y, x._z - y._z)
   }
 
   // Precedence is set there to indicate that "*" operations should be performed before addition or subtraction.
   // Commutative is set to true here, which will automatically generate the Operator: "def @*(value: T, vect: Vector[T]) : Vector[T] = vect * value
   <Operator(precedence = OperatorPrecedence.Multiplication, commutative = true)>
-  def @*(vect: Vector[T], value: T) : Vector[T] {
-    new Vector(vect._x * value, vect._y * value, vect._z * value)
+  def @*(vect: Vector3[T], value: T) : Vector3[T] {
+    new Vector3(vect._x * value, vect._y * value, vect._z * value)
   }
   
   <Operator(precedence = OperatorPrecedence.Addition, commutative = true)>
-  def @+(vect: Vector[T], value: T) : Vector[T] {
-    new Vector(vect._x + value, vect._y + value, vect._z + value)
+  def @+(vect: Vector3[T], value: T) : Vector3[T] {
+    new Vector3(vect._x + value, vect._y + value, vect._z + value)
   }
   
   <Operator(precedence = OperatorPrecedence.Multiplication)> 
-  def dot(x: Vector[T], y: Vector[T]) : T {
+  def dot(x: Vector3[T], y: Vector3[T]) : T {
     (x._x * y._y) + (x._y * y._y) + (x._z * y._z)
   }
 
   // The above operations allows for syntax like:
-  // val vect1 = new Vector(1, 2, 3) // Type inference will give Vector[Int]
-  // val vect2 = new Vector(2, 5, 7)
-  // ((3 * vect1 dot -vect2) + vect1) dot vect2 
+  // val vect1 = new Vector3(1, 2, 3) // Type inference will give Vector[Int]
+  // val vect2 = new Vector3(2, 5, 7)
+  // val value = ((3 * vect1 dot -vect2) + vect1) dot vect2 // value will have type Int
 
   // Other members here...
 }

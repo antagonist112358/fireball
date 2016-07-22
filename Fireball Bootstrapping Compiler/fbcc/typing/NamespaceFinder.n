@@ -49,7 +49,7 @@ namespace Nemerle.Compiler
         }
       }
       
-      private AddToList[A, B](key: A, value: B, table: Hashtable[A, list[B]]) : void {
+      private static AddToList[A, B](key: A, value: B, table: Hashtable[A, list[B]]) : void {
         _ = table.Update(key, [], existing => value :: existing)
       }
     }
@@ -170,9 +170,11 @@ namespace Nemerle.Compiler
     // Takes a given environment and registers all the known resolvables visible
     //public RegisterAllVisibleImportedResolvables(from : TypeInfo, 
     
+    /*
     private static TypeHasResolvables(tyInfo : TypeInfo) : bool {
       tyInfo.GetFields(BinderFlags).Exists(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))
     }
+    */
     
     private static GetTypeResolvables(tyInfo: TypeInfo) : list[IField] {
       tyInfo.GetFields(BinderFlags).Filter(fld => fld.IsCustomAttributeDefined("Fireball.Internal.ResolveAttribute"))

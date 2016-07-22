@@ -1,0 +1,154 @@
+﻿using Nemerle.Collections;
+using Nemerle.Utility;
+using Nemerle.Logging;
+
+using Nemerle.Compiler;
+using Nemerle.Compiler.Typedtree;
+using Nemerle.Compiler.SolverMacros;
+
+using SCG = System.Collections.Generic;
+
+namespace Nemerle.Compiler
+{
+  /// <summary>
+  /// Checks for assignments in the try section of a try/catch block which are not assigned in the catch cases
+  /// </summary>
+  [ManagerAccess]
+  class TryCatchAssignmentValidator
+  {
+    
+    #region Fields
+    
+    current_fun : TFunHeader;
+    current_type : TypeBuilder;
+    messenger : Messenger;
+    the_method : MethodBuilder;
+    typer: option[Typer] = None();
+    
+    // Keeps track of declarations inside of the try section
+    mutable try_section_decls : list[LocalValue] = [];
+    
+    // Keeps track of assignments inside of the try section
+    mutable try_section_assignments : list[TExpr] = [];
+    
+    #endregion
+    
+    public this(meth: MethodBuilder, typer : Typer = null)
+    {
+      Manager = meth.DeclaringType.Manager;
+      current_fun = meth.GetHeader ();
+      the_method = meth;
+      messenger = Manager.Solver.CurrentMessenger;
+      current_type = meth.DeclaringType;
+      this.typer = if(typer == null) None() else Some(typer);
+    }
+    
+    public Run () : void
+    {
+      Util.locate (current_fun.Location, {
+        match (current_fun.body) {
+          | FunBody.Typed (body) => Walk(body)
+          | _ => Util.ice("Only typed method bodies should survive to 'TryCatchAssignmentValidator'")
+        }
+      })
+    }
+    
+    private Walk(expr: TExpr) : void
+    {
+      _ = expr.Walk(DoWalk);
+    }
+    
+    private DoWalk(expr: TExpr) : TExpr
+    {
+      | TExpr.Try(body, cases) when cases.Exists(c => c is Try_case.Catch) =>
+      
+        DoWalkTryBody(body);
+        DoValidateCatchCases(cases);
+      
+        null
+        
+      | _ => null
+    }
+    
+    private DoWalkTryBody(tryBody: TExpr) : void
+    {
+      def walk_body(expr: TExpr) : TExpr {
+        | TExpr.Assign(DebugInfo(e1, _), _)
+        | TExpr.Assign(e1, _) =>
+          try_section_assignments += [e1];
+          null
+        | TExpr.DefValIn(name, _, _) =>
+          try_section_decls += [name];
+          null
+        | _=> null                  
+      }
+      
+      _ = tryBody.Walk(walk_body);
+      mutable copy = try_section_assignments;
+      
+      // Remove any assignments to local variables
+      foreach(assignExpr in try_section_assignments) {
+        match(assignExpr) {
+          | TExpr.LocalRef(name) when try_section_decls.Contains(name) =>
+            copy = copy.Remove(assignExpr);
+          | _ => ()
+        }        
+      }
+      
+      try_section_assignments = copy;
+    }
+    
+    private DoValidateCatchCases(cases: list[Try_case]) : void
+    {
+      def numCatchCases = cases.FilteredLength(c => c is Try_case.Catch);
+      mutable cntStack = SCG.Dictionary.[TExpr, int]();
+      
+      try_section_assignments.Iter(expr => cntStack.Add(expr, numCatchCases));     
+      
+      def check_for_removal(e1: TExpr, e2: TExpr) : void {
+        | (TExpr.LocalRef(name1), TExpr.LocalRef(name2))
+          when object.ReferenceEquals(name1, name2)
+        | (TExpr.StaticRef(_, mem1, _), TExpr.StaticRef(_, mem2, _))
+          when /*object.ReferenceEquals(c1, c2) &&*/ object.ReferenceEquals(mem1, mem2) =>
+            cntStack[e1] -= 1;
+          
+            when(cntStack[e1] == 0) {
+              _ = cntStack.Remove(e1);
+              try_section_assignments = try_section_assignments.Remove(e1);
+            }
+        | _ => ()
+      }
+      
+      def walk_case(body: TExpr) : TExpr {
+        | TExpr.Assign(DebugInfo(e1, _), _)
+        | TExpr.Assign(e1, _) =>
+          def keys = SCG.List(cntStack.Keys);
+          keys.Iter(key => check_for_removal(key, e1));
+          
+          null
+          
+        | _=> null
+      }     
+           
+      // Scan all the catch handlers for assignments
+      when(numCatchCases > 0) {
+        foreach(case in cases) {
+          match(case) {
+            | Try_case.Catch(_, handler) when handler != null =>
+              _ = handler.Walk(walk_case);
+            | _ => ()
+          }
+        }
+        
+        // Report errors for any remaining assignments
+        foreach(asnExpr in try_section_assignments) {
+          Message.Error(asnExpr.Location, $"assignment to $asnExpr in try section of try/catch block, but missing required matching assignment inside of (each) catch clause")
+        }
+      }
+      
+      // Cleanup
+      try_section_decls = [];
+      try_section_assignments = [];
+    }
+  }
+}

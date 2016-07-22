@@ -36,10 +36,13 @@ namespace Nemerle.Compiler
     private rewrite_trait_body() : void 
     {
       
-      // Keeps track of the implemented methods in the Trait
+      // Keeps track of the implemented functions in the Trait
       def method_table = Hashtable();
+      
+      // Keeps track of implemented properties in the Trait
+      def property_table = Hashtable();
         
-      def collect_members_with_implementation() : list[PT.ClassMember.Function]
+      def collect_functions_with_implementation() : list[PT.ClassMember.Function]
       {
         GetParsedMembers().FoldLeft([], (memb, acc) => match(memb) {
           | PT.ClassMember.Function(_, _, body) as fnc when !(body is FunBody.Abstract) => fnc :: acc
@@ -47,10 +50,34 @@ namespace Nemerle.Compiler
         }).Rev();
       }
       
+      def collect_properties_with_implementation() : list[PT.ClassMember.Property] * list[PT.Splicable]
+      {
+        def (props, names) = GetParsedMembers().FoldLeft( ([], []), (memb, (acc, names)) => match(memb) {
+          | PT.ClassMember.Property(_, _, getter, setter, initializer) as prop when (getter is Some(_) || setter is Some(_) || initializer is Some(_)) =>
+            (prop :: acc, prop.name :: names)
+          | _ => (acc, names)
+        });
+        
+        (props.Rev(), names)
+      }
+      
       def collect_members_without_implementation() : list[PT.ClassMember]
       {
+        def is_abstract(body: FunBody) : bool {
+          | FunBody.Abstract => true
+          | _ => false
+        }
+        
+        def are_abstract(bodies: list[option[PT.ClassMember.Function]]) : bool {
+          def funBodies = bodies.Collect(x => match(x) { | Some(PT.ClassMember.Function(_, _, body)) => Some(body) | None => None() });
+          
+          if (funBodies.IsEmpty) true
+          else funBodies.ForAll(is_abstract)
+        }
+        
         GetParsedMembers().FoldLeft([], (memb, acc) => match(memb) {
-          | PT.ClassMember.Function(_, _, body) when !(body is FunBody.Abstract) => acc
+          | PT.ClassMember.Function(_, _, body) when !is_abstract(body) => acc
+          | PT.ClassMember.Property(_, _, getter, setter, initializer) when !(are_abstract([getter, setter])) || initializer.IsSome => acc
           | other => other :: acc
         }).Rev()
       }
@@ -80,6 +107,7 @@ namespace Nemerle.Compiler
         def replace_exprs(_, is_post, e) {
           if(is_post) {
             match(e) {
+              | PT.PExpr.Ref(pName) as propRef when property_table.ContainsKey(pName) => makeSelfMember(propRef.Location, propRef)
               | PT.PExpr.This as thisRef => replace_this(thisRef)
               | PT.PExpr.Call as call when method_table.Count > 0 => replace_implemented_method_call(call)
               | other => other
@@ -114,7 +142,7 @@ namespace Nemerle.Compiler
         
         def h = fnc.header;
         def tyvarNames = TyparmVars.Map(splicable => <[ $(splicable.GetName() : name) ]>);
-        def typeName = <[$(PT.Name(this.Name): name) [ ..$tyvarNames ] ]>;
+        def typeName = if (tyvarNames.IsEmpty) <[ $(PT.Name(this.Name) : name) ]>  else <[$(PT.Name(this.Name): name) [ ..$tyvarNames ] ]>;
         def newParam = PT.PParameter(PT.Splicable.Name(PT.Name("self")), AttributesAndModifiers.Empty, typeName);
         // Rewrite the body
         def body = rewrite_implementation_body(fnc.body);
@@ -143,7 +171,8 @@ namespace Nemerle.Compiler
       
       when(IsTrait)
       {
-        def implementedMembers = collect_members_with_implementation();
+        def implementedMembers = collect_functions_with_implementation();
+        def (implementedProperties, _) = collect_properties_with_implementation();
         
         when (!implementedMembers.IsEmpty) {
           // Collect the methods which don't have implementations
@@ -152,6 +181,11 @@ namespace Nemerle.Compiler
           // Build the implemented methods table
           foreach(memb in implementedMembers) {
             method_table.Add(memb.PName, memb.header.Parameters.Length)
+          }
+          
+          // Build the implemented properties table
+          foreach(prop in implementedProperties) {
+            property_table.Add(prop.PName, prop.parameters.Length)
           }
         
           foreach(memb in implementedMembers)

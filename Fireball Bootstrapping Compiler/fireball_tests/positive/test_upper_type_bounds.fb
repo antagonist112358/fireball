@@ -4,9 +4,9 @@ namespace Fireball.Tests {
 	
 	// Simple class hierarchy
 	class Super { virtual def Depth : int with get { 1 } }
-	class Child1 : Super { override def Depth : int with get { 2 } }
-	class Child2 : Super { override def Depth : int with get { 2 } }
-	class SubChild1 : Child1 { override def Depth : int with get { 3 } }
+	class Child1 extends Super { override def Depth : int with get { 2 } }
+	class Child2 extends Super { override def Depth : int with get { 2 } }
+	class SubChild1 extends Child1 { override def Depth : int with get { 3 } }
 
 	// A class with an upper-type bound
 	class ClassHierarchyPrinter[T : Super] {

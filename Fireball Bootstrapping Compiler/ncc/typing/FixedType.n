@@ -42,7 +42,9 @@ namespace Nemerle.Compiler
   {
     #region Options
     /// Represent a class type with given type parameters, like "string" or "list[int]".
-    | Class { tycon : TypeInfo; args : list[TypeVar]; 
+    | Class { tycon : TypeInfo; args : list[TypeVar];
+    
+          /* Not currently used ---
           internal ConstructInvariantClass() : FixedType.Class {
             def oldTyvars = this.args.Collect(a => match(a) {|StaticTypeVarRef(tyvar) => Some(tyvar) | _ => None() });
             def (_, newTyvars) = StaticTypeVar.CopyList(oldTyvars);
@@ -50,6 +52,7 @@ namespace Nemerle.Compiler
             
             Class(tycon, newTyvars.Map(StaticTypeVarRef(_)))
           }
+          --- */
           
           internal IsFunctionalType : bool {
             get { tycon.BaseType != null && tycon.BaseType.IsDerivedFrom(Manager.InternalType.FunctionBase_tc) }

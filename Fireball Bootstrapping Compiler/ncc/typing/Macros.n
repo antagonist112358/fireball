@@ -448,12 +448,19 @@ public partial module Macros
   {
     def qnm = quoted_sstring (mem.name);
     def qattrs = quoted_attributes (mem.modifiers);
-
+    
     match (mem)
     {
       | ClassMember.TypeDeclaration(td) => <[ ClassMember.TypeDeclaration(td = $(quoted_tydecl(td))) ]>
       // | <[ decl: ..$_ $_ : $t; ]> => // field
-      | ClassMember.Field(t) => <[ ClassMember.Field(name = $qnm, modifiers = $qattrs, ty = $(quoted_expr(t))) ]>
+      | ClassMember.Field(t) as fld => 
+        match(fld.Initializer) {
+          | null => <[ ClassMember.Field(name = $qnm, modifiers = $qattrs, ty = $(quoted_expr(t))) ]>
+          | initializer => <[ ClassMember.Field(name = $qnm, modifiers = $qattrs, ty = $(quoted_expr(t)), initializer = $(quoted_expr(initializer))) ]>
+        }
+      
+      
+      
       // Example:  <[ decl: ..$attrs $name [..$typeParameters] (..$parameters) : $returnType where ..$constrants implements ..$impl $body ]> 
       | ClassMember.Function( header = PFunHeader where (TypeParameters = 
           Typarms where (tparms, cts), ReturnType = t, Parameters = fparms), implemented = implemented, body = bd) =>

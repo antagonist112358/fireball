@@ -11,6 +11,7 @@ Newline Rules
 	- implements
 	- extends
 	- includes
+	- with
 8. The following tokens always start new statements:
   - case
 

@@ -1,0 +1,22 @@
+namespace Fireball.Tests {
+
+	using System
+  using SCG = System.Collections.Generic
+  using Nemerle.Collections
+ 
+  module Program {
+  
+    def Main() : void {
+      //val arr = ["R", "S", "T", "L", "N", "E"]
+      val words = "Vanna White"
+      val letters = words.ToCharArray()
+      
+      val lList = new SCG.List(letters)
+      val uList = lList.Map(c => Char.ToUpper(c)) 
+      
+      Console.WriteLine(String.Join(" ", uList.ToArray()))
+    }
+  
+  }
+  
+}

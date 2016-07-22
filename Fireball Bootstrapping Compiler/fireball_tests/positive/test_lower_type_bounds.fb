@@ -7,12 +7,12 @@ namespace Fireball.Tests
 
 	// Some test types
 	class Super { }
-	class Child1 : Super { }
-	class Child2 : Super { }
-	class SubChild1 : Child1 { }
+	class Child1 extends Super { }
+	class Child2 extends Super { }
+	class SubChild1 extends Child1 { }
 	
 	// Test lower-type bounds
-	trait ListNode[+T] : IEnumerable[T]
+	trait ListNode[+T] extends IEnumerable[T]
 	{
 		def Head : T
 		def Tail : ListNode[T]
@@ -21,7 +21,7 @@ namespace Fireball.Tests
 
 	module DefaultListNode[T] {
 	
-		private class EmptyListNode : ListNode[T]
+		private class EmptyListNode extends ListNode[T]
 		{
 			def Head : T
 				with get { throw NotImplementedException() }
@@ -38,9 +38,9 @@ namespace Fireball.Tests
 	}
 	
 	
-	class RealListNode[T](head : T, tail : ListNode[T] = DefaultListNode[T].Empty) : ListNode[T] {
+	class RealListNode[T](head : T, tail : ListNode[T] = DefaultListNode[T].Empty) extends ListNode[T] {
 		
-		private class RealListNodeEnumerator[T2](node : ListNode[T2]) : IEnumerator[T2] {
+		private class RealListNodeEnumerator[T2](node : ListNode[T2]) extends IEnumerator[T2] {
 			var currentNode : ListNode[T2] = node
 			var hasMovedOnce : bool = false
 			
@@ -92,7 +92,7 @@ namespace Fireball.Tests
 		def Replace[U :> T](item : U) : Container[U]
 	}
 	
-	class RealContainer[T](item : T) : Container[T] {
+	class RealContainer[T](item : T) extends Container[T] {
 		def Value : T with get { item }
 		def Replace[U :> T](newItem : U) : Container[U] { RealContainer(newItem) }
 	}
@@ -105,11 +105,11 @@ namespace Fireball.Tests
   	
 	public module Program
 	{
-    private type TestType = Array[String]    
+		private type TestType = Array[String]    
     
 		def Main(args : Array[String]) : void {
 			val aList = RealListNode(Stringable())
-      val locationName = "World"
+			val locationName = "World"
 			val bList = aList.Prepend($"Hello $locationName")
 
 			foreach(item in bList) {
