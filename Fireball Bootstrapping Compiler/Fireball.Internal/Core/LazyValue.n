@@ -1,0 +1,159 @@
+﻿using System;
+using System.Runtime;
+using System.Runtime.InteropServices;
+using System.Security;
+using System.Security.Permissions;
+using System.Diagnostics;
+using System.Runtime.Serialization;
+using System.Threading;
+
+namespace Fireball.Core
+{
+  /// <summary>
+  /// Provides support for lazy initialization.
+  /// </summary>
+  /// <typeparam name="T">Specifies the type of element being lazily initialized.</typeparam>
+  [Serializable]
+  [ComVisible(false)]
+  [DebuggerDisplay("IsValueCreated = {IsValueCreated}, Value = {ToString}")]
+  public sealed class LazyValue[T]
+  {
+    
+    private static AlreadyInvokedGuard : Void -> T = () => default(T);
+    
+    #region Boxed Value
+    
+    private abstract class Boxed
+    {
+      private this() { }
+      public sealed class Full : Boxed 
+      { 
+        public Value : T { get; private set; }
+        public this(value: T) { Value = value }
+      }
+      public sealed class Error : Boxed
+      { 
+        public Exception : Exception { get; private set; }
+        public this(ex: Exception) { Exception = ex }
+      }
+    }
+
+    private mutable _value : option[Boxed] = None();
+
+    #endregion
+
+    [NonSerialized]
+    private mutable _factory : Void -> T = LazyValue[T].AlreadyInvokedGuard;
+    
+    public this(valueFactory: Void -> T)
+    {
+      assert(valueFactory != null);
+      _factory = valueFactory;
+    }
+    
+    public override ToString() : String
+    {
+      match(_value)
+      {
+        | Some(Boxed.Full(Value = value)) => value.ToString()
+        | Some(Boxed.Error(Exception = ex)) => $"Lazy Initialization Error: $(ex.Message)"
+        | _ => "Lazy Uninitialized"
+      }
+    }
+    
+    public IsValueCreated : bool
+    {
+      get 
+      {
+        match(_value)
+        {
+          | Some(Boxed.Full) => true
+          | _ => false
+        }
+      }
+    }
+    
+    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    public Value : T
+    {
+      get
+      {
+        match(_value)
+        {
+          | Some(Boxed.Full(Value = value)) => value
+          | Some(Boxed.Error(Exception = ex)) => throw ex
+          | _ => LazyInitValue()
+        }
+      }
+    }   
+    
+    #region Serialization
+    #pragma warning disable 10003
+    
+    [OnSerializing]    
+    private OnSerializing(_: StreamingContext) : void
+    {
+      // Force initialization
+      def _: T = Value
+    }
+    
+    #pragma warning restore 10003
+    
+    #endregion
+    
+    #region Private Methods
+    
+    private LazyInitValue() : T
+    {
+      def boxed : option[Boxed] = CreateValue();
+      
+      if (boxed.IsNone || Option.IsSome(Interlocked.CompareExchange(ref _value, boxed, None())))
+      {
+        match(_value.Value)
+        {
+          | full is this.Boxed.Full => full.Value
+          | err is this.Boxed.Error => throw err.Exception
+          | _ => throw Exception("Internal exception occurred in LazyValue[T]::LazyInitValue (_.Value is not Boxed). Please report to Fireball team.")
+        }
+      }
+      else
+      {
+        _factory = LazyValue[T].AlreadyInvokedGuard;
+        match(boxed.Value)
+        {
+          | full is this.Boxed.Full => full.Value
+          | err is this.Boxed.Error => throw err.Exception
+          | _ => throw Exception("Internal exception occurred in LazyValue[T]::LazyInitValue (boxed.Value is not Boxed). Please report to Fireball team.")
+        }
+      }
+    }
+    
+    private CreateValue() : option[Boxed]
+    {      
+      if (Object.ReferenceEquals(_factory, LazyValue[T].AlreadyInvokedGuard))
+        None()
+      else
+      {
+        def factory = _factory;
+                
+        if (Object.ReferenceEquals(factory, LazyValue[T].AlreadyInvokedGuard))
+          None()
+        else
+        {
+          _factory = LazyValue[T].AlreadyInvokedGuard;
+          try
+          {
+            Some(Boxed.Full(factory()))
+          }
+          catch
+          {
+            | ex is Exception => Some(Boxed.Error(ex))
+          }
+        }
+      }      
+    }
+    
+    #endregion
+    
+  }
+}

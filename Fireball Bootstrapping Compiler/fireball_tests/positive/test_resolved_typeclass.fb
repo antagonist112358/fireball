@@ -64,14 +64,14 @@ namespace Fireball.Tests {
 			val lst = SimpleList([ "Hello", "World" ])
 			val lstWithLength  = lst.Map(s => (s, s.Length))
 			
-			Console.WriteLine($"Type of \"lstWithLength\": $(lstWithLength.GetType())")
+			Console.WriteLine($"Type of \"lstWithLength\": ${lstWithLength.GetType()}")
 			
 			foreach(tup in lstWithLength)
 				Console.WriteLine(tup)
 			
 			val charactersAndLength = lstWithLength.FlatMap( (s, _) => s.ToCharArray() )
 				
-			Console.WriteLine($"Type of \"charactersAndLength\": $(charactersAndLength.GetType())")				
+			Console.WriteLine($"Type of \"charactersAndLength\": ${charactersAndLength.GetType()}")
 			
 			foreach(tup in charactersAndLength)
 				Console.WriteLine(tup)

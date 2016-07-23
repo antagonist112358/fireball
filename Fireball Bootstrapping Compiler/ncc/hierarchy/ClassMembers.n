@@ -797,7 +797,19 @@ public partial class PropertyBuilder : MemberBuilder, IProperty
           | _ => ty = par.BindFixedType(propertyAst.SignatureType);        
         }
           
-      | _ =>
+      | (<[ _ ]>, _) when propertyAst.getter.IsSome =>
+        match(propertyAst.getter.Value.body) {
+          | FunBody.Parsed(bodyExpr) => 
+            ty = type_initialization_expression(bodyExpr).Fix();
+            def propTypePExpr = Parsetree.PExpr.TypedType(ty);
+            propertyAst.returnType = propTypePExpr;
+            propertyAst.getter.Value.header.ReturnType = propTypePExpr;
+            
+          | _ =>
+            ty = par.BindFixedType(propertyAst.SignatureType);
+        }
+        
+      | _ => 
         ty = par.BindFixedType(propertyAst.SignatureType);
     }   
 
@@ -806,7 +818,7 @@ public partial class PropertyBuilder : MemberBuilder, IProperty
     if (par.IsTrait)
     {
       when (propertyAst.initializer.IsSome)
-        Message.Error("initializer cannot be used in interfaces");
+        Message.Error("initializer cannot be used in traits");
     }
     else
     {

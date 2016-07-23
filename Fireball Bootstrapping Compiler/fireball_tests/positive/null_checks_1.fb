@@ -8,7 +8,7 @@ namespace Fireball.Tests {
   
     def WouldAssignButThrows : option[String] = {
       val divisor = 0
-      Some($"Android $(18/divisor)")
+      Some($"Android ${18/divisor}")
     }
   
     def Main(_: Array[String]) : void {

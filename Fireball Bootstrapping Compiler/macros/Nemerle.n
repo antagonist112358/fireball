@@ -49,12 +49,24 @@ namespace Nemerle
     parm.Type = <[ Nemerle.LazyValue [$(parm.Type)] ]>;
   }
   
-  macro lazy (val)
+  macro @lazy(name: string, initializer, typePExpr)
+  syntax("lazy", "val", name, Optional(":", typePExpr), "=", initializer)
+  {    
+    def typePExprOption = match(typePExpr) {
+      | x when x == null => None()
+      | x => Some(x)
+    }
+    LazyHelper.DoTransform(name, initializer, typePExprOption);
+  }
+  
+  module LazyHelper
   {
-    match (val)
-    {
-      | PT.PExpr.Literal => <[ LazyValue.FromValue ($val) ]>
-      | _ => <[ Nemerle.LazyValue (fun () { $val }) ]>
+    public DoTransform(name: string, initializer: PT.PExpr, typePExpr: option[PT.PExpr]) : PT.PExpr
+    {            
+      match(typePExpr) {
+        | None => <[def $(PT.Name(name) : name) = Fireball.LazyValue(fun() { $initializer }) ]>;
+        | Some(typeExpr) => <[def $(PT.Name(name) : name) : Fireball.LazyValue[$typeExpr] = Fireball.LazyValue(fun() { $initializer }) ]>;
+      }
     }
   }
   

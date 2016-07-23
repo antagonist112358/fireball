@@ -4,7 +4,7 @@ Newline Rules
 2. Any parenthesis block can span multiple lines
 3. Any square bracket block can span multiple lines
 4. Any parenthesis block can be moved to the next line
-5. Any square block can be moved to the next line
+5. Any curly-braces block can be moved to the next line
 6. Literals always terminate a line, unless (rule 1)
 7. The following tokens do not start new statements:
 	- else

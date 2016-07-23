@@ -286,6 +286,16 @@ namespace Nemerle.Late
               | _ => g
             MatchCase(c.patterns.Map(recurse_guard), recurse(c.body), c.disable_warnings)
           PExpr.Match(loc, recurse(mexpr), cases.Map(recurse_case), expr_loc)
+          
+        | PExpr.PartialFunction(cases) =>
+          def recurse_case(c)
+            def recurse_guard(g)
+              | PExpr.Call(<[ $("when" : dyn) ]> as w, [pat, expr]) =>
+                PExpr.Call(g.Location, w, [pat, recurse(expr)])
+              | _ => g
+            MatchCase(c.patterns.Map(recurse_guard), recurse(c.body), c.disable_warnings)
+          PExpr.PartialFunction(loc, cases.Map(recurse_case))
+          
         | PExpr.Ref => expr
         | PExpr.Member(obj, mem) => 
           if (Macros.IsTypeName (obj))

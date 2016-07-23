@@ -654,7 +654,7 @@ namespace StringTemplate
       | _ => false
     }
 
-    /** for $(...) and ..$(...) expressions:
+    /** for ${...} and ..${...} expressions:
         - first evaluate expressions
         - store intermediate results in variables
         - return list of evaluators and reference variables in reverse order
@@ -720,7 +720,7 @@ namespace StringTemplate
       def parseExpressionStr() : string * bool * Location
       {
         Assert(strBuilder.Length == 0, "strBuilder.Length == 0");
-        Assert(ch == '(', "ch == '('");
+        Assert(ch == '{', "ch == '{'");
         def startCol  = curCol;
         def startLine = curLine;
         /// exprStr * allIsAlphNum
@@ -732,9 +732,9 @@ namespace StringTemplate
             // TODO: Обработать ситуацию когда скобка не закрыта! См. файл:
             // C:\MyProjects\Nemerle\nemerle\ncc\testsuite\negative\tyenf.n
             | '\0'
-            | ')' when balance == 1 => (getStrFromBuilder(), allIsAlphNum)
-            | ')'                   => appendToBuilder(ch2); loop(balance - 1, false)
-            | '('                   => appendToBuilder(ch2); loop(balance + 1, false)
+            | '}' when balance == 1 => (getStrFromBuilder(), allIsAlphNum)
+            | '}'                   => appendToBuilder(ch2); loop(balance - 1, false)
+            | '{'                   => appendToBuilder(ch2); loop(balance + 1, false)
             | curCh                 =>
               appendToBuilder(ch2);
               loop(balance, allIsAlphNum && (char.IsLetterOrDigit(curCh) || curCh == '_'))
@@ -830,13 +830,13 @@ namespace StringTemplate
         
         def str = str; _ = str;
         
-        if (ch == '(')
+        if (ch == '{')
         {
           def (exprStr, isIdentifier, exprLoc) = parseExpressionStr();
           
           if (ch == '\0') // скобка не закрыта
           {
-            def exprStr = "(" + exprStr;
+            def exprStr = "{" + exprStr;
             Message.Error($"no closing bracket found in `$(exprStr)' "
                            "(the closing bracket in format string is probably missing)");
           }
@@ -858,7 +858,7 @@ namespace StringTemplate
           if (variableName == "")
           {
             appendToBuilder(ch);
-            Message.Warning ("expected variable name or expression enclosed with (..) after $ in splice string");
+            Message.Warning ("expected variable name or expression enclosed with {..} after $ in splice string");
             loop (StrPart.Lit("$") :: res)
           }
           else

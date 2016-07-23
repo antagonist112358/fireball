@@ -150,17 +150,20 @@ namespace Nemerle.Compiler
     }
     
     // Reads and consumes the next token if it is a newline
-    swallow_newlines() : void {
+    swallow_newlines() : int {
+      mutable linesSwallowed = 0;
       while(peek_token() is Token.NewLine)
       {
-        _ = get_token()
+        _ = get_token();
+        linesSwallowed++;
       }
+      linesSwallowed;
     }
     
     // Checks to see if a newline can be interpreted as a semicolon / statement terminator
     private terminates_statement(_: Token.NewLine) : bool {
       // Read through any additional newline characters
-      swallow_newlines();
+      def numNewlines = swallow_newlines();
       
       // Get the last token seen
       def prevOption = current_stream.LastOrDefault().ToOption();
@@ -186,10 +189,12 @@ namespace Nemerle.Compiler
       // Can the next token start a new statement?
       def next_starts_new() : bool {
         match(next) {
-          // Skip all the begin group tokens, since they will start new groups
-          | Token.BeginSquare | Token.BeginBrace | Token.BeginQuote | Token.BeginRound
+          // Braces groups and round groups can be moved to the next line
+          | Token.BeginBrace | Token.BeginRound => false
+          // Square groups cannot be moved to the next line, nor can quotes
+          | Token.BeginSquare | Token.BeginQuote => true
           // Skip all the end group tokens, since they end a group
-          | Token.EndBrace | Token.EndQuote | Token.EndRound | Token.EndSquare
+          | Token.EndBrace | Token.EndQuote | Token.EndRound | Token.EndSquare => false
           // Operators never start a new statement
           | Token.Operator => false
           | Token.Keyword(kw) when Keywords.KeywordsWhichNeverStartNewStatement.Contains(kw) => false
@@ -198,7 +203,7 @@ namespace Nemerle.Compiler
       }
       
       // Check
-      prev_terminates() && next_starts_new()
+      prev_terminates() && (next_starts_new() || numNewlines > 0)
     }
     
     /** links Tokens from specified subarray to form a list and return its head */
@@ -286,7 +291,7 @@ namespace Nemerle.Compiler
       {
         | Token.BeginBrace(generated) as openBrace =>
           // Eat any trailing newlines
-          swallow_newlines();
+          _ = swallow_newlines();
           def brace_group = parse_brace_group(tok.Location, openBrace, true, generated);
           //Message.Debug($"Writing: $(get_token_type(brace_group))");
           current_stream.Add(brace_group);
@@ -310,7 +315,7 @@ namespace Nemerle.Compiler
 
         | Token.BeginQuote as openBrace =>
           // Eat any trailing newlines
-          swallow_newlines();
+          _ = swallow_newlines();
           def quote_group = parse_quote_group(tok.Location, openBrace);
           //Message.Debug($"Writing: $(get_token_type(quote_group))");
           current_stream.Add(quote_group);
@@ -412,7 +417,7 @@ namespace Nemerle.Compiler
         surroundwith (related_messages)
         {
           Message.Error (loc, "unclosed bracket");
-          Message.Hint (e.Location, $"$(e.Message) when parsing this `(' brace group");
+          Message.Hint (e.Location, $"$(e.Message) when parsing this '(' brace group");
         }
         def group = finish_parent (parent_begin, current_begin);
         Token.RoundGroup (shift_end(loc + e.Location), group, openBrace, null);
@@ -544,7 +549,7 @@ namespace Nemerle.Compiler
       
         match (get_token ()) {
           | Token.NewLine as st | Token.Semicolon as st =>
-              swallow_newlines();
+              _ = swallow_newlines();
               def loc = tok.Location;
               Env = Env.AddOpenNamespace (id, loc);
               lexer.Keywords = Env.Keywords;
@@ -564,7 +569,7 @@ namespace Nemerle.Compiler
               def ty =
                 match (st)
                 {
-                  | Token.Semicolon | Token.NewLine => swallow_newlines(); null
+                  | Token.Semicolon | Token.NewLine => _ = swallow_newlines(); null
                   | Token.BeginSquare => parseTypeName(idToks2, st)
                   | _ =>
                     push_back (st);
@@ -675,7 +680,7 @@ namespace Nemerle.Compiler
 
         match (get_token ()) {
           | Token.NewLine as st =>
-            swallow_newlines();
+            _ = swallow_newlines();
             def loc = tok.Location;
             Env = Env.AddOpenNamespace (id, loc);
             lexer.Keywords = Env.Keywords;
@@ -713,7 +718,7 @@ namespace Nemerle.Compiler
               match (st)
               {
                 | Token.Semicolon => null
-                | Token.NewLine => swallow_newlines(); null
+                | Token.NewLine => _ = swallow_newlines(); null
                 | Token.BeginSquare => parseTypeName(idToks2, st)
                 | _ =>
                   push_back (st);

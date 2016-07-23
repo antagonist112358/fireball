@@ -1503,6 +1503,50 @@ namespace Nemerle.Compiler
                       
                   | x => Error(x, "expecting identifier after 'def' keyword in property or function declaration.");
                 }
+                
+              // Lazy val
+              | Token.Keyword("lazy") =>
+                // Read "lazy" keyword
+                _ = get_token();
+                match(peek_token()) {
+                  | Token.Keyword("val") =>
+                    // Read 'val' keyword  
+                    _ = get_token();
+                    
+                    def id = get_splicable_id();
+                    def parmsloc = Location.Default;
+                    prmsOpenLoc  = Location(parmsloc, parmsloc.Line,    parmsloc.Column,
+                                                      parmsloc.Line,    parmsloc.Column + 1);
+                    prmsCloseLoc = Location(parmsloc, parmsloc.EndLine, parmsloc.EndColumn - 1,
+                                                      parmsloc.EndLine, parmsloc.EndColumn);
+                    def ret_type = match(parse_return_type(true, prmsCloseLoc.FromEnd())) {
+                      | PExpr.Wildcard => None()
+                      | other => Some(other)
+                    }
+                    
+                    def init_expr = match(peek_token())
+                    {
+                      | Token.Operator ("=") as toc =>
+                        shift ();
+                        def endLocation = CalcTokenLocation(stream);
+                        def bodyLocation = toc.Location.FromEnd() + endLocation;
+                        def body_expr = ParseBlockOrExpression();
+                        body_expr.Location = bodyLocation; // correct location
+          
+                        Some(body_expr)
+          
+                      | _ => None()
+                    }
+                    
+                    match(init_expr)
+                    {
+                      | Some(initializer) => MakeLazyFieldOrProperty(members, mods, id, initializer, ret_type);
+                      | None => Error(peek_token(), "expecting '=' then initialization expression after lazy val declaration.")
+                    }
+                    
+                    
+                  | x => Error(x, "expecting keyword 'val' after 'lazy' in lazy value declaration.")
+                }
               
               // Field
               | Token.Keyword("var") with mut = true

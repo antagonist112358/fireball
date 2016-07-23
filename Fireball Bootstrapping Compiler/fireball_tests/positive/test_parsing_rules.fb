@@ -1,0 +1,19 @@
+namespace Fireball.Tests {
+	using System
+
+	module Program {
+		using System.Diagnostics		
+		def TimeExecution[T] (func: void -> T) : T * TimeSpan {
+			val timer = Stopwatch.StartNew()
+			val output = func()
+			timer.Stop()
+			
+			(output, timer.Elapsed)
+		}	
+		def Main(_: Array[String]) : void
+		{
+			Console.WriteLine("Preparser Tests Passed.")
+		}
+	}
+
+}

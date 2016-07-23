@@ -65,6 +65,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Arrays.n" />
+    <Compile Include="Core\LazyValue.n">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="FireballAttribute.n">
       <SubType>Code</SubType>
     </Compile>
@@ -92,9 +95,6 @@
     <Compile Include="Internal\TraitMethodAttribute.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Numeric.n">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="PartialFunction.n">
       <SubType>Code</SubType>
     </Compile>
@@ -102,6 +102,7 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Internal" />
+    <Folder Include="Core" />
     <Folder Include="Properties\" />
   </ItemGroup>
   <Import Project="$(Nemerle)\Nemerle.MSBuild.targets" />

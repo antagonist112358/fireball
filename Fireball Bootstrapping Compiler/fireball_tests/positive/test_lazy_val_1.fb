@@ -1,0 +1,60 @@
+namespace Fireball.Tests {
+
+	using System
+	
+	// Test simple lazy val -> Property (in class)
+	sealed class SimpleLazyVal {
+		private def ComputeSimpleSeries(input: double, startPow: int, iStep: int, terms: int, alternateSign: bool = false) : double {
+			using System.Math
+			
+			def ithSign(i) { if (alternateSign) { Pow(-1.0d, i :> double) } else 1.0d }
+			def ithTerm(i) { 
+				x: double => (Pow(x, startPow + (i * iStep))) / (startPow + (i * iStep)) 
+			}
+			
+			def compute_recursive(i: int, total: double = 0.0d) {
+				val thisTerm = ithSign(i) * ithTerm(i)(input)
+				if (i == terms) total + thisTerm
+				else compute_recursive(i + 1, total + thisTerm)
+			}
+			
+			compute_recursive(0)
+		}
+		
+		lazy val PiApproximation = 4.0d * this.ComputeSimpleSeries(1.0, 1, 2, 50000, true)
+	}
+
+	module Program {
+		using System.Diagnostics
+		
+		def TimeExecution[T] (func: void -> T) : T * TimeSpan {
+			val timer = Stopwatch.StartNew()
+			val output = func()
+			timer.Stop()
+			
+			(output, timer.Elapsed)
+		}
+		
+		def DoTest1() : void {
+			val test1 = new SimpleLazyVal()
+			val (pi1, time1) = TimeExecution(() => test1.PiApproximation)
+			val (_, time2) = TimeExecution(() => test1.PiApproximation)
+			val (pi3, time3) = TimeExecution(() => test1.PiApproximation)
+
+			assert(pi1 == pi3)
+			Console.WriteLine("Pi Approximation: {0:n8}", pi1)
+			Console.WriteLine($"Value memoized: ${time2 < time1 && time3 < time1}")
+		}		
+		
+		def Main(_ : Array[string]) : void {
+			DoTest1()
+		}
+	}
+}
+
+/*
+BEGIN-OUTPUT
+Pi Approximation: 3.14161265
+Value memoized: True
+END-OUTPUT
+*/

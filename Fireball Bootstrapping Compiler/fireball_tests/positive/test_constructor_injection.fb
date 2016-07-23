@@ -20,7 +20,7 @@ namespace Fireball.Tests {
     def Main(_: Array[String]): void {
       foreach(i in $[10..13]) {
         val computer = Computer(i)
-        WriteLine($"Computation Result: $(computer.Output)")
+        WriteLine($"Computation Result: ${computer.Output}")
       }
     }
   }
