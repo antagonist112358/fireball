@@ -92,8 +92,9 @@ namespace Nemerle.Utility
         def opts = parse_opts (opts, true);
         getterMods |= opts;
 
-        when (want_setter)
+        if (want_setter)
           setterMods |= getterMods;
+        else { () }
 
       | <[ $(n : dyn) ]>            => oname = Some(n)
       | <[ set ($opts) ]>           => setterMods |= parse_opts (opts, false)
@@ -126,7 +127,7 @@ namespace Nemerle.Utility
     def name = oname.WithDefault(transformed_name);
 
     when (getterMods %&& NemerleModifiers.Extern)
-      getterMods = NemerleModifiers.None;
+      getterMods = NemerleModifiers.None;    
 
     def take_minimum_access(mods)
     {

@@ -323,8 +323,9 @@ namespace Nemerle.IO
               { ..$acc_read };
               $eat_space;
               def res = ReadString ($stream);
-              when (res.Length == 0)
+              if (res.Length == 0)
                 throw Nemerle.IO.InvalidInput ();
+              else { () }
               res
             ]> :: res)
           | Chr =>

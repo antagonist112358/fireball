@@ -68,7 +68,7 @@ namespace Nemerle.Utility
                 | <[ $e1 in $e2 ]> =>
                   <[ foreach ($e1 in $e2) $acc ]>
                 | cond =>
-                  <[ when ($cond) $acc ]>
+                  <[ if ($cond) $acc else { () } ]>
               }
           }
         });
@@ -108,8 +108,9 @@ namespace Nemerle.Utility
              mutable cond = if (delta < 0) i >= last else i <= last;
              def pre_last = unchecked (last - delta);
 
-             when (delta < 0 && pre_last < last || delta > 0 && pre_last > last) // we overflowed
+             if (delta < 0 && pre_last < last || delta > 0 && pre_last > last) // we overflowed
                delta = -delta;
+             else { () }
 
              while (cond) {
                def $pat = i;

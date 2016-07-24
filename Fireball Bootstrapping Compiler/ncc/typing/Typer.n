@@ -4294,7 +4294,7 @@ namespace Nemerle.Compiler
                 | Some(FixedType.Array(_, _)) =>
                   TypeExpr(<[ $pfnc [..$parms] ]>);
                   
-                /*
+                
                 | Some(FixedType.Class(tc, _)) when !tc.IsModule with itemMember = tc.LookupMember("Item") =>
                   if (itemMember.Length == 1 && itemMember.Head.MemberKind == MemberKinds.Property) {
                     def newExpr = <[ $pfnc . Item[..$parms] ]>;
@@ -4305,8 +4305,7 @@ namespace Nemerle.Compiler
                                 expected,
                                 var_args = false,
                                 final = !Manager.IsSpeculativeTyping);
-                  }
-                */
+                  }                  
                 
                 | _ => 
                   TryTypeCall(fnc,

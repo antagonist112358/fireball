@@ -30,7 +30,7 @@ namespace Fireball.Tests {
     def Populated: int = {
       var cnt = 0
       foreach(maybeInt in storage)
-        when(maybeInt.HasValue) { cnt += 1 }
+        if (maybeInt.HasValue) { cnt += 1 }
           
       cnt
     }
@@ -39,7 +39,7 @@ namespace Fireball.Tests {
     def Unpopulated : int with get { 
       var cnt = storage.Length
       foreach(maybeInt in storage)
-        when(maybeInt.HasValue) { cnt -= 1 }
+        if (maybeInt.HasValue) { cnt -= 1 }
         
       cnt
     }
@@ -50,20 +50,20 @@ namespace Fireball.Tests {
     }
     
     def Slot(index: int) : int? with get {
-      when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
+      if (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
     
       storage(index)
     }
     
     def Apply(index: int) : int with get {
-      when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
+      if (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
       
       if (storage(index).HasValue) { storage(index).Value }
       else -1
     } with set(stVal) {
-      when (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
+      if (index < 0 || index > Capacity) { throw IndexOutOfRangeException($"Index $index is outside the bounds of the internal storage array [0 to ${Capacity - 1}]") }
       
-      when (stVal < 0) { throw InvalidOperationException("Value must be positive") }
+      if (stVal < 0) { throw InvalidOperationException("Value must be positive") }
       
       storage(index) = stVal
     }

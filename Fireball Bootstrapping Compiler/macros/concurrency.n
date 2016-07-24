@@ -338,8 +338,9 @@ namespace Nemerle.Concurrency
                         };
                       def cmmvn = "__Chord_MaskMethodValue_" + name.Id;
                       def acc = <[
-                        when (this.$(qnsymbol : name).IsEmpty)
+                        if (this.$(qnsymbol : name).IsEmpty)
                             this.__Chord_Mask.Clear ($(cmmvn : usesite));
+                        else { () }
                         $acc
                       ]>;
                       match (member.GetParameters ()) {
@@ -388,10 +389,10 @@ namespace Nemerle.Concurrency
             def later () 
             {
                 this.$(qsymb : name).Yield (this.__Chord_Lock);
-                when (this.$(qsymb : name).Empty) 
+                if (this.$(qsymb : name).Empty) 
                 {
                     this.__Chord_Mask.Clear ($(methodValue : uint))
-                }
+                } else { () }
                 now ()
             }
             and now () 

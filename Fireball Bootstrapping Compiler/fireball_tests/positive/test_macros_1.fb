@@ -1,0 +1,18 @@
+// REFERENCE: Fireball.Compiler.dll
+
+namespace Fireball.Tests {
+
+	using System
+	using Nemerle.Compiler
+
+	macro SimpleMacro(name: string) {
+		val newName = Macros.NewSymbol(name)
+		<[ 
+			val $(newName : name) = 5
+			
+			if ($(newName : name) > 3)
+				Console.WriteLine("Value: {0}", $(newName: name))
+		]>
+	}
+
+}

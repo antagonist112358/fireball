@@ -41,14 +41,16 @@ namespace Nemerle.Compiler.Util
       def loc = $location;
       def hasLocation = loc.FileIndex != 0;
       
-      when (hasLocation)
+      if (hasLocation)
         LocationStack.Push(loc);
+      else { () }
 
       try { $body } 
       finally
       {
-        when (hasLocation)
+        if (hasLocation)
           LocationStack.RemoveTop();
+        else { () }
       }
     ]>
   }
@@ -292,15 +294,15 @@ namespace Nemerle.Compiler
               if (tc.Equals(listTyInfo)/* || tc.Equals(stackTyInfo)*/)
                 exprs ::= <[ 
                   def x = this.$(n : name);
-                  when (x != null)
-                    this.$(n : name) = x.Map(Completion.Relocate(_, _info)) ]>;
+                  if (x != null)
+                    this.$(n : name) = x.Map(Completion.Relocate(_, _info)) else { () } ]>;
               else 
               {
                 if(tc.Equals(scgListTyInfo))
                 exprs ::= <[ 
                   def x = this.$(n : name);
-                  when (x != null)
-                    this.$(n : name) = System.Collections.Generic.List(x.MapLazy(Completion.Relocate(_, _info))) ]>;
+                  if (x != null)
+                    this.$(n : name) = System.Collections.Generic.List(x.MapLazy(Completion.Relocate(_, _info))) else { () } ]>;
               else
                 error (field.Location, $"The 'unknown type'[Location] ($tc[$ti]) not suported! scgListTyInfo is: $scgListTyInfo");
               }
@@ -344,19 +346,20 @@ namespace Nemerle.Compiler
             exprs ::= if (t.IsTrait)
               <[
                 def x = this.$(n : name);
-                when (x != null)
+                if (x != null)
                 {
                   //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
                   foreach (elem :> ISupportRelocation in x)
                     elem.RelocateImpl (_info/*, ident*/);
-                }
+                } else { () }
               ]>
             else
               <[
                 def x = this.$(n : name);
-                when (x != null)
+                if (x != null)
                   foreach (elem in x)
                     (elem : ISupportRelocation).RelocateImpl (_info/*, ident*/);
+                else { () }
               ]>;
 
           // 3. Is field of reference type defined in this project (represent as TypeBuilder).
@@ -364,20 +367,20 @@ namespace Nemerle.Compiler
             if (ty.IsTrait)
               exprs ::= <[
                 def x = this.$(n : name);
-                when (x != null)
+                if (x != null)
                 {
                   //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
                   (x :> ISupportRelocation).RelocateImpl (_info/*, ident*/);
-                }
+                } else { () }
               ]>;
             else
               exprs ::= <[
                 def x = this.$(n : name);
-                when (x != null)
+                if (x != null)
                 {
                   //System.Diagnostics.Trace.WriteLine(ident + $(s : string));
                   x.RelocateImplInternal (_info/*, ident*/);
-                }
+                } else { () }
               ]>;
 
           // 3. Process other fields.
@@ -415,8 +418,9 @@ namespace Nemerle.Compiler
                 internal override RelocateImplInternal (_info : RelocationInfo/*, ident : string*/) : void
                 {
                   //_info.NodeCount++;
-                  when (_info.VisitedObjects.ContainsKey (this))
+                  if (_info.VisitedObjects.ContainsKey (this))
                     return;
+                  else { () }
                   //System.Diagnostics.Trace.WriteLine(ident + "obj:" + this.GetType().FullName + " (" + $(tb.FullName : string) + ")");
                   //_info.VisitCount++;
                   //System.Diagnostics.Trace.WriteLine(ident + "---> base");
@@ -438,8 +442,9 @@ namespace Nemerle.Compiler
           if (code.IsEmpty) code
           else [<[
                 //_info.NodeCount++;
-                when (_info.VisitedObjects.ContainsKey (this))
+                if (_info.VisitedObjects.ContainsKey (this))
                   return;
+                else { () }
                 //System.Diagnostics.Trace.WriteLine(ident + "obj:" + this.GetType().FullName + " (" + $(tb.FullName : string) + ")");
                 //def ident = ident + " ";
                 //_info.VisitCount++;
@@ -511,8 +516,9 @@ namespace Nemerle.Compiler.SolverMacros
     <[
       if ($messenger.NeedMessage) {
         $messenger.Error ($msg);
-        when (IsTopLevel)
+        if (IsTopLevel)
           throw Recovery ();
+        else { () }
       } else
         $messenger.MarkError ();
 

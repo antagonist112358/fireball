@@ -849,7 +849,7 @@ namespace Nemerle.Compiler
                 {
                   | [x] => x
                   | _ =>
-                    fatal_error (loc, "only single element in `$(...)' is allowed");
+                    fatal_error (loc, "only single element in '${...}' is allowed");
                 };
               def result =
                 match (peek_token ())
@@ -3056,6 +3056,21 @@ namespace Nemerle.Compiler
       
       res
     }
+    
+    parse_embedded_block(parms: list[PParameter]) : PExpr
+    {
+      def tok = get_token ();
+      match (tok) {
+        // entire function body may be spliced
+        | Token.Operator ("$") =>
+          push_back (); parse_spliced_expr ()
+          
+        | Token.Operator("=") => parse_expr(TokenStoppers.None)
+
+        | Token.BracesGroup as brac => ParseBlock (brac, parms)
+        | x => fatal_error (x, "expected `{' at the beginning of function body");
+      }
+    }
 
     /// parse {...} or $body - usually it is a body of method
     parse_block (parms : list [PParameter], is_fun_body: bool = true) : PExpr
@@ -3930,7 +3945,7 @@ namespace Nemerle.Compiler
             def parse_funs (acc, idopt)
             {
               def h    = parse_fun_header (idopt, allow_patterns = true, allow_resolved = false);
-              def body = parse_block (h.Parameters);
+              def body = parse_embedded_block (h.Parameters);
               def fd   = Function_decl (loc + h.Location + body.Location, h, body);
 
               if (flag_sibling_keyword ("and"))
@@ -3959,9 +3974,9 @@ namespace Nemerle.Compiler
                     {
                       | Token.SquareGroup
                       | Token.RoundGroup => parse_funs ([], id)
-                      | x => fatal_error(x, "expecting 'def f(...) {...}`");
+                      | x => fatal_error(x, "expecting 'def f(...) {...}' or 'def f(...) = {expression}'");
                     }
-                  | x => fatal_error(x, "expecting 'def f(...) {...}`");
+                  | x => fatal_error(x, "expecting 'def f(...) {...}' or 'def f(...) = {expression}'");
                 }
             }
 

@@ -55,8 +55,8 @@ namespace Fireball.Core
     {
       match(_value)
       {
-        | Some(Boxed.Full(Value = value)) => value.ToString()
-        | Some(Boxed.Error(Exception = ex)) => $"Lazy Initialization Error: $(ex.Message)"
+        | Some(full is this.Boxed.Full) => full.Value.ToString()
+        | Some(err is this.Boxed.Error) => $"Lazy Initialization Error: $(err.Exception.Message)"
         | _ => "Lazy Uninitialized"
       }
     }
@@ -67,7 +67,7 @@ namespace Fireball.Core
       {
         match(_value)
         {
-          | Some(Boxed.Full) => true
+          | Some(_ is this.Boxed.Full) => true
           | _ => false
         }
       }
@@ -85,7 +85,10 @@ namespace Fireball.Core
           | _ => LazyInitValue()
         }
       }
-    }   
+    }
+    
+    // Implicit conversion from LazyValue[T] to T
+    public static @: (lazyVal: LazyValue[T]) : T { lazyVal.Value }
     
     #region Serialization
     #pragma warning disable 10003

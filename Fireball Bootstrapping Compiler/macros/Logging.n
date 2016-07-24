@@ -107,8 +107,9 @@ namespace Nemerle.Logging
     {
       if (AdditionalLoggingCondition == null) body
       else <[
-        when ($AdditionalLoggingCondition)
+        if ($AdditionalLoggingCondition)
           $body
+        else { () }
       ]>
     }
   }

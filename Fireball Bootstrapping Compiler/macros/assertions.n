@@ -127,11 +127,11 @@ namespace Nemerle.Assertions
                       else                        <[ $name : object ]>;
 
       m.Body = <[
-        when ($condition == null)
+        if ($condition == null)
         {
           //System.Diagnostics.Debug.Fail($(msg : string));
           throw System.ArgumentNullException($(paramName : string), $(msg : string))
-        }
+        } else { () }
           
         $(m.Body)
       ]>;
@@ -163,10 +163,10 @@ namespace Nemerle.Assertions
 
         m.Body = 
         <[
-            when (System.String.IsNullOrEmpty($parameter))
+            if (System.String.IsNullOrEmpty($parameter))
             {
                 throw System.ArgumentException($(msg), $(paramName));
-            }
+            } else { () }
             $(m.Body)
         ]>;
 
@@ -351,8 +351,9 @@ namespace Nemerle.Assertions
       lock (e) {
         def currentThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
         
-        when (e._N_invariant_affinity != -1 && e._N_invariant_affinity != currentThreadId)
+        if (e._N_invariant_affinity != -1 && e._N_invariant_affinity != currentThreadId)
           throw System.Exception($"Invariant lock has already been taken from another thread $currentThreadId");
+        else { () }
           
         e._N_invariant_affinity = currentThreadId
       }
@@ -375,8 +376,9 @@ namespace Nemerle.Assertions
         lock (e) 
         {
           e._N_invariant_affinity = -1;
-          when (need_to_check)
-            e._N_invariant ()        
+          if (need_to_check)
+            e._N_invariant ()
+          else { () }
         }
       }
     ]>     

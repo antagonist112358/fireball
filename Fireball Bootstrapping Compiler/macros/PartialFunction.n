@@ -64,7 +64,7 @@ namespace Nemerle.Core
   /// Creates a partial function.
   /// </summary>
   macro PartialFunctionMacro(match_expr) 
-  syntax("PartialFunc", match_expr)
+  syntax("partial_fun", match_expr)
   {
     def @match = match(match_expr) {
       | PExpr.Match as matched => Some(matched)

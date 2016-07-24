@@ -1,8 +1,8 @@
 namespace Fireball.Tests {
 
 	using System
-	
-	// Test simple lazy val -> Property (in class)
+	using System.Collections.Generic
+		
 	sealed class SimpleLazyVal {
 		private def ComputeSimpleSeries(input: double, startPow: int, iStep: int, terms: int, alternateSign: bool = false) : double {
 			using System.Math
@@ -21,7 +21,31 @@ namespace Fireball.Tests {
 			compute_recursive(0)
 		}
 		
+		// Test simple lazy val -> Property (in class)
 		lazy val PiApproximation = 4.0d * this.ComputeSimpleSeries(1.0, 1, 2, 50000, true)
+		
+		// Test simple lazy val -> Field (in class, generates a property)
+		private lazy val testString = "Hello World"
+		
+		def TestString = testString
+		
+		private def ComputeFibonacci(x: int) : long {
+			val memo = new Dictionary()
+			
+			def compute_recursive(n) {
+				if (memo.ContainsKey(n)) memo(n)
+				else {
+					val point: long = if (n <= 2) 1 else compute_recursive(n - 1) + compute_recursive(n - 2)
+					memo(n) = point
+					point
+				}
+			}
+			
+			compute_recursive(x)
+		}
+		
+		// Test simple lazy val with return type specified
+		lazy val LargeFib : long = ComputeFibonacci(60)
 	}
 
 	module Program {
@@ -44,10 +68,50 @@ namespace Fireball.Tests {
 			assert(pi1 == pi3)
 			Console.WriteLine("Pi Approximation: {0:n8}", pi1)
 			Console.WriteLine($"Value memoized: ${time2 < time1 && time3 < time1}")
-		}		
+		}
+		
+		def DoTest2() : void {
+			val test1 = new SimpleLazyVal()
+			val (fib1, time1) = TimeExecution(() => test1.LargeFib)
+			val (_, time2) = TimeExecution(() => test1.LargeFib)
+			val (fib3, time3) = TimeExecution(() => test1.LargeFib)
+
+			assert(fib1 == fib3)
+			Console.WriteLine("Fibonacci(60): {0:n0}", fib1)
+			Console.WriteLine($"Value memoized: ${time2 < time1 && time3 < time1}")			
+		}
+		
+		// Test method level lazy value
+		def DoTest3() : void {
+			lazy val lazyString = "Test Content"
+			assert(lazyString.IsValueCreated == false)
+			
+			val initializedString = lazyString			
+			Console.WriteLine($"Lazy String: $lazyString")
+			Console.WriteLine($"Initialized String: $initializedString")
+			assert(lazyString.IsValueCreated == true)
+			assert(initializedString == lazyString)
+		}
+		
+		// Test method level lazy value with type enforcement
+		def DoTest4() : void {
+			lazy val computed : double = {
+				Math.Pow(Math.PI, 6) / (1 + Math.Tan(1.5984175))
+			}
+			
+			assert(computed.IsValueCreated == false)
+			val initDouble = computed
+			Console.WriteLine($"Lazy Value: $computed")
+			Console.WriteLine($"Initialized Value: $initDouble")
+			assert(computed.IsValueCreated == true)
+			assert(computed == initDouble)
+		}
 		
 		def Main(_ : Array[string]) : void {
 			DoTest1()
+			DoTest2()
+			DoTest3()
+			DoTest4()
 		}
 	}
 }
@@ -56,5 +120,11 @@ namespace Fireball.Tests {
 BEGIN-OUTPUT
 Pi Approximation: 3.14161265
 Value memoized: True
+Fibonacci(60): 1,548,008,755,920
+Value memoized: True
+Lazy String: Test Content
+Initialized String: Test Content
+Lazy Value: -27.3161486215372
+Initialized Value: -27.3161486215372
 END-OUTPUT
 */

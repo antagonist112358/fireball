@@ -28,7 +28,35 @@
 
 using Nemerle.Compiler;
 using PT = Nemerle.Compiler.Parsetree;
- 
+
+namespace Nemerle.Core
+{
+  macro @lazy(assignment)
+  syntax("lazy", "val", assignment)
+  {
+    def (name, typePExprOption, initializer) = match(assignment) {
+      | PT.PExpr.Assign(left, right) => match(left) {
+          | PT.PExpr.TypeEnforcement(named, ty) => (named, Some(ty), right)
+          | _ => (left, None(), right)
+        }
+      | _ => Message.FatalError("expecting {name} (optional {type enforcement}) = {initialization expression} in lazy val macro.")
+    }
+    
+    LazyHelper.DoTransform(name, initializer, typePExprOption);
+  }
+  
+  module LazyHelper
+  {
+    public DoTransform(name: PT.PExpr, initializer: PT.PExpr, typePExpr: option[PT.PExpr]) : PT.PExpr
+    {            
+      match(typePExpr) {
+        | None => <[def $name = Fireball.Core.LazyValue(fun() { $initializer }) ]>;
+        | Some(typeExpr) => <[def $name : Fireball.Core.LazyValue[$typeExpr] = Fireball.Core.LazyValue(fun() { $initializer }) ]>;
+      }
+    }
+  }  
+}
+
 namespace Nemerle
 {
   [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
@@ -47,27 +75,6 @@ namespace Nemerle
     parm.name = PT.Splicable.Name (unique);
     //TODO: May be need correct location of parm.ty.
     parm.Type = <[ Nemerle.LazyValue [$(parm.Type)] ]>;
-  }
-  
-  macro @lazy(name: string, initializer, typePExpr)
-  syntax("lazy", "val", name, Optional(":", typePExpr), "=", initializer)
-  {    
-    def typePExprOption = match(typePExpr) {
-      | x when x == null => None()
-      | x => Some(x)
-    }
-    LazyHelper.DoTransform(name, initializer, typePExprOption);
-  }
-  
-  module LazyHelper
-  {
-    public DoTransform(name: string, initializer: PT.PExpr, typePExpr: option[PT.PExpr]) : PT.PExpr
-    {            
-      match(typePExpr) {
-        | None => <[def $(PT.Name(name) : name) = Fireball.LazyValue(fun() { $initializer }) ]>;
-        | Some(typeExpr) => <[def $(PT.Name(name) : name) : Fireball.LazyValue[$typeExpr] = Fireball.LazyValue(fun() { $initializer }) ]>;
-      }
-    }
   }
   
   [Nemerle.MacroUsage (Nemerle.MacroPhase.BeforeInheritance,
