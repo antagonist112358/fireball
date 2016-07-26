@@ -1,0 +1,29 @@
+namespace Detonator {
+
+  using System
+  using System.Collections.Generic
+
+  sealed class SettingKey[T] (name: String, extractor: String -> T) {
+    def KeyName = name
+    def Extractor = extractor
+  }
+
+  module ProjectKeys {
+
+    private def Key[T](name: String, extractor: String -> T) : SettingKey[T] = new SettingKey(name, extractor)
+
+    private val StrEx = s: String => s
+
+    val FireballVersion = Key("fireball.Version", StrEx) 
+    val FireballBinPath = Key("fireball.BinPath", StrEx)
+    val TargetFramework = Key("netclr.TargetVersion", StrEx)
+
+    val Name = Key("app.Name", StrEx)
+    val WarningLevel = Key("app.WarningLevel", s => Int32.Parse(s))
+    val UseStdLib = Key("app.UseStdLib", s => bool.Parse(s))
+    
+
+
+  }
+
+}

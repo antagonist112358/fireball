@@ -27,7 +27,7 @@ namespace Fireball.Tests {
     def Main(_: Array[String]) : void {
       val srcString = "HeLLo WorLD"
       // Test can invoke class extending functional type like a functional
-      val kfnc = KType()
+      val kfnc = new KType()
       val lowered = kfnc(srcString)
       val upperFnc = (x: String) => x.ToUpper()
       

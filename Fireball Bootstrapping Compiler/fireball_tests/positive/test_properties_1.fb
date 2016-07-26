@@ -21,7 +21,7 @@ namespace Fireball.Tests {
   class Dummy(size: int) extends Container {
     
     private var dummyVariable = false
-    private val storage : Array[int?] = Array(size)
+    private val storage : Array[int?] = new Array(size)
     
     // Public val (implemented as a Property)
     val Capacity : int = storage.Length
@@ -71,6 +71,7 @@ namespace Fireball.Tests {
   }
   
   module Program {
+    private val _test : Array[int] = Array(1)
     private val p = new Dummy(5)
     
     val Container : Container = p

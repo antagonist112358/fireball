@@ -1272,7 +1272,7 @@ namespace Nemerle.Compiler
     IsBaseMethod (m : IMethod) : bool
     {
       ! m.DeclaringType.Equals (CurrentType)
-    }
+    }   
 
     //Return min*max ctor calls in expr
     CtorCalls (e : TExpr) : int*int
@@ -1517,18 +1517,24 @@ namespace Nemerle.Compiler
                 Message.Warning ($"Base constructor call can happen $y times");
                 e
             }
+          def is_just_base_call = match(e) {
+            | TExpr.Call(TExpr.Base, _, _) => true
+            | _ => false
+          }
           def ini =
-            match (CurrentType.init_list)
-            {
-              | [q] =>
-                  match (q)
-                  {
-                    | PT.PExpr.Typed (e) => e
-                    | _ => Util.ice ("bad field initializers");
-                  }
+            if (ptyper != null && !is_just_base_call)
+              match (ptyper.TyperInitList)
+              {
+                | [q] =>
+                    match (q)
+                    {
+                      | PT.PExpr.Typed (e) => e
+                      | _ => Util.ice ("bad field initializers");
+                    }
 
-              | _ => null
-            };
+                | _ => null
+              }
+            else null;
           when (clo_ini != null)
           {
             def f (_)
@@ -1568,8 +1574,8 @@ namespace Nemerle.Compiler
                   Message.Error (expr.Location,
                     "using class method before base is constructed (``this'' isn't yet initialized)");
                 Some (false)
-            | e when IsThis (e)
-             => Message.Error (e.Location,
+            | e when IsThis (e) => 
+              Message.Error (e.Location,
                   "``this'' or ``base'' usage before base is constructed");
                 Some (false)
             | TExpr.Try | TExpr.TryFinally

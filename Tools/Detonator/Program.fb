@@ -1,0 +1,21 @@
+namespace Detonator {
+
+  using System
+  using System.Reflection
+
+  module Program {
+    using DetConsole
+
+    private lazy val Version : Version = Assembly.GetExecutingAssembly().GetName().Version
+
+    private def DisplayBanner() : void {
+      WriteBar()
+      WriteLn(Color.White, $"Fireball Detonator $Version")
+      WriteBar()
+    }
+
+    def Main(_ : Array[String]) : void {    
+      DisplayBanner()
+    }
+  }
+}

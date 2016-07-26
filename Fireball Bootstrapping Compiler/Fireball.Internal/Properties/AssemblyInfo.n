@@ -37,8 +37,8 @@ using System.Runtime.InteropServices;
 
 // Make the internals visible to the compiler
 [assembly: InternalsVisibleTo("Fireball.Compiler, PublicKey=" + 
-                              "00240000048000009400000006020000002400005253413100040000010001002ba64b9db4ace0" +
-                              "db8699ed205045dd2bf2f036e15582787288d122daeb218f0743b39013e2bacb73df2f778c80db" +
-                              "550ff64dc64d8204a7c3284fc251d986799a129d6eda821e8a3432c0a7e5e67c43db2fde094236" +
-                              "2f8674a45f215966f1b65f5dac939d12e1efee3de03585ac7e821be4232bb371e8f37193185a76" +
-                              "6ee1e4d4")]
+                              "0024000004800000940000000602000000240000525341310004000001000100934b591713900b" +
+                              "ee839064b4246f03194d18de40617539cd65c854473a23b0d5e6aa0e67d35ffea48b098fb1b501" +
+                              "143b67c6fa69639732d19ac9d52c214043d87b462e0000b201551346a75c1912f0e400134cb51d" +
+                              "64b14db9c664bff45ff00d90cdf9a1ffd732192097696c9ca12be0f423bf053eb2bb18560bf6fb" +
+                              "938069c9")]

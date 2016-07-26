@@ -1130,17 +1130,19 @@ namespace Nemerle.Core
       def filter_type(member)
       {
         | PT.ClassMember.Field
+        /*
         | PT.ClassMember.Property(parameters = [],
             getter = Some(PT.ClassMember.Function(_, _, FunBody.Abstract)),
             setter = Some(PT.ClassMember.Function(_, _, FunBody.Abstract)))
         | PT.ClassMember.Property(parameters = [],
             getter = Some(PT.ClassMember.Function(_, _, FunBody.Abstract)),
             setter = None())
-          when !(member.modifiers.mods %&& NemerleModifiers.Abstract) =>
+          when !(member.modifiers.mods %&& NemerleModifiers.Abstract) */ =>
           // Automatic generated properties are used in constructor too.
           // Since it is allowed to write in constructor: "MyAutoProperty = initValue;"
           // Get-only properties are automatic generated only when they are not abstract.
           !(member.modifiers.mods %&& NemerleModifiers.Static)
+          && (!member.Name.StartsWith("_FB"))                // Don't include generated fields
           && NameMatchesPatterns(member.Name, patterns)
           && !isIgnored(member)
           

@@ -19,7 +19,7 @@ namespace Fireball.Tests {
     using System.Console    
     def Main(_: Array[String]): void {
       foreach(i in $[10..13]) {
-        val computer = Computer(i)
+        val computer = new Computer(i)
         WriteLine($"Computation Result: ${computer.Output}")
       }
     }

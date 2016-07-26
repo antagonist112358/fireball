@@ -34,7 +34,7 @@ namespace Fireball.Tests
 			def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator { throw NotImplementedException() }
 		}
 		
-		public val Empty : ListNode[T] = EmptyListNode()       
+		public val Empty : ListNode[T] = new EmptyListNode()       
 	}
 	
 	
@@ -70,17 +70,17 @@ namespace Fireball.Tests
 		{
 			def convertRecursive(inListNode : ListNode[T]) : ListNode[U] {
 				if(inListNode == DefaultListNode[T].Empty)
-					RealListNode(head :> U, convertRecursive(inListNode.Tail))
+					new RealListNode(head :> U, convertRecursive(inListNode.Tail))
 				else
-					RealListNode(head :> U, DefaultListNode[U].Empty)
+					new RealListNode(head :> U, DefaultListNode[U].Empty)
 			}
 			
-			RealListNode(item, convertRecursive(this))
+			new RealListNode(item, convertRecursive(this))
 		}
 		
 		def GetEnumerator() : IEnumerator[T] { RealListNodeEnumerator(this) }
 		def GetNonGenericEnumerator() : IEnumerator implements IEnumerable.GetEnumerator {
-			RealListNodeEnumerator(this)
+			new RealListNodeEnumerator(this)
 		}
 				
 	}
@@ -108,7 +108,7 @@ namespace Fireball.Tests
 		private type TestType = Array[String]    
     
 		def Main(args : Array[String]) : void {
-			val aList = RealListNode(Stringable())
+			val aList = new RealListNode(Stringable())
 			val locationName = "World"
 			val bList = aList.Prepend($"Hello $locationName")
 
@@ -116,8 +116,8 @@ namespace Fireball.Tests
 				Console.WriteLine(item)
 			}			
       
-			val subChild = SubChild1()
-			val cont = RealContainer(Child1())
+			val subChild = new SubChild1()
+			val cont = new RealContainer(Child1())
 			val cont2 = cont.Replace(subChild)			     
       
 			assert(cont2.Value == subChild)

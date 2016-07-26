@@ -43,7 +43,7 @@ namespace Fireball.Tests {
 			val mode = fileMode
 			foreach(file in files) {			
 				if (File.Exists(file)) {
-					openFileHandles = FileStream(file, mode) :: openFileHandles
+					openFileHandles = new FileStream(file, mode) :: openFileHandles
 				}
 			}
 			openFileHandles = openFileHandles.Reverse()

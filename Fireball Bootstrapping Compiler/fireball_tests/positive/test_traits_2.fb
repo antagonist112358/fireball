@@ -32,7 +32,7 @@ namespace Fireball.Tests {
   }
   
   class Dummy extends TestRunner {  
-    val tests : SCG.List[string] = SCG.List( [ "Pressure Check", "Plasma Stability", "Bottle Confinement", "Neutron Flux" ])
+    val tests : SCG.List[string] = new SCG.List( [ "Pressure Check", "Plasma Stability", "Bottle Confinement", "Neutron Flux" ])
         
     CheckTesting()
 	

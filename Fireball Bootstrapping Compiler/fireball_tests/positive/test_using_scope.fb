@@ -12,7 +12,7 @@ namespace Fireball.Tests {
     
       using System.Collections.Generic;
       
-      val aList = List();
+      val aList = new List();
       
       aList.Add("Hello");
       aList.Add("World");
@@ -38,12 +38,12 @@ namespace Fireball.Tests {
         
         using SGC = System.Collections.Generic;
         
-        val aList = SGC.Dictionary();
+        val aList = new SGC.Dictionary();
         aList.Add(1, "string");
     
         Thread.Sleep(1);
     
-        val someHash = SC.Hashtable();
+        val someHash = new SC.Hashtable();
         someHash.Add(1, "string"); 
       }
     
@@ -57,11 +57,11 @@ namespace Fireball.Tests {
     public def Main(args: Array[String]) : void {
     
       using System.Console
-	  using System.Math
+	    using System.Math
       
       WriteLine("Creating a ScopedClass");
       
-      val newInstance = ScopeSpecific();
+      val newInstance = new ScopeSpecific();
       
       Write("Testing Output: ");
       WriteLine(newInstance.SomeScopedMethod());

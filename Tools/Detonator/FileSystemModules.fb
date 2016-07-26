@@ -1,0 +1,46 @@
+namespace Detonator {
+  
+  using System
+  using System.Collections.Generic
+  using System.Linq
+  using IO = System.IO
+  using Regex = System.Text.RegularExpressions.Regex
+
+  type FolderEnumOption = IO.SearchOption
+
+  // Hack for now until operator attribute is added
+  [assembly: Nemerle.Internal.OperatorAttribute("", "/", false, 240, 241)]
+
+  module File {
+    def Apply(absolutePath: String) : FileSystemObject.File = new FileSystemObject.File(absolutePath)
+    def Apply(baseFolder: FileSystemObject.Folder, filename: String) : FileSystemObject.File = new FileSystemObject.File(baseFolder, filename)
+  }
+
+  module Folder {
+    
+    private val WildcardRegex = new Regex(@"[\*|\?]")
+
+    def Apply(absolutePath: String) : FileSystemObject.Folder = new FileSystemObject.Folder(absolutePath)
+    def Apply(basePath: FileSystemObject.Folder, absolutePath: String) : FileSystemObject.Folder = new FileSystemObject.Folder(absolutePath)
+
+    def @/ (folder: FileSystemObject.Folder, pathOrPattern: String) : FileSystemObject {
+      def IsWildcard(s) = WildcardRegex.IsMatch(s)
+
+      match(IO.Directory.Exists(pathOrPattern)) {
+        case true => Folder(folder, pathOrPattern)
+        case false => match(IsWildcard(pathOrPattern)) {
+          case true => FileSystemObject.Files(
+            folder.EnumerateFiles(pathOrPattern)
+          )
+          case false => if (pathOrPattern.Contains(".")) {
+            File(folder, pathOrPattern)
+          } else {
+            Folder(folder, pathOrPattern)
+          } 
+        }          
+      }
+    }
+
+  }
+
+}

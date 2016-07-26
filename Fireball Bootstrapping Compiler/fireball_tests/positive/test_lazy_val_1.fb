@@ -22,7 +22,7 @@ namespace Fireball.Tests {
 		}
 		
 		// Test simple lazy val -> Property (in class)
-		lazy val PiApproximation = 4.0d * this.ComputeSimpleSeries(1.0, 1, 2, 50000, true)
+		lazy val PiApproximation : double = 4.0d * this.ComputeSimpleSeries(1.0, 1, 2, 50000, true)
 		
 		// Test simple lazy val -> Field (in class, generates a property)
 		private lazy val testString = "Hello World"

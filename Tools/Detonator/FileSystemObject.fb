@@ -1,0 +1,54 @@
+namespace Detonator {
+
+  using System
+  using System.Collections.Generic
+  using System.Linq
+  //using IO = System.IO
+  using Regex = System.Text.RegularExpressions.Regex
+
+  public variant FileSystemObject {
+    case Folder {
+      private val absolutePath : String = ""
+
+      def this(basePath: Folder, relativePath: String) {
+        this(IO.Path.Combine(basePath.Path, relativePath))
+      }
+
+      val Path : String = absolutePath
+
+      def PathExists : bool = IO.Directory.Exists(absolutePath)
+
+      def Create() : void = if (!PathExists) {
+          _ = IO.Directory.CreateDirectory(absolutePath) 
+      }
+
+      def EnumerateFiles(pattern: String, 
+                        recursionOption: FolderEnumOption = FolderEnumOption.TopDirectoryOnly) : IEnumerable[File] {
+        if (PathExists) {
+          IO.Directory.EnumerateFiles(absolutePath, pattern, recursionOption).Select(filePath => Detonator.File(filePath))
+        } else throw new IO.DirectoryNotFoundException($"Cannot find path: $absolutePath")
+      }
+    }
+
+    case File {
+      private val absolutePath : String = ""
+
+      def this(basePath: Folder, filename: String) {
+        this(IO.Path.Combine(basePath.Path, filename))
+      }
+
+      val FullPath : String = absolutePath
+      lazy val FileName : String = IO.Path.GetFileName(absolutePath)
+      lazy val Path : Folder = new Folder(IO.Path.GetDirectoryName(absolutePath))
+      def Exists : bool = IO.File.Exists(absolutePath)    
+    }
+
+    case Files {
+      private val filesList : IEnumerable[File] = new List()
+
+      def List : IEnumerable[File] = filesList
+    }
+
+  }
+
+}

@@ -39,12 +39,13 @@ namespace Nemerle.Compiler
   [ManagerAccess]
   public class Typer2
   {
+    mutable field_inits_typed : bool = false;
             top_level_fun : MethodBuilder;
     mutable this_ptr_decl : LocalValue;
             typer         : Typer;
     mutable current_fun   : TFunHeader;
 
-    mutable field_inits_typed : bool = false;
+    //mutable field_inits_typed : bool = false;
     IsCurrentFunInstanceCtor() : bool
     {
       top_level_fun.MemberKind == MemberKinds.Constructor &&
@@ -77,7 +78,7 @@ namespace Nemerle.Compiler
       | TopLevel           = IsTail %| AllowGoto %| AllowTry
     }
 
-    public this(ty : TypeBuilder, fn : MethodBuilder, typer : Typer)
+    public this(ty : TypeBuilder, fn : MethodBuilder, typer : Typer, init_fields_typed: bool = false)
     {
       this.typer = typer;
       Manager = ty.Manager;
@@ -86,6 +87,7 @@ namespace Nemerle.Compiler
       current_fun.usage = FunctionUsage.Used;
       top_level_fun = fn;
       current_type = ty;
+      field_inits_typed = init_fields_typed;
 
       messenger = Manager.Solver.CurrentMessenger;
 
@@ -96,27 +98,28 @@ namespace Nemerle.Compiler
     {
       Manager.MarkAsUsed(mem, loc, !top_level_fun.IsObsolete && !current_type.IsObsolete);
     }
+    
     private MarkAsAssigned(mem : IField, loc : Location) : void
     {
       Manager.MarkAsAssigned(mem, loc, !top_level_fun.IsObsolete && !current_type.IsObsolete);
     }
-
+    
     public Run() : void
     {
       typer.RaiseBeforeStage2();
       
       foreach (parm in current_fun.Parameters)
         parm.decl.Register();
-
+        
       when (IsCurrentFunInstanceCtor() && !field_inits_typed)
-        match (current_type.init_list)
+        match (typer.TyperInitList)
         {
           | [q] =>
             match (q)
             {
               | PT.PExpr.Typed(e) =>
-                 current_type.init_list = PT.PExpr.Typed(Walk(Context.TopLevel, e)) :: [];
-                 field_inits_typed = true
+                 typer.TyperInitList = PT.PExpr.Typed(Walk(Context.TopLevel, e)) :: [];
+                 field_inits_typed = true;
 
               | _ => Util.ice("bad field initializers");
             }
@@ -180,7 +183,8 @@ namespace Nemerle.Compiler
         when (ctx %&& Context.IsTail)
           match (res)
           {
-            | TExpr.Call as call => call.is_tail = true;
+            | TExpr.Call as call => 
+              call.is_tail = true;
             | _ => ()
           }
         res
@@ -587,7 +591,7 @@ namespace Nemerle.Compiler
           else
             parms_types.Map(ty => TParameter(Util.tmpname("fp"), 0, ty, AttributesAndModifiers(), ParmKind.Normal));
 
-      def lambda_header = TFunHeader(expr.Location, $"_N_poly_lambda_for_$(polyHeader.Name)", ret_type, Location.Default,
+      def lambda_header = TFunHeader(expr.Location, $"_FB_poly_lambda_for_$(polyHeader.Name)", ret_type, Location.Default,
                                      parms, [], current_fun.tenv);
       def parms_refs =
         parms.Map(

@@ -18,8 +18,8 @@
     <Nemerle Condition=" '$(Nemerle)' == '' ">$(NemerleBinPathRoot)\$(NemerleVersion)</Nemerle>
     <Name>Fireball</Name>
     <DocumentationFile />
-    <KeyOriginatorFile Condition="'$(NKeysDir)' == ''">..\resources\keys\Fireball.Compiler.snk</KeyOriginatorFile>
-    <KeyOriginatorFile Condition="'$(NKeysDir)' != ''">$(NKeysDir)\Fireball.Compiler.snk</KeyOriginatorFile>
+    <KeyOriginatorFile Condition="'$(NKeysDir)' == ''">..\resources\keys\Fireball.snk</KeyOriginatorFile>
+    <KeyOriginatorFile Condition="'$(NKeysDir)' != ''">$(NKeysDir)\Fireball.snk</KeyOriginatorFile>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -33,11 +33,11 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
-    <OutputPath>D:\Repositories\GitHub\fireball\Fireball Bootstrapping Compiler\bin\Release</OutputPath>
+    <OutputPath>..\bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <DocumentationFile>bin\Release\\Fireball.xml</DocumentationFile>
+    <DocumentationFile>bin\Release\Fireball.xml</DocumentationFile>
     <RunDebugger>false</RunDebugger>
   </PropertyGroup>
   <ItemGroup>
@@ -90,6 +90,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Internal\ResolvableAttribute.n">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Internal\TestAccess.n">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Internal\TraitMethodAttribute.n">

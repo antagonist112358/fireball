@@ -1,0 +1,22 @@
+﻿using Nemerle;
+using Nemerle.Collections;
+using Nemerle.Text;
+using Nemerle.Utility;
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Fireball.Internal
+{
+  /// <summary>
+  /// Description of TestAccess.
+  /// </summary>
+  internal module TestAccess
+  {
+    public AccessCode : int
+    {
+      get { 12345678 }
+    }
+  }
+}

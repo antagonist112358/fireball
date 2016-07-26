@@ -194,7 +194,7 @@ namespace Nemerle.Compiler
     internal SetType (t : TypeVar) : void
     {
       ty = t;
-    }
+    }   
 
     #region IL integration
     variant ILKind

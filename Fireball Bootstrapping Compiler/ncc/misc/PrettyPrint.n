@@ -339,6 +339,7 @@ namespace Nemerle.Compiler
           SeparatedCalls (", ", args, fun (x) {
             SprintExpr (ctx, x, indentation, acc)
           }, acc);
+          acc.Write(")");
 
         | <[ ref $e ]> => acc.Write ("ref "); SprintExpr (ctx, e, indentation, acc)
         | <[ out $e ]> => acc.Write ("out "); SprintExpr (ctx, e, indentation, acc)

@@ -30,7 +30,7 @@ namespace Fireball.Tests {
 		val villageIdiot = Idiot.Create("Paul")
 		
 		// vars without assignment are not allowed
-		var anotherIdiot = Idiot("Rebecca")
+		var anotherIdiot = new Idiot("Rebecca")
 		
 		public val test2 : String = Tester.InnerTester.GetString()
 		
@@ -49,8 +49,8 @@ namespace Fireball.Tests {
 	
 	// Test other classes in the same assembly
 	public class TestOther {		
-		public val accessor = AccessorTests(10)		
-		public val testString  = accessor.test2		
+		public val accessor = new AccessorTests(10)		
+		public val testString = accessor.test2		
 	}
 	
 	

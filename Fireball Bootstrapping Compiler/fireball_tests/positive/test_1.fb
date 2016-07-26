@@ -12,7 +12,7 @@ namespace Fireball.Tests {
 		val thisIsANum = 13.857
 		
 		// Class level inference for new ref type
-		val aList = SGC.List.[String]()
+		val aList = new SGC.List.[String]()
 		
     // Method
     def testMethod() : string 
@@ -33,7 +33,7 @@ namespace Fireball.Tests {
     public def Main(args: Array[String]) : void {
 			using System.Console
       WriteLine("Hello World")
-			val tester = TestClass()
+			val tester = new TestClass()
 			val testMethodVal = tester.testMethod()
 			WriteLine($"Value from test method: $testMethodVal")
 			

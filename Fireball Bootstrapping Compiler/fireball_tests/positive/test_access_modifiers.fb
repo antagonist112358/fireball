@@ -28,8 +28,8 @@ namespace Fireball.Tests {
     }
     
     def Main(_: Array[String]) : void {
-      val test = CompanionTest()
-      val calc = Accessability(5, "Results are valid through phase:")
+      val test = new CompanionTest()
+      val calc = new Accessability(5, "Results are valid through phase:")
       
       println("Correction: {0}", test.Correction(calc.CalcValue()))
       println(calc.AppendWith("test"))      

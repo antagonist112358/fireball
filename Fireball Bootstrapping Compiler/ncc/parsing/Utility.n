@@ -72,8 +72,8 @@ namespace Nemerle.Compiler {
 
     public tmpname(kind : string) : string
     {
-      def sb = System.Text.StringBuilder("_FB_Generated_").Append(kind).Append("_");
-      escape_in_buffer(sb, kind, 3);
+      def sb = System.Text.StringBuilder("_FB_").Append(kind).Append("_");
+      escape_in_buffer(sb, kind, 4);
       sb.Append(ManagerClass.Instance.GetNewId()).ToString()
     }
 

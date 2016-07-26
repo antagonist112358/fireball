@@ -412,9 +412,11 @@ namespace Nemerle.Compiler
         initializer   : PExpr,
         ret_type      : option[PExpr]) : void 
     {
-      def make_lazy_field_with_retType(ret_type: PExpr, genName : Name) {
+      def make_lazy_field_with_retType(ret_type: PExpr, tmpName : string) {
         _ = ret_type;
+        def genName = MkNameGenerated(tmpName);
         def initializerExpr = <[ Fireball.Core.LazyValue(fun() { $initializer }) ]>;
+        
         def fieldDecl = <[decl: private $(genName : name) : Fireball.Core.LazyValue[$ret_type] = $initializerExpr ]>;
         // Todo: Really need to fix this in the macro system. Initializers are not being set when a field is declared.
         fieldDecl.Initializer = initializerExpr;
@@ -427,14 +429,16 @@ namespace Nemerle.Compiler
               $(genName : name) . Value
             }
           }
-        ]>;
+        ]>;        
         
         members.Add(fieldDecl);
         members.Add(propDecl);
       }
       
-      def make_lazy_field(genName: Name) {
+      def make_lazy_field(tmpName: string) {
+        def genName = MkNameGenerated(tmpName);
         def initializerExpr = <[ Fireball.Core.LazyValue(fun() { $initializer }) ]>;
+        
         def fieldDecl = <[decl: private $(genName : name) = $initializerExpr ]>;
         // Todo: Really need to fix this in the macro system. Initializers are not being set when a field is declared.
         fieldDecl.Initializer = initializerExpr;
@@ -453,11 +457,11 @@ namespace Nemerle.Compiler
         members.Add(propDecl);
       }
     
-      def newSymbol = MkNameGenerated(Util.tmpname(id.GetName().Id));
+      def newName = Util.tmpname(id.GetName().Id);
       
       match(ret_type) {
-        | Some(returnType) => make_lazy_field_with_retType(returnType, newSymbol)
-        | None => make_lazy_field(newSymbol)
+        | Some(returnType) => make_lazy_field_with_retType(returnType, newName)
+        | None => make_lazy_field(newName)
       }
       
     }

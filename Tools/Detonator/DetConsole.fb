@@ -1,0 +1,34 @@
+namespace Detonator {
+
+  using System
+
+  type Color = ConsoleColor
+
+  module DetConsole {
+    using Con = System.Console    
+
+    private val Width = Con.WindowWidth
+
+    def Write(msg: String, params args: Array[Object]) : void = Con.Write(msg, args)
+    def WriteLn(msg: String, params args: Array[Object]) : void = Con.WriteLine(msg, args)
+
+    def Write(color: Color, msg: String, params args: Array[Object]) : void {
+      val curCol = Con.ForegroundColor
+      Con.ForegroundColor = color
+      Write(msg, args)
+      Con.ForegroundColor = curCol
+    }
+
+    def WriteLn(color: Color, msg: String, params args: Array[Object]) : void {
+      val curCol = Con.ForegroundColor
+      Con.ForegroundColor = color
+      WriteLn(msg, args)
+      Con.ForegroundColor = curCol
+    }
+
+    def WriteBar(barChar: char = '=') : void {
+      WriteLn(new String(barChar, Width - 1))
+    }
+  }
+
+}

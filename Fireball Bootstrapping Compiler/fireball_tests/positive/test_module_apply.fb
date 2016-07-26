@@ -1,0 +1,21 @@
+namespace Fireball.Tests {
+
+  using System
+
+  module Mod1 {
+    def Apply(s: String) : String = $"$s modded"
+  }
+
+  module Program {
+    def Main(_: Array[String]) : void {
+      val testString = Mod1("Hello World")
+      Console.WriteLine(testString)
+    }
+  }
+
+}
+/*
+BEGIN-OUTPUT
+Hello World modded
+END-OUTPUT
+*/

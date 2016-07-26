@@ -45,19 +45,19 @@ namespace Fireball.Tests {
 	
 	module Program {
     public def Main(args: Array[String]) : void {      
-			val tester = DefaultConstructorTest(5);
+			val tester = new DefaultConstructorTest(5);
 			val testMethodVal = tester.PrintOutA();
 			Console.WriteLine($"Value from test method: $testMethodVal");
 			
-			val tester2 = DefaultConstructorTest2("Hello", "World");
+			val tester2 = new DefaultConstructorTest2("Hello", "World");
 			val testMethodVal2 = tester2.Concat();
 			Console.WriteLine($"Value from test method: $testMethodVal2");
 			
-			val tester3 = DefaultConstructorTest3("Default Sequence: ");
+			val tester3 = new DefaultConstructorTest3("Default Sequence: ");
 			val testVal = tester3.PrintOut();
 			Console.WriteLine($"Value from test method: $testVal");
 
-			val tester4 = DefaultConstructorTest3("Fibonacci Sequence: ", [1,1,2,3,5,8,11]);
+			val tester4 = new DefaultConstructorTest3("Fibonacci Sequence: ", [1,1,2,3,5,8,11]);
 			val testVal2 = tester4.PrintOut();
 			Console.WriteLine($"Value from test method: $testVal2");			
 			

@@ -15,7 +15,7 @@ namespace Fireball.Tests {
 		def PrintHierarchy[U : T](collection : list[U]) : void {
 			val cnt = 0
 			foreach(item in collection) {
-				val tabs = if (item.Depth > 1) String('\t', item.Depth - 1) else String.Empty
+				val tabs = if (item.Depth > 1) new String('\t', item.Depth - 1) else String.Empty
 				WriteLine(tabs + item.GetType().Name)
 			}
 		}
@@ -25,12 +25,12 @@ namespace Fireball.Tests {
 	{
 		def Main(args : Array[String]) : void {
 			val objects = [
-				Super(), Child2(), Child1(), SubChild1()
+				new Super(), new Child2(), new Child1(), new SubChild1()
 			]
-			val children = [ SubChild1(), SubChild1() ]
+			val children = [ new SubChild1(), new SubChild1() ]
 			
-			val printer = ClassHierarchyPrinter.[Super]()
-			val printer2 = ClassHierarchyPrinter.[Super]()
+			val printer = new ClassHierarchyPrinter[Super]()
+			val printer2 = new ClassHierarchyPrinter[Super]()
 			printer.PrintHierarchy(objects)
 			printer2.PrintHierarchy(children)
 		}

@@ -28,7 +28,7 @@ namespace Fireball.Tests {
 
   module Program {
     def Main(_: Array[String]): void {
-      val logger = ClassWithCompanion()
+      val logger = new ClassWithCompanion()
       
       logger.LogMessage("Hello: {0}", "World")
       

@@ -120,6 +120,7 @@ namespace Nemerle.Compiler
     is_instance_ctor : bool;
     mutable field_inits_typed : bool = false;
     is_method : bool;
+    mutable type_ctor : bool = false;
     env : GlobalEnv;
     tenv : TypeVarEnv;
     current_fun : TFunHeader;
@@ -134,6 +135,8 @@ namespace Nemerle.Compiler
     locals_stack : Stack [LocalContext];
     [Accessor]
     current_method_builder : MethodBuilder;
+    [Accessor (flags = WantSetter | Internal)]
+    mutable typer_init_list : list[PExpr] = [];
 
     // Uninitialized variable
     #pragma warning disable 649
@@ -555,6 +558,7 @@ namespace Nemerle.Compiler
           def e4 = if (skip_n_return) e3
                    else TExpr.Block (current_fun.ReturnType, local, e3);
 
+          e4.SetParsedObject(e);
           current_fun.body = FunBody.Typed (e4); // TODO: VladD2: В режиме интеграции здесь нужно обновлять своства TypedObject
 
         | FunBody.Abstract => ()
@@ -574,20 +578,20 @@ namespace Nemerle.Compiler
 
 
     protected virtual RunSecondPass (meth : MethodBuilder) : void
-    {
+    {      
       when (current_type.init_list != [] && is_instance_ctor && !field_inits_typed)
       {
         current_type.init_list = NList.Rev(current_type.init_list);
-        current_type.init_list = PExpr.Typed(TypeExpr (PExpr.Sequence (current_type.init_list))) :: [];
+        typer_init_list = PExpr.Typed(TypeExpr (PExpr.Sequence (current_type.init_list))) :: [];
         field_inits_typed = true;
         RunDelayedTypings();
       }
-      
-      def t2 = Typer2 (current_type, meth, this);
+                 
+      def t2 = Typer2 (current_type, meth, this);      
       t2.Run ();
 
       def t3 = Typer3 (meth, this, t2);
-      t3.Run ();
+      t3.Run ();      
     }
     #endregion
 
@@ -3111,6 +3115,55 @@ namespace Nemerle.Compiler
         }
     }
 
+    TypeToApply(pt_from : PExpr, t : TypeInfo, add_constraint : TypeVar = null) : list [OverloadPossibility]
+    {
+      match (t.GetTydecl())
+      {
+        | TypeDeclaration.Alias (FixedType.Class (t', _) as ty) =>
+          TypeToApply (pt_from, t', t.FreshSubst ().Apply (ty))
+          
+        | TypeDeclaration.VariantOption => TypeToConstructor(pt_from, t, add_constraint)
+        
+        | _ =>
+          if (t.Attributes %&& NemerleModifiers.Abstract) {
+            ReportError (messenger, $ "  the type '$(t)' is abstract and cannot be be Applied");
+            []
+          } else {
+              mutable res = [];
+              
+              foreach (meth is IMethod in t.LookupMember ("Apply"))
+                when(meth.MemberKind == MemberKinds.Method && meth.CanAccess(current_type)) {
+                      def memTy = meth.GetMemType ();
+                      def from = memTy.from;
+
+                      def mt = FixedType.Fun (from, memTy.argsCount, memTy.to);
+                      def ty = t.FreshSubst ().Apply (mt);
+                      def ret_type = (ty.FixedValue :> FixedType.Fun).to :> FixedType.Class;
+
+                      when (add_constraint != null)
+                        _ = Expect (add_constraint, ret_type, "constructor");
+                      ConstrainLeadingTyparms (pt_from, ret_type);                      
+                      
+                      res = OverloadPossibility (this, ty, null, ret_type, meth) :: res;
+                      when (meth.IsVarArgs) {
+                        def op = OverloadPossibility (this, ty, null, ret_type, meth);
+                        op.VarArgs = true;
+                        res ::= op;
+                      }
+                }
+                
+                if (res.IsEmpty && !t.IsModule) {
+                  TypeToConstructor(pt_from, t, add_constraint)
+                } else {
+                  when (res.IsEmpty) {
+                    ReportError (messenger, $ "  the type '$(t)' has no accessible 'Apply' method");
+                  }
+                  
+                  res
+                } 
+          }
+      }      
+    }
 
     TypeToConstructor (pt_from : PExpr, t : TypeInfo, add_constraint : TypeVar = null) : list [OverloadPossibility]
     {
@@ -3172,7 +3225,7 @@ namespace Nemerle.Compiler
 
                 when (res.IsEmpty)
                   ReportError (messenger,
-                               $ "  the type `$(t)' has no accessible constructors");
+                                $ "  the type `$(t)' has no accessible constructors");
 
                 res
 
@@ -3306,6 +3359,11 @@ namespace Nemerle.Compiler
         def from = ConstructEnclosingType (pt_from, ti, mem);
         [OverloadPossibility (this, from.TypeOfMember (mem), null, from, mem)]
       }
+      
+      def type_apply_or_ctor(from, tInfo) {
+        if (type_ctor) TypeToConstructor (from, tInfo)
+        else TypeToApply(from, tInfo)
+      }
 
       match (symbol) {
         | t is TypeInfo =>
@@ -3313,7 +3371,7 @@ namespace Nemerle.Compiler
             ReportError (messenger, $ "  cannot access type `$(t)'");
             []
           } else {
-            TypeToConstructor (pt_from, t)
+            type_apply_or_ctor (pt_from, t)
           }
 
         | mem when !mem.IsStatic =>
@@ -3336,7 +3394,7 @@ namespace Nemerle.Compiler
         | mem =>
           match (mem.MemberKind) {
             | MemberKinds.TypeInfo | MemberKinds.NestedType =>
-              TypeToConstructor (pt_from, mem :> TypeInfo)
+              type_apply_or_ctor (pt_from, mem :> TypeInfo)
 
             | MemberKinds.Method | MemberKinds.Constructor =>
               ConstructMethodOverload (ti, mem :> IMethod, pt_from, maybe_varargs = true)
@@ -4231,7 +4289,15 @@ namespace Nemerle.Compiler
           | (<[ base ]> as e, _) => GetBaseOverloads(e, is_base = true)
           | (PExpr.TypedType(FixedType.Class(ti, _)), _) => MakeOverloadedNode(null, TypeToConstructor(null, ti), FreshTypeVar())
           | _ =>
-            def ex = TypeExpr (pfnc, FreshTypeVar());
+            match (callExpr) {
+              | PExpr.Call(_, _) as call when call.is_constructor_call == true => type_ctor = true;
+              | _ => ()
+            }
+            
+            def ex = TypeExpr(pfnc, FreshTypeVar());
+            
+            type_ctor = false;
+
             match (ex.Type.Hint)
             {
               | Some (FixedType.Class (tc, _)) when tc.IsDelegate => TypeExpr (<[ $(ex : typed).Invoke ]>)              

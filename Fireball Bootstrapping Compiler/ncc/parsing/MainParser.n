@@ -3126,9 +3126,18 @@ namespace Nemerle.Compiler
     make_operator_call (name : string, e : PExpr) : PExpr
     {
       | ("new", PExpr.Call(obj, parms)) =>
-        def expr = PExpr.Call(e.Location, <[ $obj ]>, parms);
+        def (objExpr, realParams) = match(obj) {
+          | PExpr.Indexer(obj2, args) => 
+            (PExpr.GenericSpecifier(obj.Location, obj2, args), parms)
+          | _ => (obj, parms)
+        }       
+        
+        def expr = PExpr.Call(e.Location, <[ $objExpr ]>, realParams);
         expr.is_constructor_call = true;
         expr
+      
+      | ("new", PExpr.EmptyArray(sizes)) => PExpr.EmptyArray(sizes)        
+      
       | _ =>
         PExpr.Call (e.Location, PExpr.Ref (e.Location, MkName(name, e.Location)), [e])
     }
@@ -3611,7 +3620,7 @@ namespace Nemerle.Compiler
                 def exprs = parse_expr_sequence(groups);
                 PExpr.EmptyArray(loc + body.Location, exprs)
 
-              | x => fatal_error (x, "expected [ ..elements of array.. ], ( ..sizes of empty array.. )  or `array .[rank] [..]' in array creation");
+              | x => fatal_error (x, "expected [ ..sizes of empty array.. ], ( ..elements of array.. )  or `array .[rank] [..]' in array creation");
             }
 
           // tuples

@@ -29,7 +29,7 @@ namespace Fireball.Tests {
     
     public def Main(_: Array[string]) : void {
       val testArray = [ "Hello World" : object, 1 : object, 0.5d : object, typeof(string) : object ]
-      val tester = TestPF()
+      val tester = new TestPF()
       
       foreach(item in testArray)
         tester.PrintIfString(item)
