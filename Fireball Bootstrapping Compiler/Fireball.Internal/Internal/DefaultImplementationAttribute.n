@@ -17,7 +17,7 @@ namespace Fireball.Internal
   {
     private _implName : string = "";
     
-    public this(implementationName: string) {
+    internal this(implementationName: string) {
       _implName = implementationName;
     }
     

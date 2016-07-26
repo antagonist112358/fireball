@@ -83,20 +83,13 @@ namespace Nemerle.CommandlineCompiler
             def output = unameProcess.StandardOutput.ReadToEnd();
             unameProcess.WaitForExit();
             
-	    unameProcess.ExitCode == 0 && output.Contains("x64")
+	          unameProcess.ExitCode == 0 && output.Contains("x64")
           }
           else
             false
         }
       #endif
       }
-      
-      #if DEBUG
-
-      Console.WriteLine("Press any key to start compilation.");
-      _ = Console.ReadKey(true);
-      
-      #endif
       
       Options = CompilationOptions();
       Manager = ManagerClass(Options);

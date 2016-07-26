@@ -10,7 +10,7 @@ using System.Linq;
 namespace Fireball.Internal
 {
   /// <summary> 
-  /// Declares a particular member or type as being only understandable by the Fireaball compiler, and not intended for use in other .NET languages.
+  /// Declares a particular member or type as being only understandable by the Fireball compiler, and not intended for public use.
   ///</summary>
   [AttributeUsage(AttributeTargets.All, AllowMultiple = true, Inherited = true)]
   public class FireballInternalAttribute : FireballAttribute

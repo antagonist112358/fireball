@@ -34,6 +34,6 @@ using Nemerle.Utility;
 [assembly: AssemblyDescription("Fireball Language Compiler Library")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("Fireball Language Compiler")]
-[assembly: AssemblyCopyright("Copyright (c) University of Wroclaw 2003-2008, Nemerle Project Team 2008-2013")]
+[assembly: AssemblyCopyright("Copyright (c) University of Wroclaw 2003-2008, Nemerle Project Team 2008-2013, Fireball Team 2015-2016")]
 [assembly: AssemblyFileVersion("0.1.0.0")]
 [assembly: ComVisible(false)]

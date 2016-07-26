@@ -9,14 +9,14 @@ $fbccPath = "$binPath\fbcc.exe"
 $outputName = "det.exe"
 $outputPath = $binPath
 
-$sourceFiles = dir -Path $sourcePath -Filter "*.fb"
+$sourceFiles = dir -Path $sourcePath -Filter "*.fb" -Recurse
 
 echo ""
 echo "========================================================"
 
 echo "Compiling:"
 foreach($f in $sourceFiles) {
-    echo $f.name
+    echo $f.fullname.Replace("$sourcePath\", "")
 }
 
 echo ""

@@ -17,7 +17,7 @@ namespace Fireball.Internal
   {
     private _lowerBoundedType : string;
     
-    public this(lowerBoundsType : string)
+    internal this(lowerBoundsType : string)
     {
       _lowerBoundedType = lowerBoundsType;
     }

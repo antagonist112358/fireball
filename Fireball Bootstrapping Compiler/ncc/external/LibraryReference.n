@@ -142,10 +142,10 @@ namespace Nemerle.Compiler
         match (parts)
         {
           | [asmName] when currentAssemblyName == asmName => true;
-          | [asmName, pKey] when string.IsNullOrEmpty(this.Manager.Options.StrongAssemblyKeyName)
+          | [asmName, pKey] when !string.IsNullOrEmpty(this.Manager.Options.StrongAssemblyKeyName)
                                  && currentAssemblyName == asmName
             =>
-            match(pKey.ToLower().SplitToList(array[',']))
+            match(pKey.ToLower().SplitToList(array['=']))
             {
               | ["publickey", key] when toHexString(snKey().PublicKey).ToLower() == key.ToLower() => true;
               | ["publickeytoken", key]

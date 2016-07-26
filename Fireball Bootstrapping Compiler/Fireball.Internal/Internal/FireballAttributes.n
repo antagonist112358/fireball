@@ -13,11 +13,14 @@ namespace Fireball.Internal
   // Base type for all other fireball attributes.
   public class FireballAttribute : System.Attribute { }
   
-  /// <summary> Declares a particular member or type as being only understandable by the Fireaball compiler, and not intended for use in other .NET languages. </summary>
+  /// <summary> 
+	/// Declares a particular member or type as being only understandable by the Fireball language, 
+	/// and not intended for use in other .NET languages. 
+	/// </summary>
   [AttributeUsage(AttributeTargets.All, AllowMultiple = false, Inherited = true)]
   public sealed class FireballOnlyAttribute : FireballAttribute
   {
-    public this() { }
+    internal this() { }
   }
   
   [AttributeUsage(AttributeTargets.GenericParameter, AllowMultiple = false, Inherited = true)]
@@ -26,7 +29,7 @@ namespace Fireball.Internal
   {
     private _lowerBoundedType : Type;
     
-    public this(lowerBoundsType : Type)
+    internal this(lowerBoundsType : Type)
     {
       _lowerBoundedType = lowerBoundsType;
     }

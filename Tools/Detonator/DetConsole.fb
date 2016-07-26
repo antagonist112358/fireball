@@ -7,7 +7,16 @@ namespace Detonator {
   module DetConsole {
     using Con = System.Console    
 
-    private val Width = Con.WindowWidth
+    private val Width = {
+			var width = 60
+			try {
+				width = Con.WindowWidth
+			} catch {
+				_ : Exception =>
+					width = 60
+			}
+			width
+		}
 
     def Write(msg: String, params args: Array[Object]) : void = Con.Write(msg, args)
     def WriteLn(msg: String, params args: Array[Object]) : void = Con.WriteLine(msg, args)

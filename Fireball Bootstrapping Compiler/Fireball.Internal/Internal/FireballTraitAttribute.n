@@ -14,5 +14,8 @@ namespace Fireball.Internal
   /// Note: Used by the Fireball compiler, and not intended for direct usage.
   /// </summary>
   [System.AttributeUsage(AttributeTargets.Interface, Inherited = true, AllowMultiple = false)]
-  public sealed class FireballTraitAttribute  : FireballInternalAttribute { }
+  public sealed class FireballTraitAttribute  : FireballInternalAttribute 
+	{
+		internal this() { }
+	}
 }
