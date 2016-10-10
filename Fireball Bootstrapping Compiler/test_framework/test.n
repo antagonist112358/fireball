@@ -369,7 +369,7 @@
             exit_code = 1;
           nem_output = NList.Rev (nem_output);
         }
-
+        
         mutable is_ok = true;
 
         def checkCompilerMessage(line : string, msg : Regex, msgTypeStr, global)

@@ -23,7 +23,7 @@ namespace Nemerle.Compiler
     
     private class MemberCache {      
       private resolvableFields : CacheList[IField] = CacheList();
-      private implicitConversions = ConversionsList();
+      private implicitConversions : ConversionsList = ConversionsList(EqualityComparer((l, r) => System.Object.ReferenceEquals(l, r)));
       
       public AddResolvableFields(node: NamespaceTree.Node, params fields: array[IField]) : void {
         foreach(field in fields) {

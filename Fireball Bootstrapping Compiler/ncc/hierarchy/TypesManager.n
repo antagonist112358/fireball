@@ -57,6 +57,7 @@ namespace Nemerle.Compiler
       assembly_attributes.Clear();
       run_phase = 0;
       _codeWriter = null;
+      Finder = NamespaceFinder.EmptyFinder;
     }
 
     [Record (Exclude = [AddedNr])]
