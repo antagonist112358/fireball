@@ -13,7 +13,6 @@ Implement Record type,Medium,High,60%,Needs fixing
 Change property declaration to Fireball spec,Medium,High,50%,Still need to implement public properties for public vals and vars
 Add implicit conversions (used for call-site type conversion from A -> B),Medium,High,0%,
 Implement generic 'environment sensitive' keywords,Medium,High,0%,"Like 'as' in match statement, 'get'/'set' in property definition, 'add'/'remove' in event, etc."
-Rename all namespaces to 'Fireball.Compiler',Medium,High,0%,Will probably break lots of shit. Might require multiple revs / other tasks
 Add optional space instead of dot for accessing class/trait/module/variant/mixin members,Medium,High,0%,
 "Remove useless, unplanned, not-supported macros from Macros library",Medium,High,0%,
 "Implement Disjoint type expressions (like ""Either[A, B]"" from other languages, but can be multiple case types)",Medium,High,0%,

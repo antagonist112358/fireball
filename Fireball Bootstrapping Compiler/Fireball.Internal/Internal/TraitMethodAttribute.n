@@ -17,12 +17,12 @@ namespace Fireball.Internal
   {
     private _accessWords : List[string];
     
-    internal this(params accessWords : array[string])
+    public this(params accessWords : array[string])
     {
       _accessWords = accessWords.ToList();
     }
     
-    internal this()
+    public this()
     {
       _accessWords = List()
     }

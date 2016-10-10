@@ -1,0 +1,46 @@
+namespace Fireball.Tests
+
+variant Try[T] {
+  case Success(result: T)
+  case Failure(error: Exception)
+
+  def Apply(out : Unit -> T) : Try[T] {
+    try { Success(out()) }
+    catch { case e : Exception => Failure(e) }
+  }
+}
+
+trait Executable[T] {
+  def Execute : T
+}
+
+object Executor {
+  def Run[T](exe: Executable[T]) : T = exe.Execute
+}
+
+implicit mixin RunSafely[T] extends Executable[T] {
+  def TryExecute[T] : Try[T] = Try(this.Execute)  
+}
+
+module Program {
+
+  val printHello = new Executable[String] {
+    def Execute = "Hello World"
+  }
+
+  using Console
+
+  def EvaluateResult[T](outcome: Try[T]) = match(outcome) {
+    case Success(res) => WriteLine($"$res")
+    case Failure(err) => WriteLine("Division by zero error.")
+  }
+
+  WriteLine($"printHello says: ${Executor.Run(printHello)}")
+
+  val unsafeDivision = new Executable[Int] {
+    def Execute : Int = 15 / 0
+  }
+
+  EvaluateResult( unsafeDivision.TryExecute )
+}
+

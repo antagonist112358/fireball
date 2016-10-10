@@ -1,0 +1,32 @@
+namespace Fireball.Tests {
+
+  using System
+
+  trait Monad[M[_]] {
+    type val Empty[A] : M[A]
+    type def Apply[A](a : A) : M[A]
+    def Bind[A, B](func: A -> M[B]) : M[B]
+    def FoldLeft[A, B](initialState: B, foldFunc: B * A -> B) : B
+  }
+
+  variant OptionMonad[T] extends Monad[OptionMonad] {
+
+    case Some (value: T)
+    case None
+
+    type val Empty = Option[T].None
+    
+    type def Apply(a : T) = Some(a)
+    
+    def Bind[A, B](func A -> Option[B]) = match(opt) {
+      case Some(value) => func(value)
+      case _ => None
+    }
+
+    def FoldLeft[B] (initialState: B, foldFunc: B * A -> B) : B = match(opt) {
+      case Some(value) => foldFunc(initialState, value)
+      case _ => initialState
+    }
+  }
+
+}

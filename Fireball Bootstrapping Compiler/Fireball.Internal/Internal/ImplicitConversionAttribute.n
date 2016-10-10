@@ -18,7 +18,7 @@ namespace Fireball.Internal
   {
     private source_type: String;
     
-    internal this(sourceType: String) { source_type = sourceType; }
+    public this(sourceType: String) { source_type = sourceType; }
     
     public SourceTypeName: String { get { source_type } }
   }

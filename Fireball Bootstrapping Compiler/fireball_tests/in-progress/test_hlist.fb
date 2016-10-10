@@ -1,0 +1,36 @@
+namespace Fireball.Tests {
+
+  variant HList {
+
+    case HCons[H, T : HList](head: H, tail: T) {
+      def Head : H = head
+      def Tail : T = tail
+      def @::[U](v: U) : HCons[U, HCons[H, T]] = HCons(v, this)
+    }
+
+    case HNil {
+      def @::[T](v: T) = HCons(v, this)
+    }    
+
+  }
+
+  object HList {
+    operator def @::[H, T : HList] (v: H, hlist: H) : HCons[H, T] = HCons(v, hlist)
+  }
+
+  module Program {
+
+    using HList
+
+    def Main(_: Array[String]) : void {
+
+      // val hlist = HList.@::("str", HList.@::(true, HList.@::(1.0, HNil())))
+      val hlist = "str" :: true :: 1.0 :: HNil()
+
+      val s: string = hlist.head
+      val b: bool = hlist.tail.head
+      val d: double = hlist.tail.tail.head 
+    }
+  }
+
+}

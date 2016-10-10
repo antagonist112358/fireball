@@ -1719,8 +1719,22 @@ public partial class TypeBuilder : TypeInfo
             }
             else
             {
+              // If the base method is abstract, then simply override that method
+              if (m.Attributes %&& NemerleModifiers.Abstract)
+              {                
+                meth.SetOverriddenMethod(m);
+                meth.HasBeenUsed = false;
+                
+                when (!(meth.Attributes %&& NemerleModifiers.Override))
+                {
+                  meth.Attributes |= NemerleModifiers.Override;
+                }
+                
+                when ((x.Attributes %& NemerleModifiers.AccessModifiers) != (meth.Attributes %& NemerleModifiers.AccessModifiers))
+                  Message.Error($"attempt to change the access modifiers of $meth during override of $x");                
+              }
               // we just override virtual method
-              if (meth.Attributes %&& NemerleModifiers.Override)
+              else if (meth.Attributes %&& NemerleModifiers.Override)
               {
                 meth.SetOverriddenMethod(m);
                 meth.HasBeenUsed = false;

@@ -1,0 +1,43 @@
+namespace Fireball.Tests {
+
+  using System
+
+  variant IntComputeExpression {
+    case record Number(Eval: Int)
+    case Plus(lhs: IntComputeExpression, rhs: IntComputeExpression)
+    case Minus(lhs: IntComputeExpression, rhs: IntComputeExpression)
+  }
+
+  using IntComputeExpression
+
+  type class Evaluable {
+    def Eval : Int
+  }
+
+  object Computer {
+    def Calculate(e: Evaluable) : Int = e.Eval 
+  }
+
+  extension class NumberEvaluable(num: Number) {
+    def Eval : Int = num.Eval
+  }
+
+  extension class PlusEvaluable(plus: Plus) {
+    def Eval : Int = plus.lhs.Eval + plus.rhs.Eval 
+  }
+
+  extension class MinusEvaluable(minus: Minus) {
+    def Eval : Int = minus.lhs.Eval - minus.rhs.Eval
+  }
+
+  module Program {    
+    def Main(_: Array[String]) : void {
+      // 7 - (1 + (5 - 4)) = 5
+      val compExpr = Minus(Number(7), Plus(Number(1), Minus(Number(5), Number(4))))
+
+      assert (Computer Calculate compExpr == 5) 
+    }
+  }
+
+}
+

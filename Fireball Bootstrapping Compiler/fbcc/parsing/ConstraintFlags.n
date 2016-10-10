@@ -7,16 +7,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Fireball.Internal
+namespace Nemerle.Compiler
 {
   /// <summary>
-  /// Description of TestAccess.
+  /// Description of ConstraintFlags.
   /// </summary>
-  internal module TestAccess
+  [Flags]
+  public enum ConstraintFlags
   {
-    public AccessCode : int
-    {
-      get { 12345678 }
-    }
+    | None = 0;
+    | LowerBounded = 1;
+    | OpenGeneric = 2;
+    | HigherKinded = 4;
   }
+  
+  
 }

@@ -1,0 +1,112 @@
+namespace Fireball.Tests {
+  
+  using System
+  using System.Collections.Generic
+  using System.Linq  
+
+  // Prefered Syntax (?)
+  /*
+  variant ChurchBoolean {
+    // Fix the apply function for all variants
+    def Apply[T](@true: T) : T -> T
+    
+    case object True  { def Apply[T](@true: T) = @_false => @true }
+    case object False { def Apply[T](@_true : T) = @false => @false }
+  }
+  */
+
+  variant ChurchBoolean {
+    // Fix the apply function for all variants
+    abstract def Apply[T](@true: T) : T -> T
+
+    case ChurchTrue() {
+      def Apply[T](@true: T) : T -> T = @_false => @true
+    }
+
+    case ChurchFalse() {
+      def Apply[T](@_true: T) : T -> T = @false => @false
+    }
+
+    static val True : ChurchBoolean = new ChurchTrue()
+    static val False: ChurchBoolean = new ChurchFalse()
+
+    static def @: (church: ChurchBoolean) : bool = church(true)(false)
+  }
+
+  // ChurchBoolean Extension Operators
+  module ChurchBoolean_Extensions {
+    def And(this a: ChurchBoolean, b: ChurchBoolean) : ChurchBoolean = a(b)(ChurchBoolean.False)
+    def Or(this a: ChurchBoolean, b: ChurchBoolean) : ChurchBoolean = a(ChurchBoolean.True)(b)
+    def Not(this a: ChurchBoolean) : ChurchBoolean = a(ChurchBoolean.False)(ChurchBoolean.True)
+
+    def @: (sysBool: bool) : ChurchBoolean {
+      using ChurchBoolean      
+      if (sysBool) True else False
+    }
+  }
+
+  // Tests
+  module TestProgram {    
+
+    def Main(_: Array[String]) : void {
+      SimpleTests()
+      OperatorTests()
+    }
+
+    def SimpleTests() : void {
+      AreEqual(1, ChurchBoolean.True(1)(2))
+      AreEqual("a", ChurchBoolean.True("a")(""))
+      val obj = new object()
+      val obj2 = new object()
+      AreEqual(obj, ChurchBoolean.True(obj)(obj2))
+    }
+
+    def OperatorTests() : void {
+      using ChurchBoolean      
+
+      // Not operator
+      AreEqual(!true, True.Not())
+      AreEqual(!false, False.Not())
+
+      // And operator
+      AreEqual(true && true, True.And(True))
+      AreEqual(true && false, True.And(False))
+      AreEqual(false && true, False.And(True))
+      AreEqual(false && false, False.And(False))
+
+      // Or operator
+      AreEqual(true || true, True.Or(True))
+      AreEqual(true || false, True.Or(False))
+      AreEqual(false || true, False.Or(True))
+      AreEqual(false || false, False.Or(False))
+    }
+
+    def AreEqual[T](left: T, right: T) : void {
+      using System.Console
+
+      if (left.Equals(right))
+        WriteLine("Assert: True")
+      else
+        WriteLine("Assert: False")
+    }
+  }
+
+}
+
+/*
+BEGIN-OUTPUT
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+Assert: True
+END-OUTPUT
+*/

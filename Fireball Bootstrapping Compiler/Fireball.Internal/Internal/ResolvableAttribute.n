@@ -12,12 +12,12 @@ namespace Fireball.Internal
   [System.AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter, Inherited = false)]
   public sealed class ResolvedAttribute : FireballInternalAttribute
   {
-    internal this() { base(true) }
+    public this() { base(true) }
   }
   
   [System.AttributeUsage(AttributeTargets.Field, Inherited = false)]
   public sealed class ResolveAttribute : FireballInternalAttribute
   {
-    internal this() { base(true) }
+    public this() { base(true) }
   }
 }

@@ -93,9 +93,6 @@
     <Compile Include="Internal\ResolvableAttribute.n">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Internal\TestAccess.n">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="Internal\TraitMethodAttribute.n">
       <SubType>Code</SubType>
     </Compile>

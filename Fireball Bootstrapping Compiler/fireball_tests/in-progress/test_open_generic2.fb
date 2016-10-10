@@ -1,0 +1,68 @@
+namespace Fireball.Tests {
+
+  using System
+  using System.Collections.Generic
+
+  record class Variable[T](name: String, value: T)
+
+  // OLD EXTENSION METHOD
+  module VariableExtensions {
+    implicit def ToVariable[T](this tuple: String * T) : Variable[T] {
+      case (name, value) => new Variable(name, value)
+    }
+  }
+
+  class Context {
+    private val storage = new Dictionary[String, Variable[_]]
+
+    def CreateOrUpdateVariable[T](variable: Variable[T]) : void = {
+      val varName = variable.Name.ToUpper()
+
+      if (storage.ContainsKey(varName)) {
+        var oldVar = storage(varName)
+
+        if (oldVar.Value.GetType() != typeof(T)) {
+          throw new Exception($"Variable type re-declaration: variable $varName was '${oldvar.Value.GetType()}', but new value is '${typeof(T)}'")
+        } 
+
+        storage(varName) = variable
+      } else {
+        storage.Add(varName, variable)
+      }
+
+    }
+
+    def GetValue[T](name: String) : T {
+      val varName = name.ToUpper()
+      if (!storage.ContainsKey(varName)) {
+        throw new KeyNotFoundException("varName")
+      }
+
+      storage(varName) :> Variable[T]
+    }
+    
+  }
+
+  module Program {
+    def Main(_: Array[String]) : void {
+      using VariableExtensions
+
+      val varContext = new Context()
+
+      varContext.CreateOrUpdateVariable( ("welcome", "Welcome User:") )
+      varContext.CreateOrUpdateVariable( ("user", "root") )
+      varContext.CreateOrUpdateVariable( ("rootAccess", true) )
+
+      Console.WriteLine($"${varContext.GetValue("welcome")} ${varContext.GetValue("user")}")
+
+      try {
+        varContext.CreateOrUpdateVariable( ("rootAccess", 1.0) )
+      } catch {
+        case e : Exception => Console.WriteLine($"Error: ${e.Message}")
+      }
+
+    }
+    
+  }
+
+}

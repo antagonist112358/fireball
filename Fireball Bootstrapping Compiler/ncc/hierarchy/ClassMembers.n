@@ -1469,8 +1469,6 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         | "="   => Some ("op_Assign")
         | "<<"  => Some ("op_LeftShift")
         | ">>"  => Some ("op_RightShift")
-        // | ">>*" => Some ("op_SignedRightShift")
-        // | ">>&" => Some ("op_UnsignedRightShift")
         | "=="  => Some ("op_Equality")
         | ">"   => Some ("op_GreaterThan")
         | "<"   => Some ("op_LessThan")
@@ -1537,8 +1535,11 @@ public partial class MethodBuilder : MemberBuilder, IMethod
         Message.Error(loc, "implicit conversion functions must take exactly one parameter");
     }
     
-    when (HasAbstractBody && !IsBodyless)
-      Message.Error(loc, $"missing body of a non-abstract and non-extern method in $this");
+    when (HasAbstractBody && !IsBodyless)    
+      /*if (declaring_type.IsAbstract && !declaring_type.IsModule && !declaring_type.IsValueType)
+        attributes |= NemerleModifiers.Abstract;
+      else*/
+        Message.Error(loc, $"missing body of a non-abstract and non-extern method in $this");
 
     when (attributes %&& NemerleModifiers.Extern && !HasAbstractBody)
       Message.Error(loc, "method with `extern' modifier cannot have body");

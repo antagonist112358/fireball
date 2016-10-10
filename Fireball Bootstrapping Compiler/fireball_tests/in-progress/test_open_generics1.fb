@@ -1,0 +1,19 @@
+namespace Fireball.Tests {
+
+  using System
+  using System.Collections.Generic
+
+    module OpenGenericTest {
+
+      def Map[TSeq[_] : IEnumerable[_], A, B](source: TSeq[A], transform: A -> B, binder: IEnumerable[B] -> TSeq[B]) : TSeq[B] {
+        val collection = new List()
+        val seq = source :> IEnumerable[A]
+        foreach(elem in seq) {
+          collection.Add( transform (elem) )
+        }
+        binder(collection)
+      }
+
+    }
+
+  }

@@ -16,7 +16,7 @@ namespace Fireball.Internal
   public class FireballInternalAttribute : FireballAttribute
   {
     private isHidden : bool = false;
-    internal this (isHidden : bool = true) { this.isHidden = isHidden; }
+    public this (isHidden : bool = true) { this.isHidden = isHidden; }
     internal IsHidden : bool { get { isHidden } }
   }
 }

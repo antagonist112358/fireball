@@ -1,0 +1,107 @@
+trait TestSuite {
+  def RunTests : Unit
+}
+
+trait Morphism[-TSource, +TResult, +TCategory : Category[TCategory]] {
+  val Category : TCategory  
+  [Pure] def Apply(source: TSource) : TResult
+}
+
+trait Category[T : Category[T]] {
+  [Pure] def Compose[TSource, TMiddle, TResult](m2: Morphism[TMiddle, TResult, T], m1: Morphism[TSource, TMiddle, T]) : Morphism[TSource, TResult, T]
+  [Pure] def Id[TObject] : Morphism[TObject, TObject, T] 
+}
+
+object DotNet extends Category[DotNet] {
+  [Pure] def Id[TObject] : Morphism[TObject, TObject, DotNet] = new DotNetMorphism(@object => @object)
+  [Pure] def Compose[TSource, TMiddle, TResult](m2: Morphism[TMiddle, TResult, T], m1: Morphism[TSource, TMiddle, T]) = 
+    new DotNetMorphism(@object => m2(m1(@object)))
+}
+
+class DotNetMorphism[TSource, TResult] (transform: TSource -> TResult) extends Morphism[TSource, TResult, DotNet] {
+  val Category = DotNet
+  [Pure] def Apply(source: TSource) = transform(source)
+}
+
+trait Monoid[T] {
+  val Unit : T
+  [Pure] def Apply(a: T, b: T) : T
+}
+
+object Monoid {
+  def Apply[T] (unit: T, binary: T * T -> T) : Monoid[T] = new Monoid[T] {
+    val Unit = unit
+    [Pure] def Apply(a: T, b: T) = binary(a, b)
+  }
+
+  val UnitMonoid = Monoid( (), (_, _) => ())
+}
+
+object MonoidTests extends TestSuite {
+  def RunTests : Unit {
+    val addInt32 = Monoid(0, (a, b) => a + b)
+    assert (0 == addInt32.Unit)
+    assert ( 1 + 2 == addInt32(1, 2) )
+
+    // Monoid law 1: m == Binary(Unit, m)
+    assert ( 1 == addInt32(addInt32.Unit, 1) )
+    // Monoid law 2: m == Binary(m, Unit)
+    assert ( 1 == addInt32(1, addInt32.Unit) )
+    // Monoid law 3: Binary(Binary(m1, m2), m3) == Binary(m1, Binary(m2, m3))
+    assert ( addInt32(addInt32(1, 2), 3) == addInt32(1, addInt32(2, 3)) )
+  }
+}
+
+implicit class MonoidCategory[T] (self: Monoid[T]) extends Monoid[T], Category[MonoidCategory[T]]  {
+  [Pure] def Id[TObject] : Morphism[TObject, TObject, MonoidCategory[T]] {
+    if (!typeof(T).IsAssignableFrom(typeof(TObject)))
+    {
+        throw new InvalidOperationException($"Category ${nameof(Monoid<T>)} has only 1 object ${nameof(T)}.");
+    }
+
+    new MonoidMorphism(this, value => value) as Morphism[TObject, TObject, MonoidCategory[T]]
+  }
+
+  [Pure] def Compose[TSource, TMiddle, TResult](m2: Morphism[TMiddle, TResult, MonoidCategory[T]], m1: Morphism[TSource, TMiddle, MonoidCategory[T]]) {
+    if (!(typeof(T).IsAssignableFrom(typeof(TSource)) && typeof(T).IsAssignableFrom(typeof(TMiddle))
+        && typeof(T).IsAssignableFrom(typeof(TResult))))
+    {
+        throw new InvalidOperationException($"Category ${nameof(Monoid<T>)} has only 1 object ${nameof(T)}.");
+    }
+
+    new MonoidMorphism(this, _ => Apply(m1(Unit :> TSource), m2(Unit :> TMiddle)) as Morphism[TObject, TObject, MonoidCategory[T]]
+  }
+    
+}
+
+
+
+class MonoidMorphism[T] (val category: MonoidCategory[T], transform: T -> T) extends Morphism[T, T, MonoidCategory[T]] {
+  [Pure] def Apply(source: T) = transform(source)
+}
+
+object MonoidCategoryTests extends TestSuite {
+  def RunTests : Unit {
+    val addInt32 = Monoid(0, (a, b) => a + b)
+
+    val m1 = new MonoidMorphism(addInt32, unit => 1)
+    val m2 = new MonoidMorphism(addInt32, unit => 2)
+    val m3 = new MonoidMorphism(addInt32, unit => 3)
+
+    val o = addInt32.Compose(_, _)
+
+    // Category law 1: ability to compose
+    assert(
+      1 + 2 + 3 == o(o(m1, m2), m3) (0)
+    )
+
+    assert(
+      1 + 2 + 3 == o(m1, o(m2, m2)) (0)
+    )
+
+    // Category law 2: existence of an identity morphism
+    assert ( 1 == addInt32.Id (1) )
+    assert ( addInt32.Unit == addInt32.Id (addInt32.Unit) )
+  }
+}
+
