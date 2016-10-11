@@ -1,0 +1,41 @@
+namespace Detonator {
+
+  using System
+  using System.Linq
+  using System.Collections.Generic
+
+  variant Key(name : string) {
+
+    val Name : string = name
+
+    case ValuelessKey {
+      override def ToString() : string = $"\"$Name\""
+    }
+
+    case IntKey(value: int) {
+      val Value : int = value
+      override def ToString() : string = $"$Name = $Value"
+    }
+
+    case StringKey(value: string) {
+      val Value : string = value
+      override def ToString() : string = Name + " = " + Value
+    }
+
+    case BooleanKey(value: bool) {
+      val Value : bool = value
+
+      override def ToString() : string = Name + " = " + Value
+    }
+
+    case Collection(value: List[Key]) {
+      val Value : List[Key] = value
+
+      override def ToString() : string {
+        $"${Name} = [" + String.Join(", ", Value.Select(v => v.ToString()).ToArray()) + " ]"
+      }
+    }
+
+  }
+
+}

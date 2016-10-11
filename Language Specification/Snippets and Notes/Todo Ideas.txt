@@ -1,0 +1,2 @@
+Notes:
+	remove "virtual" keyword. use "abstract def x (a, b, c) { ... }" to mean virtual

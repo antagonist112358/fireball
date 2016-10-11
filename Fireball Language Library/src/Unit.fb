@@ -1,0 +1,14 @@
+namespace Fireball.Core {
+
+  using System
+
+  struct class Unit extends IComparable {
+    override def GetHashCode() : Int = 0
+    override def Equals(other: Object) : bool = match(other) {
+      case Unit => true
+      case _ => false 
+    }
+    def CompareTo(obj: Object) : Int = 0
+  }
+
+}

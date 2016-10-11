@@ -1,0 +1,82 @@
+// Concepts
+concept VertexLike[V] {
+  type Data
+  val Indicies : Int
+  def Apply(index: Int) : Data
+}
+
+concept GraphLike[G] {
+  type Vertex, Data, Edge
+  require VertexLike[Vertex, Data]
+    
+  def G.new(verticies: Traversable[Vertex], edges: Traversable[Edge]) : G
+  def Verticies : Traversable[Vertex]
+  def Edges : Traversable[Edge]
+}
+
+// Models
+record struct Point2D[D](x: D, y: D) implements VertexLike[Point2D[D], D] {
+  val Indicies = 2
+  def Apply(index: Int) : D {
+    case 0 => x
+    case 1 => y
+    case _ => throw new IndexOutOfRangeException
+  }
+}
+
+record struct Point3D[D](x: D, y: D, z: D) implements VertexLike[Point3D[D], D] {
+  val Indicies = 3
+  def Apply(index: Int) : D {
+    case 0 => x
+    case 1 => y
+    case 2 => z
+    case _ => throw new IndexOutOfRangeException
+  }
+}
+
+class AcyclicGraph[V, D] (verticies: Traversable[V], edges: Traversable[AcyclicGraph[V, D].DirectedEdge]) 
+  implements GraphLike[V, D, AcyclicGraph[V, D].DirectedEdge] {
+  
+  record class DirectedEdge(from : V, to: V)
+
+  // Check connectivity
+
+  // Look for cycles  
+}
+
+
+
+// Methods
+def GetSubGraph[D, V : VertexLike[V, D], E, G : GraphLike[V, D, E], new(Traversable[V], Traversable[E])](graph: G, pred: D -> Bool) : G {
+  // impl here
+}
+
+// Usage
+val verticies = Hashtable(
+  "origin":  Point2D(0.0, 0.0),
+  "branch1": Point2D(5.0, 0.0),
+  "branch2": Point2D(7.0, 3.0)
+  "branch3": Point2D(-3.0, 1.0)
+  "leaf1":   Point2D(0.0, 8.0)
+  "leaf2":   Point2D(9.0, -9.0)
+  "leaf3":   Point2D(-4.0, -5.0)
+  "leaf4":   Point2D(2.0, -1.0),
+  "leaf5":   Point2D(-1.0, 2.0))
+
+type Connection[D] = AcyclicGraph[Point2D[D], D].DirectedEdge
+operator def @->[D] (from: Point2D[D], to: Point2D[D]) : Connection[D] = Connection(from, to)
+
+val edges = List(
+  verticies("origin") -> verticies("branch1"),
+  verticies("origin") -> verticies("branch2"),
+  verticies("origin") -> verticies("branch3"),
+  verticies("branch1") -> verticies("leaf1"),
+  verticies("branch2") -> verticies("leaf2"),
+  verticies("branch2") -> verticies("leaf3"),
+  verticies("branch3") -> verticies("leaf4"),
+  verticies("branch3") -> verticies("leaf5")
+)
+
+val graph = new AcyclicGraph(verticies.Values, edges)
+
+val subGraph = GetSubGraph(graph, point => point.X > 0 && point.Y > 0)

@@ -1,0 +1,86 @@
+type class Linq[ M[A] ] {
+
+  def Fold[B] (initial: B, combiner: A * B -> B) : B
+
+  def SelectMany[B] (manySelector: A -> M[B]) : M[B]
+
+}
+
+// Note: Fireball.Collections.List[T] already implements Linq[List[T]] because it defines class methods:
+// 'Fold' and 'FlatMap' 
+
+variant Option[T] {
+  case record Some(value: T)
+  case object None
+}
+
+object OptionToLinq[A] (opt: Option[A]) implements Linq[Option[A]] {
+  def Fold[B] (initial: B, combiner: A * B -> B) : B = match(opt) {
+    case Some(value) => combiner(value, initial)
+    case None => initial
+  }
+
+  def SelectMany[B] (manySelector: A -> Option[B]) : Option[B] = match(opt) {
+    case Some(value) => manySelector(value)
+    case _ => None
+  }
+} 
+
+type object Arithmetic [T] {
+  type val Zero : T
+  operator def @+  (l: T, r: T) : T
+  operator def @-  (l: T, r: T) : T
+  operator def @/  (l: T, r: T) : T
+  operator def @*  (l: T, r: T) : T
+  operator def @== (l: T, r: T) : T
+} 
+
+implicit class ArithmeticLinqExtensions [ M[A implements Arithmetic[A]] implements Linq[M[A]] ] (self: M[A]) {
+
+  def Sum : M[A] = self Fold(M[A].Zero) { (x, sum) => x + sum }
+
+}
+
+
+val shouldBeTen = List(1,2,3,4) Sum
+assert (shouldBeTen == 10)
+
+val exceptional = List('a','b','c') Sum
+// Compiler Error: List[Char] cannot use 'ArithmeticLinqExtensions[List[Char]].Sum' because 'Char' does not implement Arithmetic[Char].
+
+val trySumOptions = List( Some(1), Some(2), Some(3), Some(4), Some(5) )
+val exceptional = trySumOptions Sum
+// Compiler Error: List[Option[Int]] cannot use 'ArithmeticLinqExtensions[List[Option[Int]]].Sum' because 'Option[Int]' does not implement Arithmetic[Option[Int]].
+
+implicit object ArithmeticOption[A implement Arithmetic[A]] implement Arithmetic[Option[A]] {
+  // Define zero
+  type val Zero : Option[A] = Some(A.Zero)
+  
+  operator def @+ (l: Option[A], r: Option[A]) : Option[A] = match(l, r) {
+    case (Some(lVal), Some(rVal)) => Some(lVal + rVal)
+    case _ => None
+  }
+
+  // ... other operators
+}
+
+val shouldBeTenOption = trySumOptions Sum
+// Output: shouldBeTenOption : Option[Int] = Some(10)
+
+val undefinedValues = List( Some(1), None, Some(3) )
+// Output: undefinedValues : List[Option[Int]] = List( Some(1), None, Some(3) )
+val shouldBeUndefined = undefinedValues Sum
+//Output: shouldBeUndefined : Option[Int] = None
+
+
+implicit object ComparableOperators[T : IComparable[T]] {
+
+  operator def @< (lhs: T, rhs: T) : Bool = (lhs CompareTo rhs) < 0
+  operator def @> (lhs: T, rhs: T) : Bool = (lhs CompareTo rhs) > 0
+  operator def @== (lhs: T, rhs: T) : Bool = (lhs CompareTo rhs) == 0 
+
+}
+
+implicit object ReferenceEqualityOperator[T : class] {
+  operator def @== (lhs: T, rhs: T) : Bool = Object.ReferenceEquals(lhs, rhs)
+}

@@ -1,0 +1,41 @@
+using System.Reflection
+using System.Runtime.CompilerServices
+using System.Runtime.InteropServices
+
+// General Information about an assembly is controlled through the following 
+// set of attributes. Change these attribute values to modify the information
+// associated with an assembly.
+[assembly: AssemblyTitle("Fireball Library")]
+[assembly: AssemblyDescription("The Fireball Core Language Library")]
+[assembly: AssemblyConfiguration("")]
+[assembly: AssemblyCompany("")]
+[assembly: AssemblyProduct("Fireball Language")]
+[assembly: AssemblyCopyright("Copyright © Fireball Project Team, 2015")]
+[assembly: AssemblyTrademark("")]
+[assembly: AssemblyCulture("")]
+
+// Setting ComVisible to false makes the types in this assembly not visible 
+// to COM components.  If you need to access a type in this assembly from 
+// COM, set the ComVisible attribute to true on that type.
+[assembly: ComVisible(false)]
+
+// The following GUID is for the ID of the typelib if this project is exposed to COM
+[assembly: Guid("483003c8-85c1-48fe-b7b9-8d675acd1f8f")]
+
+// Version information for an assembly consists of the following four values:
+//
+//      Major Version
+//      Minor Version 
+//      Build Number
+//      Revision
+//
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
+
+// Make the internals visible to the compiler
+[assembly: InternalsVisibleTo("Fireball.Compiler, PublicKey=" + 
+                              "0024000004800000940000000602000000240000525341310004000001000100934b591713900b" +
+                              "ee839064b4246f03194d18de40617539cd65c854473a23b0d5e6aa0e67d35ffea48b098fb1b501" +
+                              "143b67c6fa69639732d19ac9d52c214043d87b462e0000b201551346a75c1912f0e400134cb51d" +
+                              "64b14db9c664bff45ff00d90cdf9a1ffd732192097696c9ca12be0f423bf053eb2bb18560bf6fb" +
+                              "938069c9")]

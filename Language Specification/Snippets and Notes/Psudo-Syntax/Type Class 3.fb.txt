@@ -1,0 +1,58 @@
+trait Vector2[T] requires Integral[T], IntegralOps[T] as Math {
+  type Self
+
+  def Vector2[T].this(x: T, y: T) : Self
+  val X : T
+  val Y : T
+
+  using Integral[T]
+
+  def LengthSquared : A = (X * X) + (Y * Y)
+  val Length : A = Math Sqrt (X * X) + (Y * Y)
+}
+
+record struct DoubleVector2 (x: Double, y: Double) extends Vector2[Double] {
+  type Self = DoubleVector2
+  lazy val Length = Math Sqrt(x * x + y * y)
+}
+
+struct ArrayVector2[T](array: Array[T]) extends Vector2[T] requires Integral[T], IntegralOps[T] as Math {
+  assert(array.Length >= 2)
+  
+  type Self = ArrayVector2[T]
+  
+  def this(x: T, y: T) = this(Array(x, y)) 
+
+  val X = array(0)
+  val Y = array(1)  
+
+  lazy val Length = Math Sqrt LengthSquared
+
+  implicit def FromArray(array: Array[T]) = ArrayVector2(array)
+}
+
+implicit object Vector2Operations[T, V: Vector2[T]]
+  requires Integral[T], IntegralOps[T] as Math {
+  using Integral[T]
+    
+  operator def dot (v1: V, v2: Vector2[T]) : T = (v1.X * v2.X) + (v1.Y * v2.Y)  
+  operator def @+ (v1: V, v2: Vector2[T]) : V = new V(v1.X + v2.X, v1.Y + v2.Y)
+  
+  def Normalized(vect: V) : V {
+    val length = vect Length
+    if (length == Zero) new V(Zero, Zero)
+    else {
+      val scale = One / length
+      new V(vect.X / scale, vect.Y / scale)
+  }
+}
+
+// Vector2[T, TInt, TOps]
+val vect5 = DoubleVector2(-3.14159, 0)
+val vect6 = Array(2.9756, 1.751751751)
+
+DoubleVector2 vect7 =
+Vector2Operations[Double, DoubleVector2, DoubleAsIntegral].@+(vect5, vect6)
+
+ArrayVector2[Double] vect8 =
+Vector2Operations[Double, ArrayVector2[Double], DoubleAsIntegral].@+(vect6, vect5)

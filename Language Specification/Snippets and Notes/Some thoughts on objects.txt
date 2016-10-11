@@ -1,0 +1,26 @@
+interface ITitle
+{
+	public PrependHeader(newHeader: string) : string
+}
+
+sealed class Something : ITitle {
+
+	// Will be implicit
+	private val _instance = new Something()
+
+	private this() { }
+	
+	public static PrependHeader( /* will be resolved */ self: Something, newHeader: string) : string { $"$newHeader - ${self.Title}" }
+
+	public PrependHeader(newHeader: string) : string { PrependHeader(this, newHeader) }
+	
+	public Title : string { get { _internalTitle } }
+
+	private static readonly _internalTitle : string = "Glorious Title"
+}
+
+
+object Something extends ITitle {
+  val Title = "Glorious Title"
+  def PrependHeader(newHeader: String) = $"$newHeader - $Title"
+}

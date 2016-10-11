@@ -1,0 +1,90 @@
+foreach {
+	val1 in expr: Traversable[T]
+	val2 in {expr: Traversable[T]} if expr
+	
+} (do | yield) expr
+
+
+def StartsWithAVowel(params lines: String) = foreach {
+	line in lines
+	word in line Split ' '
+	let lowerWord = word ToLower
+	let firstChar = lowerWord(0)
+	if Array('a', 'e', 'i', 'o', 'u') Contains firstChar
+} yield word // yield firstChar
+
+public List<string> StartsWithAVowel(param string[] lines)
+{
+	if (lines == null || lines.Length == 0)
+		return new List<string>();
+		
+	return new List<string>(StartsWithAVowelInternal(lines));
+}
+
+private IEnumerable<string> StartsWithAVowelInternal(IEnumerable<string> lines)
+{
+	// Constants
+	char[] const1 = new char[] { 'a', 'e', 'i', 'o', 'u' };
+	
+	return lines.SelectMany(line => {
+		return line.Split(' ').SelectMany(word => {
+			var lowerWord = word.ToLower();
+			var firstCar = word[0];
+			
+			if (const1.Contains(firstChar))
+				yield return word;
+		});
+	});
+
+	
+	/*
+	foreach(var line in lines)
+	{
+		foreach(var word in line.Split(' '))
+		{
+			var lowerWord = word.ToLower();
+			var firstChar = word[0];
+			
+			foreach(var vowel in const1)
+			{
+				if (vowel == firstChar)
+					yield return word;
+			}
+		}
+	}
+	*/
+}
+
+
+// We can create the tasks list all together like this
+val downloadTasks = foreach {
+	// Type of 'user' is User
+	user in users if (!user.Downloaded)
+	// Type of 'task' is Task[User]
+	let task = async {
+		let stream = await downloader DownloadUserQCAsync user
+		let _ = await currentFS WriteFile(user.Filename, stream)
+		return user
+	}
+} yield task
+
+private IEnumerable<Task<User>> MakeDownloadTasks(List<User> users)
+{
+	return users.SelectMany(user => {
+		if (!user.Downloaded) {
+			var task = downloader.DownloadUserQCAsync(user)
+				.Bind(stream => currentFS.WriteFile(user, stream)
+				.Bind(_ => Future.Success(user));
+				
+			
+		}
+		else return Enumerable<User>.Empty;
+	});
+}
+
+private IEnumerable<Task<User>> InnerMakeDownloadTasks(User user)
+{
+	Task<Stream> tasks1 = downloader.DownloadUserQCAsync(user);
+	Task<Void> ret = stream.ContinueWith(stream => { return currentFS.WriteFile(user, stream });
+	
+}

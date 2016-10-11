@@ -1,0 +1,134 @@
+struct Vector[T] (params values : Array[T]) {
+  val Count = values.Length
+  def Apply(index: Int) : T = values(index)
+}
+
+concept Integral[T] {
+  val Zero : T
+  operator def @- (x: T) : T
+  operator def @+ (x: T, y: T) : T
+  operator def @- (x: T, y: T) : T
+  operator def @* (x: T, y: T) : T
+  operator def @/ (x: T, y: T) : T
+}
+
+concept IntegralOps[T] requires Integral[T] {
+  def Sqrt(x: T) : T
+  def Abs(x: T) : T
+  def Sum(params xs: Array[T]) : T
+}
+
+concept IntegralConversion[A, B] {
+  def Convert(from: A) : B
+}
+
+object IntAsIntegral implements Integral[Int], IntegralOps[Int] {
+  val Zero = 0
+  def Sqrt(x: Int) = Math.Sqrt(x) :> Int
+  def Abs(x: Int) = Math.Abs(x)
+
+  operator def @- (x: Int) = -x
+  operator def @+ (x: Int, y: Int) = x + y
+  operator def @- (x: Int, y: Int) = x - y
+  operator def @* (x: Int, y: Int) = x * y
+  operator def @/ (x: Int, y: Int) = x / y
+}
+
+object DoubleAsIntegral implements Integral[Double], IntegralOps[Double] {
+  val Zero = 0.0d
+  def Sqrt(x: Double) = System.Math.Sqrt(x)
+  def Abs(x: Double) = Math.Abs(x)
+
+  operator def @- (x: Double) = -x
+  operator def @+ (x: Double, y: Double) = x + y
+  operator def @- (x: Double, y: Double) = x - y
+  operator def @* (x: Double, y: Double) = x * y
+  operator def @/ (x: Double, y: Double) = x / y
+}
+
+object DoubleToInt implements IntegralConversion[Double, Int] {
+  def Convert(from: Double) : Int = from :> Int
+}
+
+object IntToDouble implements IntegralConversion[Int, Double] {
+  def Convert(from: Int) : Double = from :> Double
+}
+
+trait Indexable[A] {
+  def Apply(index: Int) : A
+} 
+
+trait Vector2[A] requires Integral[A], IntegralOps[A] as Math 
+{
+  val X : A
+  val Y : A
+
+  def LengthSquared : A = (X * X) + (Y * Y)
+  val Length : A = Math Sqrt (X * X) + (Y * Y)
+}
+
+trait IndexableVector2[A] extends Indexable[A], Vector2[A]
+
+object IntegralConversion[Vector[A], Vector[B]] requires IntegralConversion[A, B] as Converter {
+  def Convert(from: Vector[A]) : Vector[B] {
+    val values = {
+      using Converter
+      def extract(i, acc) {
+        if (i < from.Count) extract(i + 1, acc + Convert from(i))
+        else acc 
+      }
+      extract(0, List()) ToArray
+    }
+    Vector(values)
+  }
+}
+
+struct ArrayVector2[T : Integral[T], IntegralOps[T] as Math] (self: Array[T]) {
+  assert(self.Length >= 2)
+
+  val X = self(0)
+  val Y = self(1)
+    
+  lazy val Length : T = Math Sqrt (X * X) + (Y * Y)
+
+  implicit def FromArray(array: Array[T]) = ArrayVector2(array)
+}
+
+concept Vector2Builder[T, A] {
+  def Apply(x: A, y: A) : T
+}
+
+type Vector2Builder[ArrayVector2[T], T] {
+  def Apply(x: T, y: T) : ArrayVector2[T] = Array(x, y)
+}
+
+implicit object Vector2Operations[T, V: Vector2[T]]
+  requires Integral[T], Vector2Builder[V, T] as Builder {
+  using Integral[T]
+
+  operator def dot (v1: V, v2: V) : T = (v1.X * v2.X) + (v1.Y * v2.Y)
+  operator def @+ (v1: Vector2[T], v2: V) : V = Builder(v1.X + v2.X, v1.Y + v2.Y)
+  operator def @+ (v1: V, v2: Vector2[T]) : V = new V(v1.X + v2.X, v1.Y + v2.Y)
+}
+
+implicit class Vector2Operations[T, V: Vector2[T]] (vect: V)
+  requires Integral[T], Vector2Builder[V, T] as Builder {
+
+  using Integral[T]
+
+  def Normalized : V {
+    val length = vect Length
+    if (length == Zero) Builder(Zero, Zero)
+    else {
+      val scale = One / length
+      Builder(vect.X / scale, vect.Y / scale)
+  }
+}
+
+val vect1 = Array(1, 5)
+val vect2 = Array(-10, 20)
+val vect3 = Array(1, -1)
+
+val vect4 = (vect1 + vect2) Normalized + vect3
+val num = vect4 dot vect3
+

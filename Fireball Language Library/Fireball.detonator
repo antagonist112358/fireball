@@ -1,0 +1,30 @@
+/***
+ Fireball Language Library
+ Detonator Build File
+ ***/
+ 
+// Project Settings
+Name = "Fireball Language Library"
+AssemblyName = "Fireball"
+OutputType = "Library"
+Version = "1.0.0.0"
+TargetFramework = "4.0"
+Platform = "AnyCPU"
+SignWithKey = "resources\keys\Fireball.snk"
+
+// Compiler Options
+UseStdLib = false
+BuildDebug = true
+
+// Configurations
+OutputPath = "..\bin\Debug"
+
+// Sources and Resources
+SourceFolders = "src"
+ResourceFolder = "resources"
+
+// References
+References = [ 
+	"System" 
+	"System.Core"
+]

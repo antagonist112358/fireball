@@ -1,0 +1,50 @@
+/**
+ * Quicksort example
+ */
+module ListFunctions {
+	
+	// Note: This implementation is *not* recursive, hence not stack-safe!	
+	def QuickSort[T : IComparable[T]](list: List[T]) {
+		case [] => []
+		case head :: tail => 
+			val smaller = QuickSort ( tail Filter (_ < head) )
+			val larger = QuickSort ( tail Filter (_ >= head) )			
+			smaller ++ [head] ++ larger
+	}
+}
+
+/**
+ * Shortened Quicksort Example
+ */
+ module ShortenedListFunctions[T : IComparable[T]] {
+	
+	def QuickSort(list: List[T]) {
+		case [] => []
+		case x :: xs => xs Partition (_ > x) |> { (sm, lg) => QuickSort sm ++ [x] ++ QuickSort lg }
+	}
+	
+ }
+
+/**
+ * Stacksafe Quicksort (using CPS)
+ */
+ module BetterListFunctions {
+ 	
+	def QuickSort[T : IComparable[T]] (list: List[T]) : List[T] {
+	
+		// Checks that the function is tail-recursive, and throws a compile-time error if it is not
+		[CheckTailRec]
+		def loop(list, acc, cont) = match(list) {
+			case [] => cont(acc)
+			case [x] => cont(x :: acc)
+			case x :: xs => 
+				val (smaller, larger) = xs Partition (_ > x)								
+				loop larger, acc, lg => {
+					loop smaller, x :: lg, cont
+				}
+		}
+						
+		loop trav, [], x => x
+	}
+ 
+ }

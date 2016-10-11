@@ -1,0 +1,272 @@
+concept TypeConstructor[From, Via, To]
+
+object ListTypeConstructor[In, Out] implements TypeConstructor[List[In], Out, List[Out]]
+
+def Select[A, B, TIn : IEnumerable[A], TOut : IEnumerable[B], new(IEnumerable[B])] (source: TIn, selector: A -> B) : TOut
+  requires TypeConstructor[TIn, B, TOut] {
+  
+  val lazyEnumerable = new IEnumerable[B] {
+    def GetEnumerator : IEnumerator[B] {
+      foreach(item in source) yield selector(item)
+    }
+  }
+
+  new TOut(lazyEnumerable)
+}
+
+concept Summable[T] {
+  val Zero : T
+  operator def @+(x: T, y: T) : T
+}
+
+object StringSummable implements Summable[String] {
+  val Zero = String.Empty
+  operator def @+ (x: String, y: String) = $"{x}{y}"
+}
+
+object IntSummable implements Summable[Int] {
+  val Zero = 0
+  operator def @+ (x: Int, y: Int) = x + y
+}
+
+def Sum[A with Summable[A]](seq: Traversable[A]) : A {
+  def sum_rec(lst, acc) = match(lst) {
+    case x :: xs => sum_rec(xs, acc + x)
+    case [] => acc
+  }
+
+  sum_rec(seq, A.Zero)
+}
+
+concept TraversableLike[A, T] {
+  val Empty : T
+  def Head : A
+  def Tail : T
+  def Count : Int
+
+  operator def @:: (x: A, lst: T) : T
+  operator def @:: (lst: T, x: A) : T
+}
+
+trait Traversable[A] implements TraversableLike[A, Self] {
+}
+
+variant LinkedList[T] extends Traversable[T] {
+
+  private class NodeEnumerator(node: Node) extends IEnumerator[T] {
+    private var _current : LinkedList[T] = node
+    def Current : T = node.Head
+    def MoveNext : Bool = match(_current) {
+      case n : Node => _current = n; true
+      case Nil => _current = Nil; false
+    }
+  }
+
+  static def Apply(params values: Array[T]) : LinkedList[T] {
+    val tail = if (values.Length > 1) {
+      def makeTail(i, node) {
+        if (i < values.Length) makeTail(i + 1, Node(values(i), node))
+        else node
+      }
+      makeTail(1, Nil)
+    } else Nil
+
+    if (values.Length == 0) Nil
+    else Node(values(0), tail) 
+  }
+
+  case Nil {
+    val Count = 0
+    def GetEnumerator() = Enumerable.Empty[T].GetEnumerator()
+    def Head : T { throw new Exception() }
+    def Tail : LinkedList[T] { throw new Exception() }
+  }
+
+  case record Node(head: T, tail: LinkedList[T]) {  
+    lazy val Count : Int = {
+      def cnt_rec(node, acc) = match(node) {
+        case Node(_, tail) => cnt_rec(tail, acc + 1)
+        case Nil => acc
+      }
+      cnt_rec(this, 0)
+    }
+    private lazy val NodeEnumerator = new NodeEnumerator(this)
+    def GetEnumerator() : IEnumerator = NodeEnumerator
+  }
+
+  val Empty = Nil
+  
+  operator def @:: (x: T, lst: LinkedList[T]) : LinkedList[T] {
+    case (_, Nil) => Node(x, Nil)
+    case (_, tail: Node) => Node(x, tail)
+  }
+
+  operator def @:: (lst: LinkedList[T], x: T) : LinkedList[T] {    
+    def reverse(lst) {
+      using System.Linq
+      val values = foreach(item in lst) yield item.Head      
+      var root : LinkedList[T] = Nil
+      foreach(value in values Reverse) {
+        node = Node(value, node)
+      }
+      root
+    }
+      
+    match(lst) {
+      case Nil => Node(x, Nil)
+      case n : Node => reverse(Node(x, n))
+    }
+  }
+
+}
+
+concept FunctorLike[A, T] {
+  type TOut[_]
+  def Map[B](mapFunc: A -> B) : TOut[B]
+}
+
+class LinkedListFunctor[T] (list: LinkedList[T]) implements FunctorLike[T, ListLinked[T]] {
+  type TOut[B] = LinkedList[B]
+  type Self = LinkedList[T]
+
+  def Map[B](mapFunc: A -> B) : List[B] {
+    def map_rec(node, acc) {
+      case (Node(x, tail), _) => map_rec(tail, x :: acc)
+      case (Nil, acc) => acc
+    }
+
+    map_rec(list, TOut[B].Nil)
+  }  
+}
+
+implicit class TraversableExtensions[A, T : TraversableLike[A, T]] (self: T) {
+
+  def Collect[B](selector: PartialFunc[A, B]) T.TOut[B] requires FunctorLike[A, T] {
+    def collect_rec(lst, acc) = match(lst) {
+      case x :: xs if selector IsDefinedAt x => collect_rec(xs, acc :: x)
+      case x :: xs => collect_rec(xs, acc)
+      case [] => acc
+    }
+
+    collect_rec(self, T.Empty) Map selector    
+  }
+
+  def Concat(other: T) : T {
+    def concat_rec(lst, acc) = match(lst) {
+      case x :: xs => concat_rec(xs, acc :: x)
+      case [] => acc
+    }
+    concat_rec(other, self)
+  }
+
+  def Filter(pred: A -> Bool) : T {
+    def filter_rec(lst, acc) = match(lst) {
+      case x :: xs if pred x => filter_rec(xs, acc :: x)
+      case _ :: xs => filter_rec(xs, acc)
+      case [] => acc
+    }
+    filter_rec(self, T.Empty)
+  }
+
+  def Distinct : T requires (eq: Equality[A]) {
+    val hashes = new HashSet(
+      new IEqualityComparer[A] {
+        def Equals(x, y) = eq Equals(x, y)
+      }
+    )
+
+    def distinct_rec(lst, acc) = match(lst) {
+      case x :: xs if !(hashes Contains x) =>
+        hashes Add x
+        distinct_rec(xs, acc :: x)
+      case _ :: xs => distinct_rec(xs, acc)
+      case [] => acc
+    }
+
+    distinct_rec(self, T.Empty)
+  }
+
+}
+
+val numbers = LinkedList(1, 2, 3, 4, 5)
+val doubled = {numbers Concat numbers Map (_ * 3)} Distinct
+val evenOdds = doubled Collect {
+  case x if x % 2 == 0 => ("even", x)
+  case y => ("odd", y)
+}
+
+using Console
+foreach ((stmt, x) in evenOdds) do WriteLine $"{x} is {stmt}"  
+
+concept Integral[T] {
+  val Zero : T
+  operator def @- (x: T) : T
+  operator def @+ (x: T, y: T) : T
+  operator def @- (x: T, y: T) : T
+  operator def @* (x: T, y: T) : T
+  operator def @/ (x: T, y: T) : T
+}
+
+concept IntegralOps[T] requires Integral[T] {
+  def Sqrt(x: T) : T
+  def Abs(x: T) : T
+  def Sum(params xs: Array[T]) : T
+}
+
+object IntAsIntegral implements Integral[Int], IntegralOps[Int] {
+  val Zero = 0
+  def Sqrt(x: Int) = Math.Sqrt(x) :> Int
+  def Abs(x: Int) = Math.Abs(x)
+
+  operator def @- (x: Int) = -x
+  operator def @+ (x: Int, y: Int) = x + y
+  operator def @- (x: Int, y: Int) = x - y
+  operator def @* (x: Int, y: Int) = x * y
+  operator def @/ (x: Int, y: Int) = x / y
+}
+
+struct Vector[T] (params values : Array[T]) {
+  val Count = values.Length
+  def Apply(index: Int) : T = values(index)
+}
+
+concept Vector2[A] requires Integral[A], IntegralOps[A] as Math {
+  type Self
+  val X : A
+  val Y : A
+  def Ctor(x: A, y: A) : Self
+
+  def LengthSquared : A = (X * X) + (Y * Y)
+  val Length : A = Math Sqrt (X * X) + (Y * Y)
+}
+
+concept Vector3[A] extends Vector2[A] {
+  val Z : A
+  def Ctor(x: A, y: A, z: A) : Self
+}
+
+concept Quaternion[A] extends Vector3[A] {
+  val W : A
+  def Ctor(x: A, y: A, z: A, w: A) : Self
+}
+
+struct AsVector2[T : Integral[T]] (vect : Vector[T]) implements Vector2[T] {  
+  type Self = Vector[T]
+  assert(vect.Count >= 2)
+  def Ctor(x: T, y: T) = Vector(x, y)
+  val X = vect(0)
+  val Y = vect(1)
+}
+
+class AsVector3[T : Integral[T]] (vect: Vector[T]) extends AsVector2[T] implements Vector3 {
+  assert(vect.Count >= 3)
+  def Ctor(x: T, y: T, z: T) = Vector(x, y, z)
+  val Z = vect(2)
+}
+
+implicit object Vector2Operations[T : Integral[T], V : Vector2[T, V]] {
+  operator def dot(v1 : V, v2: V) : T = (v1.X * v2.X) + (v1.Y * v2.Y)
+  
+}
+
+

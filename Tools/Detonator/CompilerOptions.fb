@@ -1,0 +1,83 @@
+namespace Detonator {
+
+  using System
+  using System.Linq
+  using System.Collections.Generic
+
+  module CompilerOptions {
+    def Apply(keys: List[Key]) : CompilerOptions = new CompilerOptions(keys)
+
+    private def RootPath(path: string) : string {
+      case path when IO.Path.IsPathRooted(path) => path
+      case path => IO.Path.Combine(Program.OperatingDirectory, path)
+    }
+
+    private val EmptyKeysList : List[Key] = new List()
+  }
+
+  sealed class CompilerOptions(keys: List[Key]) {
+
+    val WarningLevel : int = KeyValueOrDefault("WarningLevel", 4)
+    val DisabledWarnings : Array[string] = KeyValueOrDefault("DisabledWarnings", "").Split(',').ToArray()
+    val EnabledWarnings : Array[string] = KeyValueOrDefault("EnabledWarnings", "").Split(',').ToArray()
+    val NoStdLib : bool = KeyValueOrDefault("NoStdLib", false)
+    val NoStdMacros : bool = KeyValueOrDefault("NoStdMacros", false)
+    val GreedyReferences : bool = KeyValueOrDefault("GreedyReferences", false)
+    val Platform : string = KeyValueOrDefault("Platform", "AnyCpu")
+
+    val AssemblyName : string = KeyValueOrThrow("AssemblyName")
+    //val OutputType : string = if (AssemblyName.EndsWith(".dll")) "Library" else "Executable"
+    val BuildDebug : bool = KeyValueOrDefault("BuildDebug", false)    
+    val TargetFramework : string = match(KeyValueOrDefault("TargetFramework", "4.0")) {
+      case name when name.StartsWith("v") => name
+      case name => "v" + name
+    }
+    
+    val SignWithKeyFilePath : string = match(KeyValueOrDefault("SignWithKey", "")) {
+      case "" => ""
+      case path => RootPath(path)
+    }
+
+    val OutputPath : string = RootPath({
+      val outName = if (BuildDebug) "debug" else "release"
+      KeyValueOrDefault( "OutputPath", IO.Path.Combine(Program.OperatingDirectory, $"bin\$outName") )
+    })
+    
+    val SourceFolders : List[string] = KeyValueOrThrow.[List[Key]]("SourceFolders").Select(key => RootPath(key.Name)).ToList()
+    val ResourceFolder : string = match(KeyValueOrDefault("ResourceFolder", "")) {
+      case "" => ""
+      case path => RootPath(path)
+    }
+
+    val References : List[string] = KeyValueOrDefault("References", EmptyKeysList).Select(key => key.Name).ToList()
+
+
+    private def KeyValueOrDefault[T](keyName : string, defaultValue: T) : T {
+      val foundKey = keys.Where(key => key.Name.ToUpper() == keyName.ToUpper())
+
+      if (foundKey.Count() == 1) {
+        match(foundKey.First()) {
+          case ValuelessKey(name) => name :> T
+          case StringKey(_, value) => value :> T
+          case BooleanKey(_, value) => value :> T
+          case IntKey(_, value) => value :> T
+          case Collection(_, collKeys) => collKeys :> T
+        }
+      } else { defaultValue }
+    }
+
+    private def KeyValueOrThrow[T](keyName: string) : T {
+      val foundKey = keys.Where(key => key.Name.ToUpper() == keyName.ToUpper())
+
+      if (foundKey.Count() == 1) {
+        match(foundKey.First()) {
+          case ValuelessKey(name) => name :> T
+          case StringKey(_, value) => value :> T
+          case BooleanKey(_, value) => value :> T
+          case IntKey(_, value) => value :> T
+          case Collection(_, collKeys) => collKeys :> T
+        }
+      } else { throw new Exception($"Key: $keyName requires a value") }
+    }    
+  }
+}

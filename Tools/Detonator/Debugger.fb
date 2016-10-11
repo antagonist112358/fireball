@@ -1,0 +1,10 @@
+namespace Detonator {
+  using Diag = System.Diagnostics
+
+  internal module Debugger {
+    def Break() : void {
+      Diag.Debug.Assert(false, "Press Retry to start debugging Detonator")
+    }
+  }
+
+}

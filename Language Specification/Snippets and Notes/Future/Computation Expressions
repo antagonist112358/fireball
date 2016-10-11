@@ -1,0 +1,69 @@
+val path = "..."  // String
+val files = Fireball.IO.Directory EnumerateFiles (path, _) ToList // String -> List[String]
+
+val logErrorLineStarts = List("error", "warning", "fatal")
+
+def firstWord(line: String) = {
+  case regexpr "(\w).+" with firstWord => firstWord
+  case _ => "" 
+}
+
+ForEach[List](file in Files) {
+  Async using (fs = Fireball.IO.TextFileStream(file)) {
+    yield (errors, normal) = fs ReadAllLines Paritition { line => logErrorLineStarts Contains line ToLower }
+  }
+} Map { (errors, normal) => 
+  val taggedLines = foreach(errorLine in errors) yield (firstWord(errorLine), errorLine)
+  (taggedLines, normal)
+}  
+
+// List[String]
+// List[Future[ List[String] * List[String] ]]
+// Future[List[ List[String] * List[String] ]]
+
+// List[Future[List[String] * List[String]]
+// List[Future[List[String * String] * List[String]]]
+// List[Future[ List[String] * (String * List[String]) ]]
+
+// List[ Future[List[String]] * Future[Set[String, List[String]]] ]
+
+compute Async {
+  foreach (file in files) yield {
+    using(fs = Fireball.IO.TextFileStream(file)) {
+      fs ReadAllLines ToList Partition(line => !(line ToLower StartsWith "error"))  // List[String] * List[String]      
+    }
+  }
+} |> Future AwaitGroupsOf(3) 
+
+val errorFileCtx = new Object
+val normalFileCtx = new Object
+
+val tasks = foreach {
+  file in files  
+  let task = async using(fs = Fireball.IO.TextFileStream(file)) {
+    let (errorLines, normalLines) = await fs ReadAllLines Partition { line => logErrorLineStarts Contains firstWord(line) ToLower }
+    lock(errorFileCtx) {
+      using(errorFs = Fireball.IO.TextFileStream(outErrorsFile)) {
+        foreach(line in errorLines) do errorFS WriteLine line
+      }
+    }
+    lock(normalFileCtx) {
+      using(normalFS = Fireball.IO.TextFileStream(outNormalFile)) {
+        foreach(line in normalLines) do normalFS WriteLine line
+      }
+    }
+  }
+} do task
+
+val tasks = foreach {  
+  file in files
+  fs in using(Fireball.IO.TextFileStream(file))
+  errorFs in using(Fireball.IO.TextFileStream(outErrorsFile)
+  normalFs in using(Fireball.IO.TextFileStream(outNormalFile)    
+  (errorLines, normalLines) in fs ReadAllLines Parition { line => logErrorLineStarts Contains firstWord(line) ToLower }
+} do {
+  foreach(errorLine in errorLines) do errorFs WriteLine errorLine
+  foreach(normalLine in normalLines) do normalFS WriteLine normalLine
+}
+
+Future.RunAsynchronously <| tasks

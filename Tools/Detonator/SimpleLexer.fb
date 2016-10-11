@@ -1,0 +1,179 @@
+namespace Detonator {
+
+  using System  
+  using System.IO
+  using System.Collections.Generic
+  using System.Linq
+  using System.Text
+
+  sealed class DetLexer {
+
+    def Parse(stream: Stream) : List[Key] {
+      val collected = List()
+
+      using (reader = new StreamReader(stream)) {
+        val detReader = new DetDefintionReader(reader)
+
+        while(!reader.EndOfStream) {
+          collected.Add (detReader.ParseNextKey())
+          detReader.GotoNextToken()
+        }
+      }
+
+      collected
+    }
+
+    def Parse(filePath: string) : List[Key] {
+      using (fileStream = new FileStream(filePath, FileMode.Open)) {
+        Parse(fileStream)
+      }
+    }
+
+  }
+
+  module DetLexer {
+    private val Space : char = ' '
+    private val NL : string = Environment.NewLine
+
+    private class DetDefintionReader(reader: StreamReader) {
+
+      private def Peek() : char { if (EndOfStream) '\0' else reader.Peek() :> char }
+      private def Read() : char { reader.Read() :> char }
+      private def ReadIgnore() : void = if (!EndOfStream) { _ = reader.Read() }
+      private def ReadLine() : string { reader.ReadLine() }
+      private def EndOfStream : bool = reader.EndOfStream
+
+      private def ReadString() : string {
+        var sb = new StringBuilder()        
+        while(Peek() != '"' && !EndOfStream) {          
+          _ = sb.Append(Read())
+        }
+        if (Peek() == '"') { ReadIgnore() }
+        sb.ToString().Replace(NL, "")
+      }
+
+      private def ReadLiteral(params stoppers: Array[char]) : string {
+        def read_recursive(sb: StringBuilder) : StringBuilder {
+          match(Peek()) {
+            case Space | '\r' =>  
+              ReadIgnore()
+              read_recursive(sb)
+
+            case _ when EndOfStream => sb
+
+            case c when stoppers.Contains(c) => sb
+
+            case x => 
+              _ = sb.Append(Read())
+              read_recursive(sb)
+          }
+        }
+
+        val sb = read_recursive(new StringBuilder())
+        sb.ToString()
+      }      
+
+      private def ReadBlockComment() : void {
+        def read_recursive() {
+          if (!EndOfStream) {
+            match(Read()) {
+              case '*' =>
+                match(Read()) {
+                  case '/' => ()
+                  case _ => read_recursive()
+                }
+
+              case _ => read_recursive()
+            }
+          }
+        }
+
+        read_recursive()
+      }
+
+      def GotoNextToken() : void {
+
+        def starts_line_comment() : bool {
+          ReadIgnore()
+          Peek() == '/'
+        }
+
+        def starts_block_comment() : bool {
+          ReadIgnore()
+          Peek() == '*'
+        }
+
+        def read_recursive() : void {
+          if (EndOfStream) ()
+          else {
+            match(Peek()) {
+              case Space | '\n' | '\r' | '\t' => 
+                ReadIgnore()
+                read_recursive()
+
+              case '/' when starts_line_comment() =>
+                _ = ReadLine()
+                read_recursive()
+
+              case '/' when starts_block_comment() =>
+                ReadBlockComment()
+                read_recursive()
+
+              case _ => ()
+            }
+          }
+        }
+
+        read_recursive()
+      }
+
+      private def ReadList() : IEnumerable[Key] {
+        GotoNextToken()
+
+        while(!EndOfStream && Peek() != ']') {        
+          yield ParseNextKey()
+          GotoNextToken()
+        }
+
+        if (!EndOfStream) { ReadIgnore() }
+      }
+
+      def ParseNextKey() : Key {
+
+        GotoNextToken()
+
+        match(Peek()) {
+          case '"' =>
+            ReadIgnore()
+            new Key.ValuelessKey( ReadString() )
+
+          case _ =>     
+            val name = ReadLiteral('=')
+            
+            assert (Read() == '=')
+            GotoNextToken()
+            
+            match(Peek()) {
+              case '[' => 
+                ReadIgnore()
+                val lst = ReadList().ToList()
+                new Key.Collection(name, lst)
+
+              case '"' => 
+                ReadIgnore()
+                val strValue = ReadString()
+                new Key.StringKey(name, strValue)
+
+              case _ => match(ReadLiteral('\n')) {
+                case fstr when fstr.ToLower() == "false" => new Key.BooleanKey(name, false)
+                case tstr when tstr.ToLower() == "true"  => new Key.BooleanKey(name, true)
+                case err => throw new Exception($"Invalid literal value: $err")
+              }
+            }
+
+        }
+      }
+
+    }
+
+}

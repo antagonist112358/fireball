@@ -1,0 +1,343 @@
+record class User(name: String, filename: String, var downloaded: Bool) {
+	override def ToString() = name
+}
+
+public class User : IEquatable<User>
+{
+	public string Name {get; private set;}
+	public string Filename {get; private set;}
+	public bool Downloaded {get; set;}
+	
+	public static User Apply(string name, string filename, bool downloaded)
+	{
+		return new User(name, filename, downloaded);
+	}
+	
+	public User(string name, string filename, bool downloaded)
+	{
+		Name = name; Filename = filename; Downloaded = downloaded;
+	}
+		
+	public override string ToString()
+	{
+		return Name;
+	}
+		
+	// Example hash function (*not the actual implementation*)
+	public override int GetHashCode()
+	{
+		const int LargePrime = 2147483647;
+		const int BoolPrime = 65537;
+		
+		unchecked 
+		{
+			return LargePrime
+				^ Name.GetHashCode() 
+				^ 7 * Filename.GetHashCode()
+				^ 13 * (Downloaded) ? 0 : BoolPrime;
+		}
+	}
+	
+	public override bool Equals(object other)
+	{
+		if (other is User) return Equals((User)other);
+		return false;
+	}
+	
+	public bool Equals(User other)
+	{
+		return	(other.Name == Name)
+			 && (other.Filename == Filename)
+			 && (other.Downloaded == Downloaded);
+	}
+	
+	public static bool operator ==(User left, User right)
+	{
+		return left.Equals(right);
+	}
+	
+	public static bool operator !=(User left, User right)
+	{
+		return !left.Equals(right);
+	}	
+}
+
+variant Try[T] extends Seq[T] {
+	case Success(value: T)
+	case Failure(error: Exception)
+
+	def GetEnumerator() = match(this)
+	{
+		case Success(v) => Seq(v) GetEnumerator
+		case Failure(_) => Enumerable.Empty GetEnumerator
+	}
+}
+
+public abstract class Try<T> : IEnumerable<T>
+{
+	private Try() { }
+	
+	public sealed class Success : Try<T>
+	{
+		public T Value {get; private set;}
+		public Success(T value) { Value = value; }
+	}
+	
+	public sealed class Failure : Try<T>
+	{
+		public Error: Exception {get; private set;}
+		public Failure(Exception error) { Error = error; }
+	}
+	
+	IEnumerator IEnumerable<T>.GetEnumerator()
+	{
+		return this.GetEnumerator();
+	}
+	
+	public IEnumerator<T> GetEnumerator()
+	{
+		if (this is Success) 
+		{
+			var success = this as Success;
+			var value = success.Value;
+			return (new T[] { value }).GetEnumerator();
+		}
+		else
+		{
+			return Enumerable.Empty<T>.GetEnumerator();
+		}
+			
+	}
+	
+	// Other methods here (omitted for brevity)
+}
+
+variant Option[T] extends Seq[T] {
+	case Some(value: T)
+	case None
+	
+	def GetEnumerator() = match(this) {
+		case Some(value) => Seq(v) GetEnumerator
+		case None => Enumerable.Empty GetEnumerator
+	}
+}
+
+public abstract class Option<T>
+{
+	private Option() { }
+	
+	public sealed class Some : Option<T>
+	{
+		public T Value {get; private set;}
+		public Some(T value) { Value = value; }
+	}
+	
+	public sealed class None : Option<T>
+	{
+		public None() { }
+	}
+	
+	// Other methods here (omitted for brevity)
+}
+
+[Interface]
+trait FileSystem { 
+	def WriteFile(filePath: String, data: Stream) : Try[Unit]
+	def WriteFileAsync(filePath: String, data: Stream) : Task[Unit]
+}
+
+[Interface]
+trait FileDownloader { 
+	def TryDownloadUserQC(user: User) : Try[Stream]
+	def DownloadUserQCAsync(user: User) : Task[Stream]
+}
+
+public sealed class Unit : object { }
+
+public interface IFileSystem
+{
+	Try<Unit> WriteFile(filePath: String, data: Stream);
+	Task<Unit> WriteFileAsync(filePath: String, data: Stream);
+}
+
+public interface IFileDownloader
+{
+	Try<Option<Stream>> TryDownloadUserQC(User user);
+	Task<Option<Stream>> DownloadUserQCAsync(User user);
+}
+
+object UserManager {
+	private lazy val currentFS = Device.ServiceLocator GetInstance[FileSystem]
+	private lazy val downloader = Device.ServiceLocator GetInstance[FileDownloader]
+
+	def DownloadImagesForUsers(users: Seq[User]) : Seq[User * Try[Unit]] {
+		???
+	}
+}
+
+public sealed class UserManager 
+{
+	private static readonly UserManager _instance;
+	static UserManager()
+	{
+		_instance = new UserManager();
+	}
+	public static UserManager Instance
+	{
+		get { return _instance; }
+	}
+		
+	private readonly Lazy<IFileSystem> _currentFS;	
+	private IFileSystem currentFS
+	{
+		get { return _currentFS.Value; }
+	}
+	
+	private readonly Lazy<IFileDownloader> _downloader;
+	private IFileDownloader downloader
+	{
+		get { return _downloader.Value; }
+	}
+	
+	private UserManager()
+	{
+		_currentFS = new Lazy( () => Device.ServiceLocator.GetInstance<IFileSystem>() );
+		_downloader = new Lazy( () => Device.ServiceLocator.GetInstance<IFileDownloader>() );
+	}
+
+	public IEnumerable< Tuple<User, Try<Unit> > DownloadImagesForUsers(IEnumerable<User> users)
+	{
+		throw new NotImplementedException();
+	}
+}
+
+val users = List(
+	User("bob", "images/bob_qc.png", downloaded = false),
+	User("sally", "images/sally_qc.png", downloaded = false)
+)
+
+def processCompleted(results) = foreach (result in results) do {
+	case (user, Success(_)) => user.Downloaded = true
+	case (user, Failure(error)) => 
+		Console WriteLine $"Failed to download image for user '$user' due to exception: $error"
+}
+
+var users = new List<User>
+{
+	new User("bob", "images/bob_qc.png", downloaded = false),
+	new User("sally", "images/sally_qc.png", downloaded = false)
+};
+
+Action<IEnumerable< Tuple<User, Try<Unit>> >> processCompleted = (results) =>
+{
+	foreach(var ur in results)
+	{
+		var user = ur.Item1; var result = ur.Item2;
+		
+		if (result is Try<User>.Success)
+		{
+			user.Downloaded = true;
+		}
+		else
+		{
+			var failure = result as Try<User>.Failure;
+			var error = failure.Error;
+			Console.WriteLine($"Failed to download image for user '{user}' due to exception: {error}");
+		}
+	}
+};
+
+// What we are after is some computation workflow of the form Seq[User] -> Seq[User * Try[Unit]]
+// Or in C# IEnumerable<User> -> IEnumerable< Tuple<User, Try<Unit>> >
+
+// LINQ version (in C#)
+// Note: Type of 'downloadedUsers' will be IEnumerable< Tuple<User,Try<Unit>> >
+var query = from user in users where user.Downloaded == false
+            from stream in downloader.TryDownloadImage(user)
+            let result = currentFS.WriteFile(user, stream)
+            select Tuple.Create(user, result); 					 
+
+// Fireball version (just using Monadic operators over Seq[T])
+// Note: Type of 'downloadedUsers' will be List[Try[User]]
+val downloadedUsers = users
+	// Filter the users to only users don't have downloaded QC images
+	.Filter (!_.Downloaded)
+	.Map { user =>
+		// Try to download the QC image file
+		val maybeStream = downloader TryDownloadImage user
+		// Try to write the downloaded image file to the expected path
+		val result = maybeStream FlatMap { stream => currentFS WriteFile(user, stream) }
+		// Return Tuple<User, Try<Unit>>
+		(user, result) }
+
+// We could do the same using the "foreach (...expressions) yield (expression)"	syntax
+val downloadedUsers = foreach {
+	user in users when (!user.Downloaded)
+	stream in { downloader TryDownloadUserQC user }
+	fsUser in { 
+		{ currentFs WriteFile(user.Filename, stream) } Map { _ => user}
+	}
+} yield fsUser
+
+// What we really want to do, however, is download the images and then write them to files asynchronously.
+// So this time, what we are after is some computation workflow of the form: List[User] -> List[Task[User]]
+
+// Enter computation expressions
+// Lets start by defining a simple computation expression that downloads the image and writes it to a file
+def DownloadAndSaveImageAsync(user: User) : Task[User] = async {
+	let stream = await downloader DownloadUserQCAsync user
+	let fileSaveResult = await currentFS WriteFile(user.Filename, stream)
+	// This seems like magic...
+	return user
+} Run
+
+How does "async" know how to turn a Task[Void] into a Task[User]?
+
+It turns out that Task[T] is monadic in Fireball:
+
+// (Approximately...)
+trait Task[T] {
+	def Return(obj: T) : Task[T] = match(obj) {
+		case ex: Exception => Task.Failure(ex)
+		case value => Task.Success(value)
+	}
+	
+	def Bind[U](binder: T -> Task[U]) : Task[U] {
+		this.ContinueWith(task => {
+			case Success(value) => binder(value)
+			case Failure(ex) => Task[U].Failure(ex)
+		})
+	}
+}
+
+So the final statement in _DownloadAndSaveImageAsync_: "return user", uses the monadic "Bind" function, and compiles down to the following:
+def DownloadAndSaveImageAsync(user: User) : Task[User] {
+	var future = downloader.DownloadUserQCAsync(user)
+		.Bind(stream => currentFS.WriteFile(user, stream))
+		.Bind(unnamed1 => unnamed1.Return(user))
+		
+	future Run
+}
+
+// We can create the tasks list all together like this
+val downloadTasks = foreach {
+	// Type of 'user' is User
+	user in users if (!user.Downloaded)
+	// Type of 'task' is Task[User]
+	let task = async {
+		let stream = await downloader DownloadUserQCAsync user
+		let _ = await currentFS WriteFile(user.Filename, stream)
+		return user
+	} Run
+} yield task
+
+// Which is expanded by the compiler to the following
+val downloadTasks = users
+	
+	// "user in users when(!user.Downloaded)"
+	.Filter( !_.Downloaded )
+	
+	// "task in foreach {"
+	.FlatMap( user => 
+		
+	)

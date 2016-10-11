@@ -1,0 +1,19 @@
+﻿using System;
+
+namespace Fireball.Core
+{
+  /// <summary>
+  /// Unit is the absense of a value. Synonymous to 'void'.
+  /// </summary>
+  public struct Unit : IComparable
+  {
+    public override GetHashCode() : int { 0 }
+    public override Equals(other: object) : bool
+    {
+      | Unit => true
+      | _ => false
+    }
+    
+    public CompareTo(_other: object) : int { 0 }
+  }
+}
