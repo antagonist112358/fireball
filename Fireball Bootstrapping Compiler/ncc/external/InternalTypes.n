@@ -475,6 +475,7 @@ namespace Nemerle.Compiler {
     public mutable FunctionBase_tc                      : TypeInfo;
     public mutable DefaultImplementationAttribute_tc    : TypeInfo;
     public mutable TraitMethodAttribute_tc              : TypeInfo;
+    public mutable Unit_tc                              : TypeInfo;
 
     mutable function_types                              : array [FunctionType];
     mutable tuple_types                                 : array [TupleType];
@@ -511,6 +512,7 @@ namespace Nemerle.Compiler {
     public mutable MatchFailureException                : FixedType.Class;
     public mutable IObjectReference                     : FixedType.Class;
     public mutable Reflection_Missing                   : FixedType.Class;
+    public mutable Unit                                 : FixedType.Class;
 
     public mutable Delegate_Combine                     : IMethod;
     public mutable Delegate_Remove                      : IMethod;
@@ -641,6 +643,7 @@ namespace Nemerle.Compiler {
       UInt32_tc = lookup ("System.UInt32"); UInt32 = FixedType.Class (UInt32_tc, []);
       UInt64_tc = lookup ("System.UInt64"); UInt64 = FixedType.Class (UInt64_tc, []);
       ValueType_tc = lookup ("System.ValueType"); ValueType = FixedType.Class (ValueType_tc, []);
+      Unit_tc = lookup("Fireball.Core.Unit"); Unit = FixedType.Class(Unit_tc, []);
       IEnumerable_tc = lookup ("System.Collections.IEnumerable");
       IEnumerator_tc = lookup ("System.Collections.IEnumerator");
       IList_tc = lookup ("System.Collections.IList");

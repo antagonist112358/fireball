@@ -15,5 +15,10 @@ namespace Fireball.Core
     }
     
     public CompareTo(_other: object) : int { 0 }
+    
+    public static @:> (_: System.Void) : Unit
+    {
+      Unit();
+    }
   }
 }

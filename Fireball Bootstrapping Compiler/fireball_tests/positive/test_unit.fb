@@ -1,0 +1,40 @@
+namespace Fireball.Tests {
+  using System
+
+  // Generic class
+  class GenericOp[T] (op: Unit -> T) {
+	def Execute : T = op()
+  }
+  
+  class Tests {
+	// Test method Unit
+	def printf(txt: String, params args: Array[Object]) : Unit {
+		Console.WriteLine(txt, args)
+	}
+	
+	// Test method Unit
+	def cprintf(color: ConsoleColor, txt: String, params args: Array[Object]) : Unit {
+		val curCol = Console.ForegroundColor
+		Console.ForegroundColor = color
+		Console.WriteLine(txt, args)
+		Console.ForegroundColor = curCol
+	}
+	
+	// Generic method
+	def surround[T](action: Unit -> T) : T {
+		action()
+	}
+	
+	// Test invoke generic method
+	def printHello(user: String) : Unit {
+		surround(() => printf($"Hello $user"))
+	}
+	
+	// Test create generic class with Unit
+	def printHelloAlt(user: String) : Unit {		
+		val op = new GenericOp(() => printf($"Hello $user"))
+		op.Execute
+	}
+  }
+
+}

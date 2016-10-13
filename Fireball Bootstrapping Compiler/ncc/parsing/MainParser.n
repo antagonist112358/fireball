@@ -3558,7 +3558,7 @@ namespace Nemerle.Compiler
       def resultExpr = 
         match (tok)
         {
-          | Token.Keyword("void") => PExpr.Void(loc)
+          | Token.Identifier("Unit") => PExpr.Void(loc)
           | Token.Keyword("this") => PExpr.This(loc)
           | Token.Keyword("base") => 
             match (peek_token ()) //testing if next token is type enforcement

@@ -579,7 +579,7 @@ namespace Nemerle.Compiler
           | Out (t) => $ "out $t"
           | Array (t, 1) => $ "array[$t]"
           | Array (t, n) => $ "array.$n[$t]"
-          | Void => "void"
+          | Void => "Unit"
           | Intersection (lst) => $<#FixedType.Intersection(..$lst)#>
         }
 #if DEBUG

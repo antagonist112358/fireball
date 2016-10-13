@@ -888,11 +888,14 @@ namespace Nemerle.Compiler
 
           | StaticRef (_expr, meth, tp)
           | MethodRef (_expr, meth, tp, _) =>
+            /*
             foreach (t in tp)
               when (t.Fix ().Equals (InternalType.Void))
                 Message.Error (expr.Location, $ "cannot use `void' in generic specifier $tp of $meth");
             null
-
+            */
+            FixupVoidTypeParameters(expr)
+            
           | MacroEnvelope (_, _, expanded, _) =>
             DoWalk (expanded)
 
@@ -903,5 +906,34 @@ namespace Nemerle.Compiler
       }
     }
     #endregion
+    
+    private FixupVoidTypeParameters(expr : TExpr) : TExpr
+    {
+      mutable didFix = false;
+      
+      def mapTyvars(vars) {
+        vars.Map(tp => if (tp.Fix().Equals(InternalType.Void)) {
+          didFix = true;
+          InternalType.Unit;
+        } else tp);
+      }
+      
+      match(expr) {
+        | StaticRef(expr, meth, tp) as sr with ty = sr.ty =>
+          def newTyparms = mapTyvars(tp);
+          if (!didFix) null
+          else TExpr.StaticRef(expr.Location, ty, expr, meth, newTyparms)
+            
+        | MethodRef(expr, meth, tp, is_virt) as mr with ty = mr.ty =>
+          def newTyparms = mapTyvars(tp);
+          if (!didFix) null
+          else TExpr.MethodRef(expr.Location, ty, expr, meth, newTyparms, is_virt);
+            
+        | _ => Util.ice("Tried to fixup a non-method reference typed expression. Please report this error to the Fireball team.")
+      }      
+
+    }
+    
+    
   }
 }
