@@ -8,7 +8,7 @@ namespace Fireball.Tests {
     
     private val output: TextWriter = Console.Out
     
-    protected def printLine(msg: String, params args: Array[object]) : void {
+    protected def printLine(msg: String, params args: Array[object]) : Unit {
       match(args) {
         case pargs when pargs.Length > 0 => output.WriteLine(msg, pargs)
         case _ => output.WriteLine(msg)
@@ -17,8 +17,8 @@ namespace Fireball.Tests {
   }
   
   class ClassWithCompanion {
-    def LogMessage(msg: String, params args: Array[object]) : void = printLine(msg, args)
-    def LogColorMessage(color: ConsoleColor, msg: String, params args: Array[object]) : void {
+    def LogMessage(msg: String, params args: Array[object]) : Unit = printLine(msg, args)
+    def LogColorMessage(color: ConsoleColor, msg: String, params args: Array[object]) : Unit {
       val currentColor = Console.ForegroundColor
       Console.ForegroundColor = color
       output.WriteLine(msg, args)
@@ -27,7 +27,7 @@ namespace Fireball.Tests {
   }
 
   module Program {
-    def Main(_: Array[String]): void {
+    def Main(_: Array[String]): Unit {
       val logger = new ClassWithCompanion()
       
       logger.LogMessage("Hello: {0}", "World")

@@ -12,10 +12,10 @@ namespace Fireball.Tests {
 	module Program {
 		implicit def VectorToLength(vect: Vector) : double = vect.GetMagnitude()
 		
-		def Main(_: Array[String]) : void {
+		def Main(_: Array[String]) : Unit {
 			val aVector = new Vector(3.0, 4.0)
 			
-			def takesDouble(d: double) : void {
+			def takesDouble(d: double) : Unit {
 				Console.WriteLine($"Vector Magnitude: $d")
 			}
 			

@@ -76,7 +76,7 @@ namespace Fireball.Tests {
     
     val Container : Container = p
     
-    def Main(_: Array[string]) : void {      
+    def Main(_: Array[string]) : Unit {      
       using System.Console
       val c = Container
       WriteLine($"Capacity:  ${c.Capacity}")

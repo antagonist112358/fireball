@@ -30,11 +30,11 @@ namespace Fireball.Tests {
     using STT = System.Threading.Tasks;
     using System.Threading;
     
-    def Layer1() : void {
+    def Layer1() : Unit {
     
       using SC = System.Collections;
     
-      def Layer2() : void {
+      def Layer2() : Unit {
         
         using SGC = System.Collections.Generic;
         
@@ -54,7 +54,7 @@ namespace Fireball.Tests {
 
   module Program {
     
-    public def Main(args: Array[String]) : void {
+    public def Main(args: Array[String]) : Unit {
     
       using System.Console
 	    using System.Math

@@ -59,8 +59,8 @@ namespace Fireball.Tests
 				currentNode.Head
 			}
 			
-			def Dispose() : void { }
-			def Reset() : void { }
+			def Dispose() : Unit { }
+			def Reset() : Unit { }
 		}
 		
 		def Head : T = head
@@ -107,7 +107,7 @@ namespace Fireball.Tests
 	{
 		private type TestType = Array[String]    
     
-		def Main(args : Array[String]) : void {
+		def Main(args : Array[String]) : Unit {
 			val aList = new RealListNode(Stringable())
 			val locationName = "World"
 			val bList = aList.Prepend($"Hello $locationName")

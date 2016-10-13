@@ -668,7 +668,7 @@ namespace Nemerle.Compiler
     DoWalk (expr : TExpr) : TExpr
     {
       // Message.Debug ($ "dowalk: $(expr.GetType()) $(expr.Type)");
-      when (expr.ty != null)
+      when (expr.ty != null && !(expr is TExpr.Call))
         NoDeepVoid (expr, expr.ty);
       mutable customTyperRes;
       if (typer != null &&
@@ -886,8 +886,8 @@ namespace Nemerle.Compiler
             Util.cassert (Message.SeenError);
             null
 
-          | StaticRef (_expr, meth, tp)
-          | MethodRef (_expr, meth, tp, _) =>
+          | StaticRef
+          | MethodRef =>
             /*
             foreach (t in tp)
               when (t.Fix ().Equals (InternalType.Void))
@@ -912,17 +912,26 @@ namespace Nemerle.Compiler
       mutable didFix = false;
       
       def mapTyvars(vars) {
-        vars.Map(tp => if (tp.Fix().Equals(InternalType.Void)) {
+        vars.Map(tp => if (tp.IsFixed && tp.Fix().Equals(InternalType.Void)) {
           didFix = true;
           InternalType.Unit;
         } else tp);
       }
       
+      def fix_class_ref(cexpr: FixedType.Class) {
+        | FixedType.Class(ti, tyargs) =>
+          def newTyArgs = mapTyvars(tyargs);
+          if (didFix) {
+            FixedType.Class(ti, newTyArgs)
+          } else cexpr
+      }
+      
       match(expr) {
-        | StaticRef(expr, meth, tp) as sr with ty = sr.ty =>
+        | StaticRef(expr, meth, tp) =>
           def newTyparms = mapTyvars(tp);
+          def newExpr = fix_class_ref(expr);
           if (!didFix) null
-          else TExpr.StaticRef(expr.Location, ty, expr, meth, newTyparms)
+          else TExpr.StaticRef(newExpr, meth, newTyparms)
             
         | MethodRef(expr, meth, tp, is_virt) as mr with ty = mr.ty =>
           def newTyparms = mapTyvars(tp);

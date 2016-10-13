@@ -106,7 +106,8 @@ namespace Nemerle.Compiler
       this.defined_in = defined_in;
       this.name = name;
       this.name_location = name_location;
-      this.ty = ty;
+      //this.ty = ty;
+      Cleanup(ty);
       this.kind = kind;
       this.is_mutable = is_mutable;
       
@@ -193,9 +194,24 @@ namespace Nemerle.Compiler
 
     internal SetType (t : TypeVar) : void
     {
-      ty = t;
+      Cleanup(t)
     }   
 
+    private Cleanup(t: TypeVar) : void {
+      match(t.Hint) {
+        | Some(FixedType.Class(ti, typarms)) =>
+          def newTyparms = typarms.Map(tp => {
+            if (tp.IsFixed && tp.Fix().Equals(tp.Manager.InternalType.Void)) 
+              tp.Manager.InternalType.Unit
+            else tp
+          });
+          ty = FixedType.Class(ti, newTyparms)
+          
+        | _ => 
+          ty = t
+      }
+    }
+    
     #region IL integration
     variant ILKind
     {

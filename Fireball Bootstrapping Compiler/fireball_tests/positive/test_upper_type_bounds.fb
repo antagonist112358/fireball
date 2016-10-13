@@ -12,7 +12,7 @@ namespace Fireball.Tests {
 	class ClassHierarchyPrinter[T : Super] {
 		using System.Console
 		
-		def PrintHierarchy[U : T](collection : list[U]) : void {
+		def PrintHierarchy[U : T](collection : list[U]) : Unit {
 			val cnt = 0
 			foreach(item in collection) {
 				val tabs = if (item.Depth > 1) new String('\t', item.Depth - 1) else String.Empty
@@ -23,7 +23,7 @@ namespace Fireball.Tests {
 	
 	public module Program
 	{
-		def Main(args : Array[String]) : void {
+		def Main(args : Array[String]) : Unit {
 			val objects = [
 				new Super(), new Child2(), new Child1(), new SubChild1()
 			]

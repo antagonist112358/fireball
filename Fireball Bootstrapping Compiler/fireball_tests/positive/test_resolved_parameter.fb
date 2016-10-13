@@ -15,7 +15,7 @@ namespace Fireball.Tests {
   }
   
   public module Program {
-		def Main(args : Array[String]) : void {
+		def Main(args : Array[String]) : Unit {
 			val user = "Kevin DiVincenzo"
 			Console.WriteLine(SomeClass.WelcomeUser(user))
 			

@@ -60,7 +60,7 @@ namespace Fireball.Tests {
 	// Program
 	module Program {
 	
-		def Main(_ : Array[string]) : void {
+		def Main(_ : Array[string]) : Unit {
 			val lst = new SimpleList([ "Hello", "World" ])
 			val lstWithLength  = lst.Map(s => (s, s.Length))
 			

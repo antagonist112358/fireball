@@ -48,12 +48,12 @@ namespace Fireball.Tests {
   // Tests
   module TestProgram {    
 
-    def Main(_: Array[String]) : void {
+    def Main(_: Array[String]) : Unit {
       SimpleTests()
       OperatorTests()
     }
 
-    def SimpleTests() : void {
+    def SimpleTests() : Unit {
       AreEqual(1, ChurchBoolean.True(1)(2))
       AreEqual("a", ChurchBoolean.True("a")(""))
       val obj = new object()
@@ -61,7 +61,7 @@ namespace Fireball.Tests {
       AreEqual(obj, ChurchBoolean.True(obj)(obj2))
     }
 
-    def OperatorTests() : void {
+    def OperatorTests() : Unit {
       using ChurchBoolean      
 
       // Not operator
@@ -81,7 +81,7 @@ namespace Fireball.Tests {
       AreEqual(false || false, False.Or(False))
     }
 
-    def AreEqual[T](left: T, right: T) : void {
+    def AreEqual[T](left: T, right: T) : Unit {
       using System.Console
 
       if (left.Equals(right))

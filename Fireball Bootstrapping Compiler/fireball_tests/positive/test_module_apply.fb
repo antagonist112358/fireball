@@ -7,7 +7,7 @@ namespace Fireball.Tests {
   }
 
   module Program {
-    def Main(_: Array[String]) : void {
+    def Main(_: Array[String]) : Unit {
       val testString = Mod1("Hello World")
       Console.WriteLine(testString)
     }

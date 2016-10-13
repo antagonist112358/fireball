@@ -696,10 +696,17 @@ namespace Nemerle.Compiler
       def solver = Manager.Solver;
       solver.PushState();
       def ok = expr.Type.Unify(InternalType.Void);
+      def ok2 = expr.Type.Unify(InternalType.Unit);
       solver.PopState();
       if (ok)
       {
         def res = expr.Type.Unify(InternalType.Void);
+        assert(res);
+        expr
+      }
+      else if (ok2)
+      {
+        def res = expr.Type.Unify(InternalType.Unit);
         assert(res);
         expr
       }

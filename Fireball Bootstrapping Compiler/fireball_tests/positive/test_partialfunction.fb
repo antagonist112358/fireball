@@ -5,7 +5,7 @@ namespace Fireball.Tests {
       case s : string => s
     }
 	
-    def PrintIfString(o: object) : void {
+    def PrintIfString(o: object) : Unit {
       using System.Console
       
       if(partialFunction.IsDefinedAt(o))
@@ -27,7 +27,7 @@ namespace Fireball.Tests {
   
   public module Program {
     
-    public def Main(_: Array[string]) : void {
+    public def Main(_: Array[string]) : Unit {
       val testArray = [ "Hello World" : object, 1 : object, 0.5d : object, typeof(string) : object ]
       val tester = new TestPF()
       

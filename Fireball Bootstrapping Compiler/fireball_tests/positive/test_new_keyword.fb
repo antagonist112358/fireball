@@ -6,7 +6,7 @@ namespace Fireball.Tests {
  
   module Program {
   
-    def Main() : void {
+    def Main() : Unit {
       //val arr = ["R", "S", "T", "L", "N", "E"]
       val words = "Vanna White"
       val letters = words.ToCharArray()

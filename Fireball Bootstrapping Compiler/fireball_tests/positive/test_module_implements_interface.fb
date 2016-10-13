@@ -3,13 +3,13 @@ namespace Fireball.Tests {
 	using System
 	
 	public trait ITest {
-		def MustImplement(a: int) : void
+		def MustImplement(a: int) : Unit
 	}
 	
 	module TestModule {
 	
 		private class FB_ITest_Implementation extends ITest {
-			public def MustImplement(a: int) : void {
+			public def MustImplement(a: int) : Unit {
 				Console.WriteLine($"You specified the number: $a")
 			}			
 		}
@@ -20,7 +20,7 @@ namespace Fireball.Tests {
 	}
 	
 	module Program {
-    public def Main(args: Array[String]) : void {
+    public def Main(args: Array[String]) : Unit {
 			using System.Console
 			
 			val tester : ITest = TestModule.ITest

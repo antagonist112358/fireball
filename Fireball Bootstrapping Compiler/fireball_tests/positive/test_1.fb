@@ -30,7 +30,7 @@ namespace Fireball.Tests {
   }
 
   module Program {
-    public def Main(args: Array[String]) : void {
+    public def Main(args: Array[String]) : Unit {
 			using System.Console
       WriteLine("Hello World")
 			val tester = new TestClass()

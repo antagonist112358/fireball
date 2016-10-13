@@ -31,10 +31,23 @@ namespace Fireball.Tests {
 	}
 	
 	// Test create generic class with Unit
-	def printHelloAlt(user: String) : Unit {		
-		val op = new GenericOp(() => printf($"Hello $user"))
+	def printHelloAlt(user: String) : Unit {
+		val userClosed = user
+		val op = new GenericOp(() => printf($"Hello $userClosed"))
 		op.Execute
 	}
   }
 
+  module Program {
+	def Main(_: Array[String]) : Unit {
+		val tester = new Tests()
+		tester.printHelloAlt("Kevin")
+	}
+  }
 }
+
+/*
+BEGIN-OUTPUT
+Hello Kevin
+END-OUTPUT
+*/

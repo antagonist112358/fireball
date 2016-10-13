@@ -6,7 +6,7 @@ namespace Fireball.Tests {
   
     using System.Collections.Generic;
     
-    def DoesNothing() : void {
+    def DoesNothing() : Unit {
       ()
     }
   
@@ -14,7 +14,7 @@ namespace Fireball.Tests {
 
   class NeedsTheusing {
   
-    def ShouldError() : void {
+    def ShouldError() : Unit {
       val aList = List(); //E: unbound name `List'
       aList.Add("Hello");
       aList.Add("World");
@@ -26,11 +26,11 @@ namespace Fireball.Tests {
     
     using System.Collections;
       
-    def TestOneLevel() : void {
+    def TestOneLevel() : Unit {
       val table = Hashtable();
       table.Add(1, "string");
     
-      def TestLevelTwo() : void {
+      def TestLevelTwo() : Unit {
         using SGC = System.Collections.Generic;
         
         val t = 5;

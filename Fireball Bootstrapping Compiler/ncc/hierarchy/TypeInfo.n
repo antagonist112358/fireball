@@ -825,17 +825,24 @@ public abstract class TypeInfo : MemberInfo, IMember,
       {
         def len_tp = typarms.Length;
         def len_ac = args.Length;
+        def args = args.Map(arg => {
+          if (arg.IsFixed && arg.Equals(InternalType.Void)) InternalType.Unit
+          else arg
+        });
 
         if (len_tp == len_ac)
         {
-          NList.Iter2(typarms, args, (tp, val : TypeVar) => res.Add (tp, val));
+          NList.Iter2(typarms, args, (tp, val : TypeVar) => {            
+            res.Add (tp, val)
+          });
 
           when (check_parms)
             NList.Iter2 (typarms, args, fun (tp : StaticTypeVar, val : TypeVar)
             {
               assert2(InternalType.Void != null);
-              when (val.Equals (InternalType.Void))
+              when (val.Equals (InternalType.Void)) {
                 ReportError (messenger, $"cannot use `void' as a generic parameter of $tc");
+              }
 
               unless (val.Require(res.Apply(tp.LowerBound)))
                 ReportError (messenger, $ "typing constraint on $(tp.Name) not satisfied, upon instantiation of $tc");

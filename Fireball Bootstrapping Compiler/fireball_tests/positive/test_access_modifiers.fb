@@ -20,14 +20,14 @@ namespace Fireball.Tests {
     class CompanionTest extends Companion.InnerClass {
       var setting : bool = false
       
-      private def Implode() : void { Console.WriteLine("Boom") }
+      private def Implode() : Unit { Console.WriteLine("Boom") }
       
       override def Correction(input: int) : double {
         (input :> double) / (piApproximation * piApproximation)
       }
     }
     
-    def Main(_: Array[String]) : void {
+    def Main(_: Array[String]) : Unit {
       val test = new CompanionTest()
       val calc = new Accessability(5, "Results are valid through phase:")
       
@@ -35,7 +35,7 @@ namespace Fireball.Tests {
       println(calc.AppendWith("test"))      
     }
     
-    def println(msg: string, params args: Array[object]) : void = Console.WriteLine(msg, args)
+    def println(msg: string, params args: Array[object]) : Unit = Console.WriteLine(msg, args)
   }
 }
 

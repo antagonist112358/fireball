@@ -51,7 +51,7 @@ namespace Fireball.Tests {
 	module Program {
 		using System.Diagnostics
 		
-		def TimeExecution[T] (func: void -> T) : T * TimeSpan {
+		def TimeExecution[T] (func: Unit -> T) : T * TimeSpan {
 			val timer = Stopwatch.StartNew()
 			val output = func()
 			timer.Stop()
@@ -59,7 +59,7 @@ namespace Fireball.Tests {
 			(output, timer.Elapsed)
 		}
 		
-		def DoTest1() : void {
+		def DoTest1() : Unit {
 			val test1 = new SimpleLazyVal()
 			val (pi1, time1) = TimeExecution(() => test1.PiApproximation)
 			val (_, time2) = TimeExecution(() => test1.PiApproximation)
@@ -70,7 +70,7 @@ namespace Fireball.Tests {
 			Console.WriteLine($"Value memoized: ${time2 < time1 && time3 < time1}")
 		}
 		
-		def DoTest2() : void {
+		def DoTest2() : Unit {
 			val test1 = new SimpleLazyVal()
 			val (fib1, time1) = TimeExecution(() => test1.LargeFib)
 			val (_, time2) = TimeExecution(() => test1.LargeFib)
@@ -82,7 +82,7 @@ namespace Fireball.Tests {
 		}
 		
 		// Test method level lazy value
-		def DoTest3() : void {
+		def DoTest3() : Unit {
 			lazy val lazyString = "Test Content"
 			assert(lazyString.IsValueCreated == false)
 			
@@ -94,7 +94,7 @@ namespace Fireball.Tests {
 		}
 		
 		// Test method level lazy value with type enforcement
-		def DoTest4() : void {
+		def DoTest4() : Unit {
 			lazy val computed : double = {
 				Math.Pow(Math.PI, 6) / (1 + Math.Tan(1.5984175))
 			}
@@ -107,7 +107,7 @@ namespace Fireball.Tests {
 			assert(computed == initDouble)
 		}
 		
-		def Main(_ : Array[string]) : void {
+		def Main(_ : Array[string]) : Unit {
 			DoTest1()
 			DoTest2()
 			DoTest3()
