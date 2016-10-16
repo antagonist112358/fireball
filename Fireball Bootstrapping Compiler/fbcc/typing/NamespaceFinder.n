@@ -57,6 +57,7 @@ namespace Nemerle.Compiler
     // The empty instance
     public static EmptyFinder : NamespaceFinder = NamespaceFinder();
     
+    // Binder flags for finding implicit conversions
     private static BinderFlags = (BindingFlags.Public | BindingFlags.Static);
     
     // All the scanned namespaces

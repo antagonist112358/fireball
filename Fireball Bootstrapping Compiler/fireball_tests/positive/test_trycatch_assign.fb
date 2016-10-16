@@ -1,0 +1,27 @@
+namespace Fireball.Compiler.Tests
+{
+  using System
+  using System.Console
+  
+  module DisallowNonOptionAssignsInsideTry {
+  
+	def ThrowsException() : Unit {
+	  throw Exception("This is an Exception!")
+	}
+  
+	def Main(_: Array[String]) : Unit {
+		var something = None()
+		
+		try {
+		  something = {
+			ThrowsException()
+			Some("Hello World")
+		  }
+		} catch {
+		  case _ => something = None()
+		}
+				
+		WriteLine($"something has value? ${something.HasValue}")
+	}
+  }
+}

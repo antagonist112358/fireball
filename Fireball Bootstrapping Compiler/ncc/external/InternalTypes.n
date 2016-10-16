@@ -642,8 +642,7 @@ namespace Nemerle.Compiler {
       UInt16_tc = lookup ("System.UInt16"); UInt16 = FixedType.Class (UInt16_tc, []);
       UInt32_tc = lookup ("System.UInt32"); UInt32 = FixedType.Class (UInt32_tc, []);
       UInt64_tc = lookup ("System.UInt64"); UInt64 = FixedType.Class (UInt64_tc, []);
-      ValueType_tc = lookup ("System.ValueType"); ValueType = FixedType.Class (ValueType_tc, []);
-      Unit_tc = lookup("Fireball.Core.Unit"); Unit = FixedType.Class(Unit_tc, []);
+      ValueType_tc = lookup ("System.ValueType"); ValueType = FixedType.Class (ValueType_tc, []);      
       IEnumerable_tc = lookup ("System.Collections.IEnumerable");
       IEnumerator_tc = lookup ("System.Collections.IEnumerator");
       IList_tc = lookup ("System.Collections.IList");
@@ -736,6 +735,8 @@ namespace Nemerle.Compiler {
         InternalType.FunctionBase_tc = lookup("Nemerle.Builtins.Function", 2);
         InternalType.DefaultImplementationAttribute_tc = lookup("Fireball.Internal.DefaultImplementationAttribute");
         InternalType.TraitMethodAttribute_tc = lookup("Fireball.Internal.TraitMethodAttribute");
+        
+        Unit_tc = lookup("Fireball.Core.Unit"); Unit = FixedType.Class(Unit_tc, []);
       }
     }
 

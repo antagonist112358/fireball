@@ -65,9 +65,9 @@ namespace Nemerle.Compiler
     internal static CreateCore(nameTree : NamespaceTree) : GlobalEnv
     {
       GlobalEnv(nameTree).AddOpenNamespace([nameTree.NamespaceTree], Location.Default)
-                         .AddOpenNamespace(["Fireball"], Location.Default)
-                         .AddOpenNamespace(["Fireball", "Core"], Location.Default)
+                         .AddOpenNamespace(["Fireball"], Location.Default)                         
                          .AddOpenNamespace(["Nemerle", "Core"], Location.Default)
+                         .AddOpenNamespace(["Fireball", "Core"], Location.Default)
                          .AddOpenNamespace(["Nemerle", "Core", "option"], Location.Default)
                          .AddOpenNamespace(["Nemerle", "Core", "ValueOptionStatic"], Location.Default);
     }

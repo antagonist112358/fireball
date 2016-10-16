@@ -198,8 +198,8 @@ namespace Nemerle.Compiler
     }   
 
     private Cleanup(t: TypeVar) : void {
-      match(t.Hint) {
-        | Some(FixedType.Class(ti, typarms)) =>
+      match((t.IsFixed, t.Hint)) {
+        | (true, Some(FixedType.Class(ti, typarms))) =>
           def newTyparms = typarms.Map(tp => {
             if (tp.IsFixed && tp.Fix().Equals(tp.Manager.InternalType.Void)) 
               tp.Manager.InternalType.Unit

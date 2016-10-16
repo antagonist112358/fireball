@@ -25,6 +25,8 @@ bld/
 # Markdown compiled HTML pages for language specification
 Language Specification/Compiled
 
+# Performance tuning
+Fireball Bootstrapping Compiler/Performance
 
 # Visual Studo 2015 cache/options directory
 .vs/
